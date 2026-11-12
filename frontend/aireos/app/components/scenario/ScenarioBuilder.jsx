@@ -50,6 +50,7 @@ import {
 } from '@/app/utils/scenarioPromotions';
 import { liveUpliftIndex } from '@/app/utils/scenarioLiveUplifts';
 import { withComposition } from '@/app/utils/scenarioComposition';
+import { OFFICIAL_ITEM, monthSplit, tier0SplitIndex } from '@/app/utils/scenarioTier0Split';
 import { anchorInMonth, anchorLabel, anchorSourceLabel, anchorTargets } from '@/app/utils/promoUpliftSettings';
 import {
   activeScenarioBlocks,
@@ -68,8 +69,8 @@ import useConfirmAction from '@/hooks/useConfirmAction';
 import useExpandedRows from '@/hooks/useExpandedRows';
 import useScenarioBlocks from '@/hooks/useScenarioBlocks';
 import useScenarioPromotions from '@/hooks/useScenarioPromotions';
+import useTier0Breakdown from '@/hooks/useTier0Breakdown';
 import useUnitsSplitBasis from '@/hooks/useUnitsSplitBasis';
-import { SCENARIO_FIXTURE_BAKED_IN_DISCOUNTS, scenarioFixturesEnabled } from '@/app/utils/scenarioFixtures';
 
 // Its own key, so the Forecast page's range (this year) and this page's
 // (next year) don't overwrite each other.
@@ -156,6 +157,9 @@ export default function ScenarioBuilder() {
   // these per product and month (scenarioLiveUplifts.js), else their saved values.
   const calculated = usePromoUpliftCalc();
   const anchors = usePromoAnchors();
+  // Tier 0 split into its baseline and the promotions it carries; official
+  // and scenario promotions are worked out on it (scenarioTier0Split.js).
+  const tier0Breakdown = useTier0Breakdown({ ready, customerName, skuRange });
   // The block open in the panel's editor (a draft, or a saved block opened
   // from the table with Edit); its months are banded on the chart.
   const [selectedId, setSelectedId] = useState(null);
@@ -222,12 +226,16 @@ export default function ScenarioBuilder() {
   const growthBlocks = scenarioBlocks.blocks.filter(isGrowthBlock);
   const activePromotions = activeScenarioPromotions(scenarioPromotions.promotions);
   const liveIndex = calculated.data ? liveUpliftIndex(calculated.data.rows) : null;
+  const tier0Split = tier0Breakdown.data ? tier0SplitIndex(tier0Breakdown.data) : null;
   const counted = {
+    // The official promotions count whenever the split is in.
+    official: tier0Split ? [OFFICIAL_ITEM] : [],
     growth: activeScenarioBlocks(growthBlocks),
     blocks: activeScenarioBlocks(allBlocks),
     promotions: withLiveIndex(activePromotions, liveIndex),
   };
   const itemInfo = new Map([
+    [OFFICIAL_ITEM.id, { name: OFFICIAL_ITEM.name, kind: 'official', state: 'saved' }],
     ...counted.growth.map((block) => [block.id, { name: block.name, kind: 'growth', state: itemState(block, false) }]),
     ...counted.blocks.map((block) => [block.id, { name: block.name, kind: 'block', state: itemState(block, false) }]),
     ...activePromotions.map((promotion) => [
@@ -236,21 +244,21 @@ export default function ScenarioBuilder() {
     ]),
   ]);
   const activeItems = [...counted.growth, ...counted.blocks, ...activePromotions];
-  const { cells, byMonth, byItem } = simulate(rows, counted, SCENARIO_SOURCES, chartView(filters, splitBasis.basis));
+  const { cells, byMonth, byItem } = simulate(
+    rows,
+    counted,
+    SCENARIO_SOURCES,
+    chartView(filters, splitBasis.basis, tier0Split)
+  );
   // Nothing simulated until a switched-on item changes something in view:
   // no Simulated line, legend entry or table columns before that.
   const hasSimulated = byItem.size > 0;
   const monthCells = cellsByMonth(cells);
-  // Discounts are per customer x SKU range, so only one picked pair has them
-  // (fixtures only until the pipeline saves them).
+  // Anchors are per customer x SKU range, so only one picked pair has one.
   const rangePicked = Boolean(customerName && skuRange);
-  const fixtureDiscounts = scenarioFixturesEnabled() ? SCENARIO_FIXTURE_BAKED_IN_DISCOUNTS : null;
-  const bakedIn =
-    fixtureDiscounts && fixtureDiscounts.customer_name === customerName && fixtureDiscounts.sku_range === skuRange
-      ? fixtureDiscounts
-      : null;
   // Promotions have no name of their own; their mechanic stands in.
   const names = new Map([
+    [OFFICIAL_ITEM.id, OFFICIAL_ITEM.name],
     ...scenarioBlocks.blocks.map((block) => [block.id, block.name]),
     ...scenarioPromotions.promotions.map((promotion) => [promotion.id, promotion.mechanicLabel]),
   ]);
@@ -267,9 +275,13 @@ export default function ScenarioBuilder() {
   );
   // What each month is made of, for the shaded layers, their labels and the
   // hover card (scenarioComposition.js): built on the Simulated line, so the
-  // layers always meet it.
+  // layers always meet it, with Tier 0 split where the split is in.
   const chartPoints = (hasSimulated ? withSimulatedLine(basePoints, byMonth) : basePoints).map((point) =>
-    withComposition(point, [...(monthCells.get(point.month_year)?.values() ?? [])])
+    withComposition(
+      point,
+      [...(monthCells.get(point.month_year)?.values() ?? [])],
+      tier0Split ? monthSplit(rows, tier0Split, point.month_year) : null
+    )
   );
   // The anchor in the hover card: one customer x SKU range has one.
   const anchorTarget = rangePicked
@@ -514,8 +526,9 @@ export default function ScenarioBuilder() {
             scenario={{
               ...scenario,
               compositionVisible,
-              // Stacked bottom to top: Tier 0, what growth, blocks and
-              // promotions add, then any decrease, hatched
+              // Stacked bottom to top: Tier 0's baseline and what it carries,
+              // official promotions, what growth, blocks and scenario
+              // promotions add, then what takes units away, hatched
               // (FrozenBaselinePanel's COMPOSITION_LAYERS).
               composition: COMPOSITION_LAYERS.map(({ key, color, opacity, hatch }) => ({ key, color, opacity, hatch })),
             }}
@@ -536,8 +549,7 @@ export default function ScenarioBuilder() {
             <FrozenBaselinePanel
               rows={rows}
               monthItems={monthItems}
-              bakedIn={bakedIn}
-              rangePicked={rangePicked}
+              tier0Split={{ index: tier0Split, loading: tier0Breakdown.loading, error: tier0Breakdown.error }}
               anchors={anchors}
               customerName={customerName}
               skuRange={skuRange}

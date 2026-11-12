@@ -15,6 +15,9 @@
 //     customer, sku, month_year,   // customer_name / product_name / 'YYYY-MM-01', as on forecast rows
 //     baseUnits,                   // the Current forecast for this cell
 //     deltaUnits,                  // what the item adds on top of it
+//     addedUnits, replacedUnits,   // promotions only: what they add, and the part of
+//                                  // what Tier 0 carries they replace (deltaUnits =
+//                                  // added - replaced; scenarioTier0Split.js)
 //   }
 //
 // Volume only: the Scenario builder predicts units, never revenue. A
@@ -56,7 +59,7 @@ const CURRENT_UNITS = 'forecast_current';
 // SKU of them, by the rows' sku_range) or its one SKU (items saved before
 // ranges; every SKU when neither is set), its months, and only rows with a
 // Current value (months with actuals have none, so they are never changed).
-function itemRows(rows, item) {
+export function itemRows(rows, item) {
   if (!item.customer || !item.startMonth || !item.endMonth) return [];
   return rows.filter(
     (row) =>
@@ -89,12 +92,18 @@ function deltaCell(row, item, source, deltaUnits) {
  * Map customer_name → { startMonth, endMonth, rows } with every SKU of that
  * customer over those months (see useUnitsSplitBasis).
  *
+ * `tier0Split` (optional) is Tier 0 split into its baseline and the
+ * promotions it carries (scenarioTier0Split.tier0SplitIndex), which the
+ * official and scenario promotions are worked out on.
+ *
  * @param {{ productName?: string, skuRange?: string, customerName: string, startDate: string, endDate: string }} filters
  * @param {Map<string, { startMonth: string, endMonth: string, rows: object[] }>} [splitBasis]
+ * @param {Map<string, object>} [tier0Split]
  */
 export function chartView(
   { productName = '', skuRange = '', customerName = '', startDate = '', endDate = '' },
-  splitBasis = null
+  splitBasis = null,
+  tier0Split = null
 ) {
   return {
     productName,
@@ -103,6 +112,7 @@ export function chartView(
     startMonth: startDate ? `${startDate.slice(0, 7)}-01` : '',
     endMonth: endDate ? `${endDate.slice(0, 7)}-01` : '',
     splitBasis,
+    tier0Split,
   };
 }
 
@@ -216,7 +226,7 @@ function addTo(totals, key, cell) {
 
 /**
  * The cells regrouped by month, then by item: Map month_year → Map itemId →
- * { source, baseUnits, deltaUnits }. For the chart
+ * { source, baseUnits, deltaUnits, addedUnits, replacedUnits }. For the chart
  * tooltip (which blocks add to a month), the comparison table (how many
  * blocks are active in a period) and the blocks table's by-month detail.
  *
@@ -228,11 +238,13 @@ export function cellsByMonth(cells) {
     if (!months.has(cell.month_year)) months.set(cell.month_year, new Map());
     const items = months.get(cell.month_year);
     if (!items.has(cell.itemId)) {
-      items.set(cell.itemId, { source: cell.source, baseUnits: 0, deltaUnits: 0 });
+      items.set(cell.itemId, { source: cell.source, baseUnits: 0, deltaUnits: 0, addedUnits: 0, replacedUnits: 0 });
     }
     const entry = items.get(cell.itemId);
     entry.baseUnits += cell.baseUnits;
     entry.deltaUnits += cell.deltaUnits;
+    entry.addedUnits += cell.addedUnits ?? cell.deltaUnits;
+    entry.replacedUnits += cell.replacedUnits ?? 0;
   }
   return months;
 }
@@ -246,7 +258,16 @@ function floorAtZero(cells) {
   const removed = cells.reduce((sum, cell) => sum + Math.min(0, cell.deltaUnits), 0);
   if (base + added + removed >= 0) return cells;
   const share = -(base + added) / removed;
-  return cells.map((cell) => (cell.deltaUnits < 0 ? { ...cell, deltaUnits: cell.deltaUnits * share, capped: true } : cell));
+  return cells.map((cell) =>
+    cell.deltaUnits < 0
+      ? {
+          ...cell,
+          deltaUnits: cell.deltaUnits * share,
+          ...(cell.addedUnits != null ? { addedUnits: cell.addedUnits * share, replacedUnits: cell.replacedUnits * share } : {}),
+          capped: true,
+        }
+      : cell
+  );
 }
 
 function withFloor(cells) {

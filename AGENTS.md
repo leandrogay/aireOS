@@ -38,7 +38,8 @@ aireOS/
 │   │   │   ├── settings/          /api/settings       customer-level settings; __init__.py mounts one sub-router per kind
 │   │   │   │   └── doh.py         /api/settings/doh   DOH thresholds (versioned, revert, history, reset to global default) + alert toggle
 │   │   │   ├── scenario/          /api/scenario       Scenario builder items; __init__.py mounts one sub-router per kind
-│   │   │   │   └── building_blocks.py /api/scenario/building-blocks  list/create/replace/delete what-if building blocks
+│   │   │   │   ├── building_blocks.py /api/scenario/building-blocks  list/create/replace/delete what-if building blocks
+│   │   │   │   └── tier0_breakdown.py /api/scenario/tier0-breakdown  read-only: Tier 0 split into baseline + carried promotions
 │   │   │   └── promotions.py      /api/promotions     promotion CRUD + /health/db
 │   │   ├── schemas/               Pydantic v2 request models (only catalog + promotions today)
 │   │   │   ├── catalog.py         _Base, normalise_name (retailer names → lowercase slugs), clean_customer_name
@@ -73,6 +74,13 @@ aireOS/
 │   │       ├── scenario/common.py engines shared by every kind of Scenario builder item
 │   │       ├── scenario/building_blocks.py scenario_building_blocks CRUD; resolves customer_name/product_name to customer_id/sku;
 │   │       │                      fetch_blocks_for_customer for the sell-in chart's building blocks overlay
+│   │       ├── scenario/tier0_split.py PURE: Tier 0 (½ last year + ½ 3-month run-rate) split into the ordinary-month
+│   │       │                      baseline at the anchor and the promotions its source months carried (every official
+│   │       │                      offline promotion, vouchers out, uplift x day-share, several added up), and the official
+│   │       │                      promotions planned for the month; BigQuery's Tier 0 is never changed (Scenario builder only)
+│   │       ├── scenario/tier0_breakdown.py reads fc_training_input (BigQuery) + promotions, promo_moment_calc, anchors and
+│   │       │                      mechanic discounts (Cloud SQL, each in effect in its month: migration 021) for tier0_split;
+│   │       │                      scripts/backtest_tier0_promotions.py scores the same maths against 2026 actuals
 │   │       ├── scenario/block_effects.py PURE: what saved blocks add to one customer's Current forecast (same rules as
 │   │       │                      frontend scenarioEngine.js -- keep in step), for the sell-in plan chart's overlay
 │   │       ├── sellout_units.py   Cloud SQL monthly sell-out per SKU for inventory, via sellout_service's effective-sellout view
@@ -210,6 +218,7 @@ aireOS/
     │   │   ├── salesApi.js        /api/sales wrappers via request() (getSkuSales, getMonthlyOnly)
     │   │   ├── settingsApi.js     /api/settings/* wrappers, one section per kind (reuses promotionsApi.request)
     │   │   ├── scenarioBuildingBlocksApi.js /api/scenario/building-blocks wrappers (reuses promotionsApi.request)
+    │   │   ├── scenarioTier0BreakdownApi.js /api/scenario/tier0-breakdown (getTier0Breakdown)
     │   │   ├── catalogApi.js      /api/catalog customers + retailer writes for the Customers page (reuses promotionsApi.request)
     │   │   └── mappingApi.js      /api/uploads wrappers taking an explicit baseUrl (harness style)
     │   └── utils/                 Pure, React-free helpers
@@ -224,12 +233,17 @@ aireOS/
     │       ├── scenarioGrowth.js  PURE, import-free: the budget's growth (kind 'growth' blocks, one per customer per year,
     │       │                      Jan-Dec, every SKU); edited by scenario/GrowthControl in the Breakdown tab, applied by
     │       │                      scenarioBlocks.scenarioGrowthSource (same % maths as a block, its own chart layer)
-    │       ├── scenarioBreakdown.js PURE, import-free: Breakdown tab -- Tier 0 built from same month last year + run-rate
-    │       │                      (totals over every row in view), and what growth/blocks/promotions add
+    │       ├── scenarioBreakdown.js PURE, import-free: Breakdown tab months, and what official promotions/growth/blocks/
+    │       │                      scenario promotions change in one month
+    │       ├── scenarioTier0Split.js PURE, import-free: the Tier 0 split per cell (used only within 1 carton of its Tier 0),
+    │       │                      official promotions as a source (baseline x uplift in place of the carried block), scenario
+    │       │                      promotions on the baseline (replace the carried block where nothing official is planned,
+    │       │                      else added on top), monthSplit for the Breakdown tab, bigChange (> 35% of Tier 0)
     │       ├── scenarioLiveUplifts.js PURE, import-free: a scenario promotion's uplift per product x month from GET
     │       │                      /promo-uplifts/calculated (the anchor version in effect that month); override → live → saved
-    │       ├── scenarioComposition.js PURE, import-free: the Scenario chart's shaded layers per month (Tier 0, growth, blocks,
-    │       │                      scenario promotions; decreases hatched above the Simulated line), their tiny labels, hover breakdown
+    │       ├── scenarioComposition.js PURE, import-free: the Scenario chart's shaded layers per month (baseline, last year's
+    │       │                      promotions, official promotions, growth, blocks, scenario promotions; what takes units away
+    │       │                      hatched above the Simulated line in its own colour), their tiny labels, hover breakdown
     │       ├── dateRange.js       currentYearDateRange() / nextYearDateRange() (Scenario builder: next year, clamped to the forecast) -- default-date-range helpers
     │       ├── periodComparison.js Compare-to baselines (comparisonSetup), week pairing for the comparison chart
     │       ├── dateRangePresets.js Period presets in whole months (Latest month … Past 12 months, YTD, Last year), anchored to the latest loaded month
@@ -259,6 +273,7 @@ aireOS/
     │   ├── usePriceMix.js         useSkuSales × 2 (this period + comparison) → priceMixEffects
     │   ├── useDohSettings.js      /api/settings/doh (+ replaceRow for the row a write returns)
     │   ├── usePromoAnchors.js     /api/settings/promo-uplifts/anchors (Scenario builder Breakdown anchors + hover card)
+    │   ├── useTier0Breakdown.js   /api/scenario/tier0-breakdown via scenarioTier0BreakdownApi (customer + SKU range in view)
     │   ├── useUploads.js          upload list + actions from components/upload/UploadProvider (in the root layout, so uploads outlive the page; UploadTray shows them on every page)
     │   ├── useCustomers.js        /api/catalog/customers (+ applyCustomer / removeCustomer for the row a write returns)
     │   ├── useExpandedRows.js     { isExpanded, toggle, expand } for ui/ExpandableRow (several open by default)
@@ -469,6 +484,7 @@ Component/page ──► hook (hooks/use*.js) or *Api.js function
 | `forecast_notifications` payload (`run_name`, `source` event/scheduled/script, `stage` pipeline/refresh, `reason`, `errors`, `warnings` (a success whose Initial couldn't refresh: `initial_refresh_warning`), `period_*`, `customers`, `skus`, `updated_at`) | `utils/forecastNotificationText.js`, `NotificationPanel.jsx` |
 | `assistant._FORECAST_LINES` (keys, labels, export colours; `chart_series[].key`/`unit`), `forecast_summary` `chart_lines` | `FORECAST_SERIES` in `utils/forecastView.js`, `AssistantChart` in `assistant/AssistantMessage.jsx` |
 | `GET /api/forecast` rows: one per customer x SKU x month x **tier** (`bigquery.FORECAST_TIERS`, `FORECAST_OUTPUT_COLUMNS`: `tier`/`tier_label`/`tier_order`, `is_available`/`unavailable_reason`, `month_range_pct`/`month_confidence_band`, `previous_low_80`/`previous_high_80` (Previous's own run row in `aire_forecasting_runs`, joined on `previous_generated_at` + `source_model`; the view has none) with `previous_range_pct`/`previous_confidence_band` (`bigquery.month_range`, the view's 20/50 cut-offs), payload `horizon` `{tier: {units, series}}` (each series' whole Current line with no date filter, `bigquery.get_current_horizon` + `forecast_service.current_horizon_totals`: the "Next 12 months" strip). The Forecast page is **volume only**: rows and actuals carry no revenue and nothing is priced (`add_forecast_revenue` / `get_realised_prices` remain for the assistant's `forecast_summary` and `/alternatives`), `xreg_used_typical_promo`, `actual_status` (`reported`/`missing_file`/`not_yet`/`before_first_sale`, `bigquery.ACTUAL_STATUSES`), `output_built_at`); actuals rows carry `sku`; `availability` `{sku: {tier: {is_available, unavailable_reason, has_initial, has_previous}}}`, `tiers`, `freshness.by_tier` + `freshness.output_built_at` (`forecast_service.forecast_availability` / `forecast_tiers_from_rows` / `forecast_stamps_from_rows`). Never add rows of different tiers: `forecast_units`, `forecast_summary` and every `getForecastView` caller but /forecast use Tier 0. The Forecast page's output-table reads go through `bigquery.cached_read` (`forecast_cache`: single-flight, kept until `output_built_at` changes or 10 min; no time limit) | `forecastApi.getForecastView` (`tier`, default Tier 0; `ALL_TIERS` on /forecast), `utils/forecastTiers.js` (`forecastModelView`: the selected tier for one customer and All customers alike, never an average), `utils/forecastActuals.js` (missing / partial / real-0 actuals from `actual_status`, Actual line joins, Initial/Previous coverage per customer x SKU), `FORECAST_TIER_OPTIONS` / `UNAVAILABLE_REASON_TEXT` in `utils/forecastLineText.js`, `ForecastFilters` Model field, `ForecastConfidenceDetails.jsx`, `?tier=` on `app/forecast/page.js` |
+| `GET /api/scenario/tier0-breakdown` (`scenario/tier0_breakdown.get_tier0_breakdown` → `tier0_split.month_split`: `rows[]` of `customer_id`, `sku`, `month_year`, `latest_month`, `tier0`, `run_rate`, `baseline`, `carried`, `base_method`, `last_year`/`recent[]` {`month`, `units`, `uplift_pct`, `promotions[]` {`mechanic`, `share`, `uplift_pct`, `level`}, `level`, `missing`}, `carried_level`, `official` {`planned`, `uplift_pct`, `promotions`, `level`, `missing`}); mechanic discounts by month (`promo_uplifts.mechanic_discount_lookup`, migration 021 `effective_from`) | `scenarioTier0BreakdownApi.getTier0Breakdown`, `hooks/useTier0Breakdown.js`, `utils/scenarioTier0Split.js` (`tier0SplitIndex`, `officialCells`, `promotionCells`, `monthSplit`), `scenarioComposition.js`, `FrozenBaselinePanel.jsx` (Tier0Card) |
 | `GET /api/inventory/customers/{id}/sell-in-outlook?block_id=` (`get_sell_in_outlook(block_ids=)`: per month `sell_in_with_blocks` / `sell_out_with_blocks`, top-level `building_blocks[]` of `block_id`, `name`, `sell_out_change`); `scenario/block_effects` rules = `scenarioEngine.js` (`upliftDeltaCells`, `unitsDeltaCells`, `floorAtZero`) | `inventoryApi.getSellInOutlook` (`blockIds`), `useSellInOutlook`, `hooks/useSavedBuildingBlocks.js`, `utils/buildingBlocksOverlay.js`, `BuildingBlocksOverlay.jsx`, `SellInOutlookChart.jsx` (`showBlocks`) |
 | `GET /api/forecast/initial-status` (`forecast_service.get_initial_status`: `years[]` of `forecast_year`, `lock_at`, `refreshed_at`, `locked`, from `aire_forecasting_initial_meta`; best effort, `[]` on error) | `forecastApi.getForecastInitialStatus`, `hooks/useForecastInitialStatus.js`, `utils/forecastLineText.js` (`initialStatusNotes`), `ForecastLegendFooter.jsx` |
 | `GET /api/forecast/refresh-status` (`forecast_refresh_worker.refresh_status_best_effort`: `{ updating, since }` from pending/running `forecast_refresh_requests`; false on error or while event refresh is off) | `forecastApi.getForecastRefreshStatus`, `hooks/useForecastRefreshStatus.js` (60 s re-check only while updating), `utils/forecastLineText.js` (`forecastUpdatingBadge`, `nextStatusCheckDelay`), `ForecastLegendFooter.jsx` |

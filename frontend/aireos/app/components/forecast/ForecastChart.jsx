@@ -183,24 +183,41 @@ const SCENARIO_ITEM_GROUPS = [
   { source: 'promotions', title: 'Planned promotions added' },
 ];
 
-// Units a decrease takes away: diagonal lines, so the band reads as taken
-// away rather than added.
-const COMPOSITION_HATCH_ID = 'scenario-decrease-hatch';
+// Units a layer takes away: diagonal lines, so the band reads as taken
+// away rather than added. One pattern per hatched layer, in its colour.
+function compositionHatchId(key) {
+  return `scenario-hatch-${key}`;
+}
 
-function CompositionHatch({ color }) {
+function CompositionHatches({ layers }) {
   return (
     <defs>
-      <pattern id={COMPOSITION_HATCH_ID} width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-        <rect width="6" height="6" fill={color} fillOpacity={0.08} />
-        <line x1="0" y1="0" x2="0" y2="6" stroke={color} strokeWidth="2" strokeOpacity={0.55} />
-      </pattern>
+      {layers
+        .filter((layer) => layer.hatch)
+        .map((layer) => (
+          <pattern
+            key={layer.key}
+            id={compositionHatchId(layer.key)}
+            width="6"
+            height="6"
+            patternUnits="userSpaceOnUse"
+            patternTransform="rotate(45)"
+          >
+            <rect width="6" height="6" fill={layer.color} fillOpacity={0.08} />
+            <line x1="0" y1="0" x2="0" y2="6" stroke={layer.color} strokeWidth="2" strokeOpacity={0.55} />
+          </pattern>
+        ))}
     </defs>
   );
 }
 
-// The hover card's breakdown, in the order the chart stacks it.
+// The hover card's breakdown, in the order the chart stacks it; each row is
+// that source's change on Tier 0. The baseline and last year's promotions
+// are in the Breakdown tab, so the card stays short. Official promotions
+// show only in months they change.
 const SCENARIO_BREAKDOWN_ROWS = [
-  { key: 'tier0', label: 'Tier 0 (includes past promotions)' },
+  { key: 'tier0', label: 'Tier 0' },
+  { key: 'official', label: 'Official promotions', onlyWhenSet: true },
   { key: 'growth', label: 'Growth' },
   { key: 'blocks', label: 'Building blocks' },
   { key: 'promotions', label: 'Scenario promotions' },
@@ -274,7 +291,7 @@ function ScenarioPointDetails({ point, items, anchor, formatValue, className }) 
     <div className={cn('space-y-0.5 text-[11px] tabular-nums', className)}>
       {breakdown ? (
         <>
-          {SCENARIO_BREAKDOWN_ROWS.map((row) => (
+          {SCENARIO_BREAKDOWN_ROWS.filter((row) => !row.onlyWhenSet || Math.round(breakdown[row.key] ?? 0)).map((row) => (
             <div key={row.key} className="flex justify-between gap-3">
               <span>{row.label}</span>
               <span className={row.key === 'tier0' ? 'font-semibold' : 'font-semibold text-scenario-ink'}>
@@ -300,7 +317,7 @@ function ScenarioPointDetails({ point, items, anchor, formatValue, className }) 
         </div>
       )}
       {breakdown &&
-      Math.round(breakdown.tier0 + breakdown.growth + breakdown.blocks + breakdown.promotions) !==
+      Math.round(breakdown.tier0 + (breakdown.official ?? 0) + breakdown.growth + breakdown.blocks + breakdown.promotions) !==
         Math.round(breakdown.simulated) ? (
         <p className="pt-0.5 text-deep-violet-blue/60">
           Some SKUs would fall below 0 and are kept at 0, so Simulated is more than the sum.
@@ -667,11 +684,7 @@ export default function ForecastChart({
                   margin={{ top: 8, right: 18, left: 0, bottom: 28 }}
                 >
                   <OverlayDefs bands={overlayBands} />
-                  {showComposition ? (
-                    <CompositionHatch
-                      color={scenario.composition.find((layer) => layer.hatch)?.color ?? simulatedSeries?.color}
-                    />
-                  ) : null}
+                  {showComposition ? <CompositionHatches layers={scenario.composition} /> : null}
                   <XAxis
                     dataKey="x"
                     type="number"
@@ -800,7 +813,7 @@ export default function ForecastChart({
                           type="monotone"
                           stackId="scenario-composition"
                           stroke="none"
-                          fill={layer.hatch ? `url(#${COMPOSITION_HATCH_ID})` : layer.color}
+                          fill={layer.hatch ? `url(#${compositionHatchId(layer.key)})` : layer.color}
                           fillOpacity={layer.hatch ? 1 : (layer.opacity ?? 0.3)}
                           tooltipType="none"
                           legendType="none"

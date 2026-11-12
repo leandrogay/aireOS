@@ -49,7 +49,8 @@
 
 import { PROMO_OVERLAY_TYPES } from '@/app/utils/forecastView';
 import { levelLabel } from '@/app/utils/promoUpliftCalc';
-import { upliftDeltaCells } from '@/app/utils/scenarioEngine';
+import { itemRows } from '@/app/utils/scenarioEngine';
+import { promotionCells } from '@/app/utils/scenarioTier0Split';
 import { liveReferences, liveUplift, liveUpliftValues, weakestLevel } from '@/app/utils/scenarioLiveUplifts';
 
 export const MIN_OVERRIDE_PCT = -20;
@@ -514,23 +515,17 @@ export const scenarioPromotionsSource = {
   // Rows are taken one product and month at a time, so each product takes
   // its own value for the anchor version in effect that month.
   // A promotion running part of a month counts for that share of it
-  // (dayShare), the same day-weighting the anchor uses.
-  deltas(promotions, rows) {
-    const groups = new Map();
-    for (const row of rows) {
-      const key = `${row.product_name}|${row.month_year}`;
-      if (!groups.has(key)) groups.set(key, { product: row.product_name, month: row.month_year, rows: [] });
-      groups.get(key).rows.push(row);
-    }
-    return promotions.flatMap((promotion) =>
-      [...groups.values()].flatMap((group) =>
-        upliftDeltaCells(
-          group.rows,
-          promotion,
-          effectiveUpliftPct(promotion, group.product, group.month) * dayShare(promotion, group.month),
-          'promotions'
-        )
-      )
+  // (dayShare), the same day-weighting the anchor uses. Worked out on Tier
+  // 0's baseline, replacing what Tier 0 carries where nothing official is
+  // planned (scenarioTier0Split.promotionCells).
+  deltas(promotions, rows, view) {
+    return promotionCells(
+      promotions,
+      view?.tier0Split ?? null,
+      (promotion) => itemRows(rows, promotion),
+      (promotion, row) =>
+        effectiveUpliftPct(promotion, row.product_name, row.month_year) * dayShare(promotion, row.month_year),
+      (promotion, month) => dayShare(promotion, month)
     );
   },
   describe(promotion) {

@@ -2,9 +2,11 @@
 // contract). Shared file: change it only in a small commit of its own.
 import { scenarioBlocksSource, scenarioGrowthSource } from '@/app/utils/scenarioBlocks';
 import { scenarioPromotionsSource } from '@/app/utils/scenarioPromotions';
+import { scenarioOfficialSource } from '@/app/utils/scenarioTier0Split';
 
-// Growth first: it is the bottom layer of what the scenario adds to Tier 0.
-export const SCENARIO_SOURCES = [scenarioGrowthSource, scenarioBlocksSource, scenarioPromotionsSource];
+// Official promotions first: they replace what Tier 0 carries, under what the
+// scenario adds. Then growth, the bottom layer of what the scenario adds.
+export const SCENARIO_SOURCES = [scenarioOfficialSource, scenarioGrowthSource, scenarioBlocksSource, scenarioPromotionsSource];
 
 /**
  * The source that owns a delta cell or item, by its key.
