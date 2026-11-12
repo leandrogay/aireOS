@@ -2,6 +2,8 @@
 
 import { Bar, BarChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from 'recharts';
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip } from '@/components/ui/chart';
+import ChartFrame, { CHART_TOOLTIP_CLASS } from '@/components/ui/ChartFrame';
+import { cn } from '@/lib/utils';
 import { hasEstimate } from '@/app/utils/estimatedRevenue';
 import { trendChartKind } from '@/app/utils/chartKind';
 import { changePct } from '@/app/utils/periodComparison';
@@ -93,7 +95,8 @@ function TrendTooltip({ active, payload: shown, granularity, metric, formats = n
   const stacked = payload.length > 1;
 
   return (
-    <div className="grid min-w-32 items-start gap-1.5 rounded-lg border border-lavander bg-white px-2.5 py-1.5 text-xs shadow-xl">
+    // ChartTooltipContent's box in the shared tooltip look; the rows are this chart's own.
+    <div className={cn('grid min-w-32 items-start gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs shadow-xl', CHART_TOOLTIP_CLASS)}>
       <div className="font-medium text-deep-violet-blue">{period.exactLabel}</div>
       <div className="grid gap-1.5">
         {payload.map((item) => (
@@ -185,54 +188,60 @@ export function FormatTrendChart({ periodByFormat, periodTotal, granularity, met
   if (kind === 'lines') {
     // One line, so no legend: the tooltip names the formats.
     return (
-      <ChartContainer config={{ [TOTAL_KEY]: { label: 'Total', color: TOTAL_LINE_COLOR } }} className={CHART_SIZE_CLASS}>
-        <LineChart accessibilityLayer data={transition.rows} margin={margin}>
-          <CartesianGrid vertical={false} />
-          <XAxis dataKey={mobile ? 'periodStart' : 'displayLabel'} {...axisProps} padding={{ left: 24, right: 24 }} />
-          {yAxis}
-          <MonthAxis groups={monthGroups} />
-          <ChartTooltip
-            content={<TrendTooltip granularity={granularity} metric={metric} formats={formats} />}
-            wrapperStyle={{ zIndex: 10 }}
-          />
-          <Line
-            dataKey={TOTAL_KEY}
-            name="Total"
-            type="linear"
-            stroke={`var(--color-${TOTAL_KEY})`}
-            strokeWidth={2}
-            dot={chartData.length > MAX_DOTTED_POINTS ? false : { r: 2.5 }}
-            activeDot={{ r: 4 }}
-            {...transition.seriesAnimation}
-          />
-        </LineChart>
-      </ChartContainer>
+      <ChartFrame fill>
+        <ChartContainer config={{ [TOTAL_KEY]: { label: 'Total', color: TOTAL_LINE_COLOR } }} className={CHART_SIZE_CLASS}>
+          <LineChart accessibilityLayer data={transition.rows} margin={margin}>
+            <CartesianGrid vertical={false} />
+            <XAxis dataKey={mobile ? 'periodStart' : 'displayLabel'} {...axisProps} padding={{ left: 24, right: 24 }} />
+            {yAxis}
+            <MonthAxis groups={monthGroups} />
+            <ChartTooltip
+              content={<TrendTooltip granularity={granularity} metric={metric} formats={formats} />}
+              wrapperStyle={{ zIndex: 10 }}
+            />
+            <Line
+              dataKey={TOTAL_KEY}
+              name="Total"
+              type="linear"
+              stroke={`var(--color-${TOTAL_KEY})`}
+              strokeWidth={2}
+              dot={chartData.length > MAX_DOTTED_POINTS ? false : { r: 2.5 }}
+              activeDot={{ r: 4 }}
+              {...transition.seriesAnimation}
+            />
+          </LineChart>
+        </ChartContainer>
+      </ChartFrame>
     );
   }
 
   return (
-    <ChartContainer config={chartConfig} className={CHART_SIZE_CLASS}>
-      {/* stackOffset="sign": a negative segment (returns) is drawn down from 0,
-          not on top of the positive ones (chartDataRange measures it that way). */}
-      <BarChart accessibilityLayer data={transition.rows} margin={margin} stackOffset="sign">
-        <CartesianGrid vertical={false} />
-        <XAxis dataKey={mobile ? 'periodStart' : 'displayLabel'} {...axisProps} />
-        {yAxis}
-        <MonthAxis groups={monthGroups} />
-        {tooltip}
-        {!unnamedOnly && <ChartLegend content={<ChartLegendContent />} />}
-        {formats.map((format) => (
-          <Bar
-            key={format}
-            dataKey={format}
-            stackId="format"
-            fill={`var(--color-${format})`}
-            maxBarSize={MAX_BAR_SIZE}
-            {...BAR_ANIMATION}
-            {...transition.seriesAnimation}
-          />
-        ))}
-      </BarChart>
-    </ChartContainer>
+    <ChartFrame fill>
+      <ChartContainer config={chartConfig} className={CHART_SIZE_CLASS}>
+        {/* stackOffset="sign": a negative segment (returns) is drawn down from 0,
+            not on top of the positive ones (chartDataRange measures it that way). */}
+        <BarChart accessibilityLayer data={transition.rows} margin={margin} stackOffset="sign">
+          <CartesianGrid vertical={false} />
+          <XAxis dataKey={mobile ? 'periodStart' : 'displayLabel'} {...axisProps} />
+          {yAxis}
+          <MonthAxis groups={monthGroups} />
+          {tooltip}
+          {!unnamedOnly && <ChartLegend content={<ChartLegendContent />} />}
+          {formats.map((format, index) => (
+            <Bar
+              key={format}
+              dataKey={format}
+              stackId="format"
+              fill={`var(--color-${format})`}
+              // Only the top segment of the stack is rounded, like the Inventory bars.
+              radius={index === formats.length - 1 ? [10, 10, 0, 0] : 0}
+              maxBarSize={MAX_BAR_SIZE}
+              {...BAR_ANIMATION}
+              {...transition.seriesAnimation}
+            />
+          ))}
+        </BarChart>
+      </ChartContainer>
+    </ChartFrame>
   );
 }

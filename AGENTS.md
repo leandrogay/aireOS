@@ -116,8 +116,13 @@ calendar, skeleton) plus the team kits:
 - **Charts:** `ChartCard` (glass shell, optional `title`/`detail`/`actions` header via `TableCardHeader`) around a
   `ChartFrame` (the solid chart panel, with an optional `toolbar` row for plot controls such as zoom; it turns
   `ChartContainer`'s own panel off); `CHART_FRAME_CLASS` goes on the chart's skeleton, `CHART_TOOLTIP_CLASS`
-  on `ChartTooltipContent`. Inventory uses them; the Dashboard and `ForecastChart` are listed as not migrated in
-  `app/testing`'s Charts gallery.
+  on `ChartTooltipContent` (or on a custom tooltip's box: the Dashboard's). `fill` on both lets a chart grow to its
+  card's height (the Dashboard trend card). Every page chart uses them: Inventory, `ForecastChart` (Forecast,
+  Scenario) and the Dashboard; the assistant's chat chart is left as is.
+- **Cards:** outer cards are glass (`glassSurfaceClass`): `ChartCard` (charts), `TableCard` (tables), `FilterBar`
+  (list filters), `MobileRecordCard` (a row on a phone), `CardSkeleton` (loading), and `ui/card`'s `Card` as the
+  fallback; feature shells `inventory/InventoryFilterCard`, `mappings/ReviewSection`, `dashboard/GlassPanel`.
+  `app/testing`'s Cards gallery shows them all and lists the hand-rolled ones.
 - **Filters:** `FilterBar` holding `FilterSelect` / `MultiSelectDropdown` / `PriceRangeFilter`
   (closed look from `filterControl.js`).
 - **Loading:** `PageSkeleton` + `CardSkeleton`, `ChartSkeletonFrame` → `BarChartSkeleton` /
@@ -467,7 +472,7 @@ Migrate these only when you are already in the file for other work (CLAUDE.md §
   `dashboard/DashboardFilters`, `dashboard/SkuRanking`, `assistant/AssistantMessage`.
 - **Router logic.** `mappings.py` reads GCS (`storage.download_json`, `list_mapping_fingerprints`,
   `download_bytes`) to build review packets; that belongs in a service. Don't add a third router like it.
-- **Oversized components** (over ~300 lines): `ForecastChart` (828), `ui/DateRangePicker` (804),
+- **Oversized components** (over ~300 lines): `ForecastChart` (812), `ui/DateRangePicker` (804),
   `PromotionForm` (683), `ScenarioBuilder` (590), `app/dashboard/page.js` (525),
   `AssistantMessage` (491), `MappingReviewPanel` (538), `app/promotions/page.js` (382), `SkuForm` (474);
   360-420: `SkuRanking` (385), `FieldTable`, `UploadProvider`, `PromotionsSection`, `CustomerStep` (413), `StepSettings`,
