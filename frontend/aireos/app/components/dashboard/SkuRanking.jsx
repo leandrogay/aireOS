@@ -36,8 +36,9 @@ function changeColorClass(pct) {
 }
 
 /**
- * The ranking's columns (ui/TableGrid). Volume and Value sort the rows
- * (`metric`); Change only shows with a "Compare to" baseline.
+ * The ranking's columns (ui/TableGrid). Name, Volume and Value sort the rows
+ * (`metric`; products by line, then size, in utils/salesRanking.js); Change
+ * only shows with a "Compare to" baseline.
  *
  * @param {{ showCustomers: boolean, showChange: boolean, compareShort: string }} options
  * @returns {object[]}
@@ -45,7 +46,7 @@ function changeColorClass(pct) {
 function rankingColumns({ showCustomers, showChange, compareShort }) {
   return [
     { key: 'rank', label: 'Rank', width: '4.5rem' },
-    { key: 'name', label: showCustomers ? 'Customer' : 'Product' },
+    { key: 'name', label: showCustomers ? 'Customer' : 'Product', sortField: 'name' },
     { key: 'volume', label: 'Volume', width: '7rem', align: 'right', sortField: 'volume' },
     { key: 'value', label: 'Value', width: '8.5rem', align: 'right', sortField: 'value' },
     showChange && { key: 'change', label: `Change ${compareShort}`, width: '8rem', align: 'right' },
@@ -181,12 +182,12 @@ export default function SkuRanking({
   const tableError = noCustomers ? null : (showCustomers ? customerRowsError : error);
   const channelLabel = mode === 'online' ? 'Online' : 'Offline';
 
-  // Pressing the sorted column flips its order; the other column starts
-  // highest first.
+  // Pressing the sorted column flips its order; another column starts
+  // highest first, or A to Z (smallest size first) for the name.
   function clickSort(columnMetric) {
     if (metric !== columnMetric) {
       setMetric(columnMetric);
-      setOrder('desc');
+      setOrder(columnMetric === 'name' ? 'asc' : 'desc');
       return;
     }
     setOrder(order === 'desc' ? 'asc' : 'desc');
@@ -198,6 +199,8 @@ export default function SkuRanking({
     { value: 'value-asc', label: 'Value: lowest first' },
     { value: 'volume-desc', label: 'Volume: highest first' },
     { value: 'volume-asc', label: 'Volume: lowest first' },
+    { value: 'name-asc', label: showCustomers ? 'Customer: A to Z' : 'Product: smallest size first' },
+    { value: 'name-desc', label: showCustomers ? 'Customer: Z to A' : 'Product: largest size first' },
   ];
 
   function changeMobileSort(value) {

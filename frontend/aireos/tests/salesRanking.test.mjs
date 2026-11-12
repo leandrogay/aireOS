@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
 import { customerPalette } from '../app/utils/customerColors.js';
-import { rankCustomers, rankSkus } from '../app/utils/salesRanking.js';
+import { compareProductNames, rankCustomers, rankSkus } from '../app/utils/salesRanking.js';
 
 const SKUS = [
   { sku: 'A', product_name: 'Tape M', volume: 10, value: 300 },
@@ -34,6 +34,43 @@ describe('rankSkus', () => {
     const input = SKUS.map((row) => ({ ...row }));
     rankSkus(input, 'volume', 'desc');
     assert.deepEqual(input, SKUS);
+  });
+});
+
+describe('sorting by product name', () => {
+  const PANTS = [
+    { sku: '1', product_name: 'Aire Ultra Pants XL', volume: 1, value: 1 },
+    { sku: '2', product_name: 'Aire Adult Pants L', volume: 1, value: 1 },
+    { sku: '3', product_name: 'Aire Ultra Pants S/M', volume: 1, value: 1 },
+    { sku: '4', product_name: 'Aire Adult Pants XXL', volume: 1, value: 1 },
+    { sku: '5', product_name: 'Aire Adult Pants S/M', volume: 1, value: 1 },
+    { sku: '6', product_name: 'Aire Adult Pants M', volume: 1, value: 1 },
+  ];
+
+  test('asc groups each product line, sizes smallest to largest', () => {
+    assert.deepEqual(rankSkus(PANTS, 'name', 'asc').map((row) => row.product_name), [
+      'Aire Adult Pants S/M',
+      'Aire Adult Pants M',
+      'Aire Adult Pants L',
+      'Aire Adult Pants XXL',
+      'Aire Ultra Pants S/M',
+      'Aire Ultra Pants XL',
+    ]);
+  });
+
+  test('desc is the exact reverse', () => {
+    const asc = rankSkus(PANTS, 'name', 'asc').map((row) => row.sku);
+    assert.deepEqual(rankSkus(PANTS, 'name', 'desc').map((row) => row.sku), [...asc].reverse());
+  });
+
+  test('follows the full size scale, XXS to XXL', () => {
+    const sizes = ['XXL', 'M/L', 'XS', 'S', 'XL', 'M', 'XXS', 'L', 'S/M'];
+    const sorted = sizes.map((size) => `Tape ${size}`).sort(compareProductNames);
+    assert.deepEqual(sorted.map((name) => name.slice(5)), ['XXS', 'XS', 'S', 'S/M', 'M', 'M/L', 'L', 'XL', 'XXL']);
+  });
+
+  test('a name without a known size sorts before the sized ones of its line', () => {
+    assert.ok(compareProductNames('Tape', 'Tape S') < 0);
   });
 });
 
