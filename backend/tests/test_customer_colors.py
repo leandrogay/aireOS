@@ -75,14 +75,6 @@ def test_a_choice_free_of_other_customers_is_accepted():
     assert color_problem("#7A70B8", {"NHG": "#2E7BA6"}) is None
 
 
-def test_a_colour_too_light_for_the_charts_is_refused():
-    assert "too light" in color_problem("#F0F0F0", {})
-
-
-def test_a_forecast_line_colour_is_refused():
-    assert "forecast line" in color_problem("#0D9488", {})
-
-
 def test_a_colour_like_another_customers_is_refused_naming_them():
     assert color_problem("#7B70B8", {"FairPrice": "#7A70B8"}) == (
         "This colour looks too much like FairPrice's. Pick another one."

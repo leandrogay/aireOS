@@ -521,9 +521,7 @@ def update_customer_color(
 ) -> dict | None:
     """
     Sets a customer's chart colour (#RRGGBB, uppercase), refused with
-    CustomerColorError when it would not read on the charts, looks like a
-    forecast line or looks like another customer's colour. None when there
-    is no such customer.
+    CustomerColorError when it looks like another customer's colour. None when there is no such customer.
     """
 
     with _get_engine().begin() as conn:

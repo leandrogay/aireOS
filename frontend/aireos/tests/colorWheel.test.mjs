@@ -5,7 +5,6 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
 import {
-  clampLightness,
   hexToHsl,
   hslToHex,
   hueSatToPoint,
@@ -47,13 +46,5 @@ describe('wheel points', () => {
   test('a hue and saturation map back to the same point', () => {
     const point = hueSatToPoint({ h: 90, s: 100 }, 50);
     assert.ok(Math.abs(point.x - 100) < 1e-9 && Math.abs(point.y - 50) < 1e-9);
-  });
-});
-
-describe('clampLightness', () => {
-  test('keeps the slider inside the range a chart colour may use', () => {
-    assert.equal(clampLightness(90), 60);
-    assert.equal(clampLightness(5), 15);
-    assert.equal(clampLightness(40), 40);
   });
 });

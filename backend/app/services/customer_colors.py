@@ -4,11 +4,13 @@ and when a chosen one is refused. Pure, no I/O.
 Every customer has one colour, stored on its row (customers.color, migration
 018) and used by every chart (frontend utils/customerColors.js). Stored, not
 derived, so adding, renaming or deleting a customer never moves anyone else's
-colour. A colour must:
-  - read on the white chart panel (3:1 contrast, the WCAG floor for graphics);
-  - not look like a Forecast / Scenario / Sell-in Outlook line, so a customer
-    is never mistaken for Current, Previous or Initial;
-  - not look like another customer's.
+colour. No two customers may have colours that look alike.
+A colour picked automatically for a new customer also reads on the white
+chart panel (3:1 contrast, the WCAG floor for graphics) and keeps clear of the
+Forecast / Scenario / Sell-in Outlook line colours, so a customer is never
+mistaken for Current, Previous or Initial. A colour chosen on the Customers
+page is not held to those: whoever picks it can see the charts and change it
+if it is too light, too dark or clashes.
 "Look like" is CIE76 colour difference (Delta E): about 2 is just noticeable,
 25 is clearly a different colour at a glance.
 """
@@ -148,10 +150,6 @@ def color_problem(color: str, other_customers: dict[str, str]) -> str | None:
     """Why `color` (#RRGGBB) can't be a customer's colour, as a sentence for
     the Customers page, or None when it can. `other_customers` maps every other
     customer's name to its colour."""
-    if contrast_on_white(color) < MIN_CONTRAST:
-        return "This colour is too light to read on the charts. Pick a darker one."
-    if any(color_distance(color, line) < MIN_LINE_DISTANCE for line in LINE_COLORS):
-        return "This colour looks too much like a forecast line. Pick another one."
     for name, other in other_customers.items():
         if other and color_distance(color, other) < MIN_CUSTOMER_DISTANCE:
             return f"This colour looks too much like {name}'s. Pick another one."

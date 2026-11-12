@@ -3,8 +3,6 @@
 import { useRef } from 'react';
 
 import {
-  MAX_LIGHTNESS,
-  MIN_LIGHTNESS,
   hslToHex,
   hueSatToPoint,
   pointToHueSat,
@@ -70,8 +68,11 @@ export default function ColorWheel({ value, onChange }) {
           if (event.currentTarget.hasPointerCapture(event.pointerId)) pickAt(event);
         }}
         onKeyDown={handleKeyDown}
-        className="relative shrink-0 cursor-crosshair touch-none rounded-full border border-deep-violet-blue/15 outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-        style={{ width: SIZE, height: SIZE, background: wheelBackground(value.l) }}
+        // No border: the gradient showed through a translucent border and
+        // frayed the rim. A 1px shadow outlines it instead, and the focus ring
+        // sits outside it (offset) rather than over the colours.
+        className="relative shrink-0 cursor-crosshair touch-none rounded-full shadow-[0_0_0_1px_rgba(58,67,105,0.15)] outline-none focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-offset-2"
+        style={{ width: SIZE, height: SIZE, background: wheelBackground(value.l), backgroundClip: 'padding-box' }}
       >
         <span
           aria-hidden="true"
@@ -88,8 +89,8 @@ export default function ColorWheel({ value, onChange }) {
           <input
             id="color-wheel-lightness"
             type="range"
-            min={MIN_LIGHTNESS}
-            max={MAX_LIGHTNESS}
+            min={0}
+            max={100}
             value={value.l}
             onChange={(event) => onChange({ ...value, l: Number(event.target.value) })}
             className="w-full cursor-pointer accent-deep-violet-blue"

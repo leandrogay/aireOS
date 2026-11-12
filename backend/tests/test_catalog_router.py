@@ -237,7 +237,7 @@ def test_a_colour_that_is_not_hex_is_422_without_calling_the_service(monkeypatch
 
 
 def test_a_refused_colour_is_409_with_the_reason(monkeypatch):
-    reason = "This colour looks too much like a forecast line. Pick another one."
+    reason = "This colour looks too much like FairPrice's. Pick another one."
     monkeypatch.setattr(customer_service, "update_customer_color", _raises(customer_service.CustomerColorError(reason)))
 
     response = client.put("/api/catalog/customers/3/color", json={"color": "#0D9488"})

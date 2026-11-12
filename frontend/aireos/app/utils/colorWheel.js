@@ -3,11 +3,6 @@
 // to full at the rim, and lightness is a slider beside it. Pure functions, no
 // React. Colours cross the API as #RRGGBB (backend CustomerColorUpdate).
 
-// Customer colours must read on the white chart panel (backend
-// customer_colors.MIN_CONTRAST), so the slider stops short of light colours.
-export const MIN_LIGHTNESS = 15;
-export const MAX_LIGHTNESS = 60;
-
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
 /**
@@ -89,15 +84,4 @@ export function hueSatToPoint({ h, s }, radius) {
 export function wheelBackground(lightness) {
   const hues = Array.from({ length: 7 }, (_, i) => `hsl(${i * 60} 100% ${lightness}%)`).join(', ');
   return `radial-gradient(closest-side, hsl(0 0% ${lightness}%), transparent), conic-gradient(${hues})`;
-}
-
-/**
- * The lightness the slider can show: the colour's own, held inside the range
- * a customer colour may use.
- *
- * @param {number} lightness
- * @returns {number}
- */
-export function clampLightness(lightness) {
-  return clamp(lightness, MIN_LIGHTNESS, MAX_LIGHTNESS);
 }

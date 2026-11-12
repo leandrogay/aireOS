@@ -6,7 +6,7 @@ import { CircleAlert, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { errorClass, hintClass, labelClass, primaryButtonClass, secondaryButtonClass } from '@/components/ui/formStyles';
-import { clampLightness, hexToHsl, hslToHex } from '@/app/utils/colorWheel';
+import { hexToHsl, hslToHex } from '@/app/utils/colorWheel';
 import { customerLabel } from '@/app/utils/retailerLabel';
 import { cn } from '@/lib/utils';
 
@@ -21,8 +21,7 @@ const START_COLOR = '#7A70B8';
  * parent keys it), so it always starts on the saved colour.
  */
 function ColorForm({ customer, customers, onSubmit, onCancel, onPendingChange }) {
-  const saved = hexToHsl(customer.color ?? START_COLOR);
-  const [hsl, setHsl] = useState({ ...saved, l: clampLightness(saved.l) });
+  const [hsl, setHsl] = useState(() => hexToHsl(customer.color ?? START_COLOR));
   // The wheel works in whole degrees and percents, so the saved colour may
   // come back a step off: only a colour the user moved counts as a change.
   const [moved, setMoved] = useState(false);
@@ -52,7 +51,7 @@ function ColorForm({ customer, customers, onSubmit, onCancel, onPendingChange })
       await onSubmit(picked);
       onPendingChange(false);
     } catch (err) {
-      // e.g. a 409: too light, or looks like a forecast line or another customer's colour.
+      // e.g. a 409: looks like another customer's colour.
       setRequestError(err.message);
       setPending(false);
     }
@@ -113,7 +112,7 @@ function ColorForm({ customer, customers, onSubmit, onCancel, onPendingChange })
             </p>
           ) : (
             <p className={cn(hintClass, 'mt-0')}>
-              Pick a colour that stands apart from the other customers and the forecast lines.
+              Pick a colour that stands apart from the other customers.
             </p>
           )}
         </div>
@@ -135,8 +134,7 @@ function ColorForm({ customer, customers, onSubmit, onCancel, onPendingChange })
 /**
  * Pick a customer's chart colour on a colour wheel (ColorWheel), with the
  * other customers' colours listed to keep clear of. The backend checks the
- * pick (customer_colors.color_problem: too light, like a forecast line, like
- * another customer's) and its 409 sentence is shown under the wheel. Cancel,
+ * pick (customer_colors.color_problem: too like another customer's) and its 409 sentence is shown under the wheel. Cancel,
  * Escape and the backdrop close it with nothing sent, except while a save is
  * in flight.
  *
