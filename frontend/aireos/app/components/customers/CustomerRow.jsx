@@ -5,7 +5,6 @@ import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import ExpandableRow from '@/components/ui/ExpandableRow';
 import RowActions from '@/components/ui/RowActions';
-import { EXPANDED_ROW_INSET } from '@/components/ui/TableGrid';
 import { customerLabel } from '@/app/utils/retailerLabel';
 import { customerDeleteBlockReason, retailerBlockReason } from '@/app/utils/customerForm';
 
@@ -94,7 +93,9 @@ export default function CustomerRow({
       details={
         <div className="grid gap-2">
           {customer.retailers.length > 0 ? (
-            <RetailerTable retailers={customer.retailers} inset={EXPANDED_ROW_INSET} customerName={customer.customer_name} actionsFor={retailerActions} />
+            <div className="-mx-3">
+              <RetailerTable retailers={customer.retailers} inset="0.25rem + 1px" customerName={customer.customer_name} actionsFor={retailerActions} />
+            </div>
           ) : (
             <p className="text-sm text-deep-violet-blue/70">{name} has no retailers yet.</p>
           )}

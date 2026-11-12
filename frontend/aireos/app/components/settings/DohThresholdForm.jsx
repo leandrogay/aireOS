@@ -149,7 +149,7 @@ export default function DohThresholdForm({ settings, onSaved, onCancel }) {
         <DialogHeader className="pr-8">
           <div className="flex flex-wrap items-center gap-2">
             <DialogTitle className="font-serif text-xl font-normal leading-tight text-deep-violet-blue">
-              Edit DOH thresholds — {customerLabel(settings.customer_name)}
+              Edit DOH thresholds for {customerLabel(settings.customer_name)}
             </DialogTitle>
             <span className="rounded-full border border-violet bg-lavander px-2.5 py-0.5 text-[11px] font-medium text-deep-violet-blue">
               {settings.is_global_default ? 'Global Default' : 'Custom thresholds'}
@@ -234,9 +234,9 @@ export default function DohThresholdForm({ settings, onSaved, onCancel }) {
           </fieldset>
 
           {/* ==== Actions ==== */}
-          <DialogFooter className="mt-4 flex-wrap items-center gap-3 sm:justify-between">
+          <DialogFooter className="mt-4 flex-wrap items-center gap-3 sm:justify-start">
             <div className="flex min-w-0 flex-wrap items-center gap-3">
-              {/* Secondary action on the left, away from Save. */}
+              {/* Keep all actions together at the left of the footer. */}
               <Button
                 type="button"
                 variant="ghost"
