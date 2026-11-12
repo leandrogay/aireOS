@@ -4,6 +4,7 @@ import { Fragment } from 'react';
 import { AlertTriangle, CheckCircle2, CircleDashed, Info } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
+import Disclosure from '@/components/ui/Disclosure';
 import InfoTooltip from '@/components/ui/InfoTooltip';
 import ForecastInfo from '@/components/forecast/ForecastInfo';
 import SeriesDot from '@/components/forecast/SeriesDot';
@@ -22,7 +23,6 @@ import {
   rangePctText,
   smapeText,
 } from '@/app/utils/forecastLineText';
-import { CONFIDENCE_ROW_LIMIT } from '@/app/utils/forecastTiers';
 import { FORECAST_SERIES } from '@/app/utils/forecastView';
 import { customerLabel } from '@/app/utils/retailerLabel';
 
@@ -195,55 +195,145 @@ function SingleSkuConfidence({ entry, formatValue, dotSymbols, showPrevious, sho
   );
 }
 
-function RangeCell({ band, rangePct, label }) {
-  if (!band) return <span className="text-right text-deep-violet-blue/40">—</span>;
+// A figure column's cell: the band dot then the figure, left-aligned so the
+// dots line up down the column. No band (no forecast for that line) is a
+// dash in the same place.
+function FigureCell({ band, label, text, title }) {
+  if (!band) return <span className="text-deep-violet-blue/35">—</span>;
   return (
-    <span className="inline-flex items-center justify-end gap-1 tabular-nums">
+    <span className="inline-flex items-center gap-1.5 tabular-nums" title={title}>
       <BandDot band={band} label={label} />
-      {rangePctText(rangePct) || '—'}
+      {text}
     </span>
   );
 }
 
-function SkuConfidenceRows({ entries, showPrevious }) {
-  const shown = entries.slice(0, CONFIDENCE_ROW_LIMIT);
-  const more = entries.length - shown.length;
+// "14%"; the column header and the cell's title say it is sMAPE, so each row
+// doesn't repeat the word.
+function smapeFigure(smape) {
+  return smape == null ? 'n/a' : `${Math.round(smape)}%`;
+}
+
+// The rows grouped by customer, in the order each customer first
+// appears, so All customers names each customer once above its SKUs.
+function byCustomer(entries) {
+  const groups = new Map();
+  for (const entry of entries) {
+    if (!groups.has(entry.customerName)) groups.set(entry.customerName, []);
+    groups.get(entry.customerName).push(entry);
+  }
+  return [...groups.entries()];
+}
+
+// Up to this many rows are listed as they are; past it (All customers) the
+// list would be taller than the screen.
+const ROW_LIMIT = 10;
+
+/**
+ * Several SKUs' rows. Up to ROW_LIMIT they are all listed. Past it, the
+ * promo panel (which can be clicked) folds them into a "Show" dropdown that
+ * scrolls when open; the chart's own tooltip follows the pointer and can't
+ * be clicked, so it lists the first ROW_LIMIT and says how many are left.
+ */
+function SkuConfidenceRows({ entries, showPrevious, interactive }) {
+  if (entries.length <= ROW_LIMIT) return <SkuConfidenceTable entries={entries} showPrevious={showPrevious} />;
+  if (interactive) {
+    return (
+      <Disclosure
+        summary={<span className="tabular-nums">All {entries.length} SKUs</span>}
+        className="-mx-2"
+        summaryClassName="py-1"
+      >
+        <div className="max-h-64 overflow-y-auto px-2 pb-1">
+          <SkuConfidenceTable entries={entries} showPrevious={showPrevious} />
+        </div>
+      </Disclosure>
+    );
+  }
+  const more = entries.length - ROW_LIMIT;
+  return (
+    <>
+      <SkuConfidenceTable entries={entries.slice(0, ROW_LIMIT)} showPrevious={showPrevious} />
+      <p className="text-[10px] leading-snug text-deep-violet-blue/55">
+        {more} more: pick one customer or SKU to see them all.
+      </p>
+    </>
+  );
+}
+
+function SkuConfidenceTable({ entries, showPrevious }) {
   // All customers: the same SKU appears once per customer, so name them.
   const severalCustomers = new Set(entries.map((entry) => entry.customerName)).size > 1;
-  const nameOf = (entry) =>
-    severalCustomers ? `${entry.productName} · ${customerLabel(entry.customerName)}` : entry.productName;
   // A Previous column only when some SKU has one this month.
   const withPrevious = showPrevious && entries.some((entry) => entry.previous);
-  const columns = withPrevious ? 'grid-cols-[1fr_auto_auto_auto]' : 'grid-cols-[1fr_auto_auto]';
   const currentLabel = withPrevious ? CURRENT_SERIES.label : THIS_MONTH_LABEL;
+  // Likewise a Current column only when some SKU has one (a month the
+  // Current run doesn't reach would be a column of dashes), so the names
+  // get the room.
+  const withCurrent = entries.some((entry) => entry.hasCurrent);
+  const figureColumns = Number(withCurrent) + Number(withPrevious) + 1;
+  // One grid for the header and every row (each a subgrid), so a column is
+  // as wide as its widest cell and the figures and headers line up.
+  const columns = {
+    1: 'grid-cols-[minmax(0,1fr)_auto]',
+    2: 'grid-cols-[minmax(0,1fr)_auto_auto]',
+    3: 'grid-cols-[minmax(0,1fr)_auto_auto_auto]',
+  }[figureColumns];
+  // w-min lets a header wrap ("Past / accuracy") so the column is as wide
+  // as its figures, not its label; left-aligned over the dots.
+  const headClass = 'w-min';
+  const rowClass = 'col-span-full grid grid-cols-subgrid items-center';
   return (
-    <div className="space-y-0.5">
-      <div className={cn('grid gap-x-2 text-[9px] uppercase tracking-wide text-deep-violet-blue/45', columns)}>
-        <span />
-        <span>{currentLabel}</span>
-        {withPrevious ? <span>{PREVIOUS_SERIES.label}</span> : null}
-        <span>{PAST_ACCURACY_LABEL}</span>
-      </div>
-      {shown.map((entry) => (
-        <div key={entry.key ?? entry.sku} className={cn('grid items-center gap-x-2', columns)}>
-          <span className="truncate" title={nameOf(entry)}>
-            {nameOf(entry)}
-          </span>
-          <RangeCell band={entry.monthBand} rangePct={entry.monthRangePct} label={currentLabel} />
-          {withPrevious ? (
-            <RangeCell
-              band={entry.previous?.band}
-              rangePct={entry.previous?.rangePct}
-              label={PREVIOUS_SERIES.label}
-            />
-          ) : null}
-          <span className="inline-flex items-center justify-end gap-1 tabular-nums">
-            <BandDot band={entry.pastBand} label={PAST_ACCURACY_LABEL} />
-            {smapeText(entry.smape)}
+    <div>
+      <div className={cn('grid gap-x-2.5', columns)}>
+        <div
+          className={cn(
+            rowClass,
+            'mb-0.5 items-end border-b border-lavander pb-0.5 text-[9px] leading-tight font-medium uppercase tracking-wide text-deep-violet-blue/45'
+          )}
+        >
+          <span>SKU</span>
+          {withCurrent ? <span className={headClass}>{currentLabel}</span> : null}
+          {withPrevious ? <span className={headClass}>{PREVIOUS_SERIES.label}</span> : null}
+          <span className={headClass} title="Average % error (sMAPE) on recent months hidden from the model">
+            {PAST_ACCURACY_LABEL}
           </span>
         </div>
-      ))}
-      {more > 0 ? <p className="text-[10px] text-deep-violet-blue/55">+{more} more</p> : null}
+        {byCustomer(entries).map(([customerName, rows]) => (
+          <Fragment key={customerName}>
+            {severalCustomers ? (
+              <span className="col-span-full mt-1 truncate text-[10px] font-semibold text-deep-violet-blue/55 first:mt-0">
+                {customerLabel(customerName)}
+              </span>
+            ) : null}
+            {rows.map((entry) => (
+              // One line per SKU keeps the card short; a long name is cut off
+              // with the full name in its title.
+              <div key={entry.key ?? entry.sku} className={cn(rowClass, 'py-px')}>
+                <span className="truncate" title={entry.productName}>
+                  {entry.productName}
+                </span>
+                {withCurrent ? (
+                  <FigureCell band={entry.monthBand} label={currentLabel} text={rangePctText(entry.monthRangePct) || '—'} />
+                ) : null}
+                {withPrevious ? (
+                  <FigureCell
+                    band={entry.previous?.band}
+                    label={PREVIOUS_SERIES.label}
+                    text={rangePctText(entry.previous?.rangePct) || '—'}
+                  />
+                ) : null}
+                <FigureCell
+                  band={entry.pastBand}
+                  label={PAST_ACCURACY_LABEL}
+                  text={smapeFigure(entry.smape)}
+                  title={smapeText(entry.smape)}
+                />
+              </div>
+            ))}
+          </Fragment>
+        ))}
+      </div>
     </div>
   );
 }
@@ -256,8 +346,9 @@ function SkuConfidenceRows({ entries, showPrevious }) {
  * full; several get one compact row each and no summed range. Nothing on a
  * month with no forecast (`entries` empty).
  *
- * `interactive` adds the info icon: the chart's own tooltip follows the
- * pointer and can't be hovered, so only the promo panel shows it.
+ * `interactive` adds the info icon, and folds more than ROW_LIMIT rows into
+ * a dropdown: the chart's own tooltip follows the pointer and can't be
+ * hovered, so only the promo panel shows them.
  * `dotSymbols` (one SKU and customer on /forecast, where the Current and
  * Previous dots show their bands) puts each line's dot symbol and "Low
  * confidence" in place of its badge. `showPrevious` (the Previous line is on) adds Previous's
@@ -313,7 +404,7 @@ export default function ForecastConfidenceDetails({
           interactive={interactive}
         />
       ) : (
-        <SkuConfidenceRows entries={visible} showPrevious={showPrevious} />
+        <SkuConfidenceRows entries={visible} showPrevious={showPrevious} interactive={interactive} />
       )}
       {typicalPromo ? (
         <p className="flex items-start gap-0.5 text-[10px] leading-snug text-deep-violet-blue/55">

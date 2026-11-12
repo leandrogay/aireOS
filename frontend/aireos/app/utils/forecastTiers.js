@@ -185,5 +185,3 @@ export function confidenceEntry(
   };
 }
 
-// Rows past this in the several-SKU tooltip become "+N more".
-export const CONFIDENCE_ROW_LIMIT = 6;
