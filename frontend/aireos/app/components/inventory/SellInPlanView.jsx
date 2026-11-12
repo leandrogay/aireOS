@@ -11,6 +11,7 @@ import useSellInOutlook from '@/hooks/useSellInOutlook';
 import useSellInPlan from '@/hooks/useSellInPlan';
 import { blocksWithoutEffect, customerBlocks, pickedBlockIds } from '@/app/utils/buildingBlocksOverlay';
 import { formatDoh, formatMonth } from '@/app/utils/inventoryForm';
+import { customerColorById, customerPalette } from '@/app/utils/customerColors';
 import { customerLabel } from '@/app/utils/retailerLabel';
 
 import BuildingBlocksOverlay from './BuildingBlocksOverlay';
@@ -231,6 +232,7 @@ export default function SellInPlanView({ customers, skuOptions, refreshKey }) {
                 sellInComparison={outlook.data.last_month_sell_in_vs_forecast}
                 sellOutComparison={outlook.data.last_month_vs_forecast}
                 showBlocks={appliedBlockIds.length > 0}
+                customerColor={customerColorById(customerId, customerPalette(customers))}
               />
             )}
           </InventoryChartSlot>

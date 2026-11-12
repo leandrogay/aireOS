@@ -86,11 +86,11 @@ function TrendTooltip({ active, payload, metric, series }) {
  * since the bars would be too thin to read. Customers
  * without the active channel (NHG has no online sales) are left off.
  *
- * @param {{ customers: Array<object>, mode: 'offline' | 'online', metric: 'revenue' | 'units', granularity: 'week' | 'month', colorOrder: string[] }} props
+ * @param {{ customers: Array<object>, mode: 'offline' | 'online', metric: 'revenue' | 'units', granularity: 'week' | 'month', palette: { byName: Map<string, string> } }} props
  */
-export default function CustomerTrendChart({ customers, mode, metric, granularity, colorOrder }) {
+export default function CustomerTrendChart({ customers, mode, metric, granularity, palette }) {
   const mobile = useMediaQuery('(max-width: 639px)');
-  const series = trendSeries(customers, mode, colorOrder);
+  const series = trendSeries(customers, mode, palette);
   const rows = trendRows(customers, series, mode, metric, granularity);
   const kind = trendChartKind({ customerCount: series.length, periodCount: rows.length, mobile });
   const chartConfig = Object.fromEntries(series.map((item) => [item.key, { label: item.label, color: item.color }]));

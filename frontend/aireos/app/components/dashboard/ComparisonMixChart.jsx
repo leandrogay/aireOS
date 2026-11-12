@@ -4,7 +4,7 @@ import { Fragment, useId } from 'react';
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
 import ChartFrame from '@/components/ui/ChartFrame';
-import { formatColor as colorFor, UNNAMED_FORMAT } from '@/app/utils/storeFormats';
+import { UNNAMED_FORMAT } from '@/app/utils/storeFormats';
 import ComparisonLineChart from '@/components/dashboard/ComparisonLineChart';
 import ComparisonTooltip from '@/components/dashboard/ComparisonTooltip';
 import { HatchPattern, PeriodSwatch, edgeColor, hatchTint, patternId } from '@/components/dashboard/PeriodTexture';
@@ -28,7 +28,7 @@ import useMediaQuery from '@/hooks/useMediaQuery';
 // customers x periods one in utils/chartKind.js.
 const MAX_COMPARISON_BUCKETS = 6;
 
-// The comparison period is drawn in the same format colours as this period,
+// The comparison period is drawn in the same format shades as this period,
 // hatched (see PeriodTexture): a 50% tint with stripes and an outline in the
 // format's darker edge colour. This period's segments are solid with the
 // same edge, so a pale segment (UNITY) still has a visible boundary.
@@ -61,7 +61,7 @@ function BarAxisLabel({ x, y, width, height, index, points, field, muted = false
 // each format it has sales for, with the swatch its bars are drawn in —
 // solid for this period, hatched for the comparison. A grid, so both rows'
 // formats start at the same place.
-function MixLegend({ rows, names }) {
+function MixLegend({ rows, names, colorFor }) {
   return (
     <div className="flex justify-center pt-2">
       <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-1 text-xs text-deep-violet-blue">
@@ -103,9 +103,10 @@ function formatsWithSales(formats, rows, side) {
  *   periodNames: { current: string, baseline: string },
  *   granularity: 'week' | 'month',
  *   metric?: 'revenue' | 'units',
- * }} props
+ *   colorFor: (format: string) => string,
+ * }} props `colorFor`: each format's shade of the customer's colour (page.js formatShadeLookup)
  */
-export default function ComparisonMixChart({ rows, periodNames, granularity, metric = 'revenue' }) {
+export default function ComparisonMixChart({ rows, periodNames, granularity, metric = 'revenue', colorFor }) {
   const mobile = useMediaQuery('(max-width: 639px)');
   const baseId = useId();
   const formats = sortFormatsByTotalDesc(
@@ -151,6 +152,7 @@ export default function ComparisonMixChart({ rows, periodNames, granularity, met
         names={names}
         granularity={granularity}
         metric={metric}
+        colorFor={colorFor}
       />
     );
   }
@@ -196,7 +198,7 @@ export default function ComparisonMixChart({ rows, periodNames, granularity, met
               tick={false}
             />
             <YAxis {...metricYAxisProps(metric, dataRange)} />
-            <ChartTooltip content={<ComparisonTooltip formats={formats} metric={metric} />} />
+            <ChartTooltip content={<ComparisonTooltip formats={formats} metric={metric} colorFor={colorFor} />} />
             <defs>
               {formats.map((format) => (
                 <HatchPattern
@@ -261,6 +263,7 @@ export default function ComparisonMixChart({ rows, periodNames, granularity, met
       {/* The period legend is not Recharts', so it goes under the frame. */}
       <MixLegend
         names={names}
+        colorFor={colorFor}
         rows={[
           { key: 'current', hatched: false, formats: formatsWithSales(formats, rows, 'currentFormats') },
           { key: 'baseline', hatched: true, formats: formatsWithSales(formats, rows, 'baselineFormats') },

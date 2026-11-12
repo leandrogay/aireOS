@@ -9,6 +9,7 @@ import ChartZoomButton from '@/components/ui/ChartZoomButton';
 import LineToggle from '@/components/ui/LineToggle';
 import useChartZoom from '@/hooks/useChartZoom';
 
+import { NO_CUSTOMER_COLOR, customerShades } from '@/app/utils/customerColors';
 import { FORECAST_SERIES } from '@/app/utils/forecastView';
 import { formatMonth, formatUnits } from '@/app/utils/inventoryForm';
 import { dotRevealDelay, lineSweepTimings } from '@/app/utils/lineAnimation';
@@ -22,9 +23,11 @@ import { labelledTooltipRow } from './chartTooltip';
 import LastMonthDifference from './LastMonthDifference';
 import SellInComparison from './SellInComparison';
 
-// Every line has its own hue, spread around the colour wheel so the eight
+// Every forecast line has its own hue, spread around the colour wheel so they
 // read apart at a glance (every pair clears the dataviz validator's
-// normal-vision floor). Colour alone can't separate eight lines for
+// normal-vision floor). The two actual lines are the customer's: sell-out in
+// the customer's colour, as on every other page, and sell-in in its first
+// shade (outlookSeries). Colour alone can't separate eight lines for
 // colour-blind readers (it fails the validator's CVD check), so the line style
 // says which forecast a line comes from, the same for sell-in and sell-out:
 // solid with dots = actual, short dashes = Current, long dashes = Previous,
@@ -49,7 +52,7 @@ const SELL_OUT_CURRENT_COLOR = '#00AEC2';
 // `dot`: the line has a dot per month (the actual lines), so its sample does too.
 // `shape: 'line'` makes LineToggle show that line sample on its pill.
 const SERIES = [
-  { key: 'sell_in_actual', group: 'Sell-in', label: 'Sell-in (actual)', color: '#D81B1B', dot: true },
+  { key: 'sell_in_actual', group: 'Sell-in', label: 'Sell-in (actual)', dot: true },
   { key: 'sell_in_recommended', group: 'Sell-in', label: 'Sell-in Forecast (Current)', color: SELL_IN_CURRENT_COLOR, dash: DASH.current },
   {
     key: 'sell_in_with_blocks',
@@ -61,7 +64,7 @@ const SERIES = [
   },
   { key: 'sell_in_previous', group: 'Sell-in', label: 'Sell-in Forecast (Previous)', color: '#1E9E3A', dash: DASH.previous },
   { key: 'sell_in_initial', group: 'Sell-in', label: 'Initial Yearly Sell-in Forecast', color: '#7F4A08', dash: DASH.initial },
-  { key: 'sell_out_actual', group: 'Sell-out', label: 'Sell-out (actual)', color: '#9333EA', dot: true },
+  { key: 'sell_out_actual', group: 'Sell-out', label: 'Sell-out (actual)', dot: true },
   { key: 'sell_out_current', group: 'Sell-out', label: 'Sell-out Forecast (Current)', color: SELL_OUT_CURRENT_COLOR, dash: DASH.current },
   {
     key: 'sell_out_with_blocks',
@@ -75,9 +78,17 @@ const SERIES = [
   { key: 'sell_out_initial', group: 'Sell-out', label: 'Initial Yearly Sell-out Forecast', color: '#F58A00', dash: DASH.initial },
 ];
 
+// Every line with its colour: the actual lines in the customer's colour
+// (sell-out) and its first shade (sell-in).
+function outlookSeries(customerColor) {
+  const [sellOutColor, sellInColor] = customerShades(customerColor, 2);
+  const actualColors = { sell_in_actual: sellInColor, sell_out_actual: sellOutColor };
+  return SERIES.map((series) => (actualColors[series.key] ? { ...series, color: actualColors[series.key] } : series));
+}
+
 // The lines on the chart: the overlay's two only while blocks are picked.
-function seriesFor(showBlocks) {
-  return SERIES.filter((series) => showBlocks || !series.overlay);
+function seriesFor(allSeries, showBlocks) {
+  return allSeries.filter((series) => showBlocks || !series.overlay);
 }
 
 function groupsFor(series) {
@@ -86,8 +97,6 @@ function groupsFor(series) {
     series: series.filter((line) => line.group === group).map((line) => ({ ...line, shape: 'line' })),
   }));
 }
-
-const CHART_CONFIG = Object.fromEntries(SERIES.map((series) => [series.key, { label: series.label, color: series.color }]));
 
 const ALL_VISIBLE = Object.fromEntries(SERIES.map((series) => [series.key, true]));
 
@@ -157,11 +166,14 @@ export function initialFallbackLabel(months) {
  * dragged across, and the Comparison card under it then sets their actual
  * sell-in and sell-out against forecast (SellInComparison).
  *
+ * `customerColor` is the customer's colour (utils/customerColors), for the
+ * two actual lines.
+ *
  * `showBlocks` adds the building blocks overlay's lines (sell_in_with_blocks,
  * sell_out_with_blocks: the plan worked out again with the picked blocks,
  * backend get_sell_in_outlook), each beside the Current line it adjusts.
  *
- * @param {{ showBlocks?: boolean, months: Array<{ month: string, sell_in_actual: number | null, sell_in_recommended: number | null, sell_in_previous: number | null, sell_in_initial: number | null, sell_out_actual: number | null, sell_out_forecast: number | null, sell_out_initial: number | null, sell_out_previous: number | null, forecast_source: 'current' | 'initial' | 'mixed' | null }>, actualsThrough: string | null, sellInComparison?: object | null, sellOutComparison?: object | null }} props
+ * @param {{ customerColor?: string, showBlocks?: boolean, months: Array<{ month: string, sell_in_actual: number | null, sell_in_recommended: number | null, sell_in_previous: number | null, sell_in_initial: number | null, sell_out_actual: number | null, sell_out_forecast: number | null, sell_out_initial: number | null, sell_out_previous: number | null, forecast_source: 'current' | 'initial' | 'mixed' | null }>, actualsThrough: string | null, sellInComparison?: object | null, sellOutComparison?: object | null }} props
  */
 export default function SellInOutlookChart({
   months,
@@ -169,9 +181,12 @@ export default function SellInOutlookChart({
   sellInComparison = null,
   sellOutComparison = null,
   showBlocks = false,
+  customerColor = NO_CUSTOMER_COLOR,
 }) {
   const [visible, setVisible] = useState(ALL_VISIBLE);
-  const series = seriesFor(showBlocks);
+  const allSeries = outlookSeries(customerColor);
+  const chartConfig = Object.fromEntries(allSeries.map((line) => [line.key, { label: line.label, color: line.color }]));
+  const series = seriesFor(allSeries, showBlocks);
   const tooltipOrder = series.map((line) => line.key);
   const mobile = useMediaQuery('(max-width: 639px)');
   // The zoom works in x-axis values, which on a phone are the months themselves.
@@ -229,7 +244,7 @@ export default function SellInOutlookChart({
   const pickedMonths = months.slice(zoom.start, zoom.end + 1);
   const timings = lineSweepTimings(shownRows, tooltipOrder, LINE_SWEEP);
 
-  const formatRow = labelledTooltipRow(CHART_CONFIG, (value) => `${formatUnits(value)} units`);
+  const formatRow = labelledTooltipRow(chartConfig, (value) => `${formatUnits(value)} units`);
   function formatTooltipRow(value, name, item, index, payload) {
     if (JOIN_KEYS.includes(name) && payload?.month === actualsThrough) return null;
     return formatRow(value, name, item);
@@ -269,7 +284,7 @@ export default function SellInOutlookChart({
         )}
       >
         <ChartContainer
-          config={CHART_CONFIG}
+          config={chartConfig}
           className={cn('aspect-auto h-[328px] w-full', zoom.picking && 'cursor-crosshair select-none')}
         >
           <ComposedChart

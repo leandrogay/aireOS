@@ -6,6 +6,7 @@ import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
 import ChartFrame from '@/components/ui/ChartFrame';
 import ComparisonTooltip from '@/components/dashboard/ComparisonTooltip';
 import MonthAxis from '@/components/dashboard/MonthAxis';
+import { UNNAMED_FORMAT } from '@/app/utils/storeFormats';
 import {
   CHART_SIZE_CLASS,
   CHART_TOP_MARGIN,
@@ -21,12 +22,12 @@ import useChartTransition from '@/hooks/useChartTransition';
 // One colour for both periods, so the eye compares the two lines rather
 // than reading them as two different things: this period solid, the
 // comparison dashed and lighter -- the line form of the bar chart's solid vs
-// hatched stacks.
-const LINE_COLOR = 'var(--aire-deep-blue)';
+// hatched stacks. The colour is the customer's (colorFor of the unnamed
+// series, page.js formatShadeLookup), as on the chart without a comparison.
 const BASELINE_DASH = '5 4';
 const BASELINE_OPACITY = 0.5;
 
-function LineSwatch({ dashed }) {
+function LineSwatch({ color, dashed }) {
   return (
     <svg width="22" height="8" aria-hidden="true">
       <line
@@ -34,7 +35,7 @@ function LineSwatch({ dashed }) {
         x2="21"
         y1="4"
         y2="4"
-        stroke={LINE_COLOR}
+        stroke={color}
         strokeWidth="2"
         strokeDasharray={dashed ? BASELINE_DASH : undefined}
         strokeOpacity={dashed ? BASELINE_OPACITY : 1}
@@ -58,9 +59,11 @@ function LineSwatch({ dashed }) {
  *   names: { current: string, baseline: string },
  *   granularity: 'week' | 'month',
  *   metric: 'revenue' | 'units',
+ *   colorFor: (format: string) => string,
  * }} props `points` as ComparisonMixChart builds them (totals, labels and per-format figures per bucket)
  */
-export default function ComparisonLineChart({ points, formats, names, granularity, metric }) {
+export default function ComparisonLineChart({ points, formats, names, granularity, metric, colorFor }) {
+  const lineColor = colorFor(UNNAMED_FORMAT);
   const axisProps = periodAxisProps(points, granularity);
   const monthGroups = weekMonthGroups(points, granularity);
   const yAxisProps = metricYAxisProps(
@@ -92,12 +95,12 @@ export default function ComparisonLineChart({ points, formats, names, granularit
             <XAxis dataKey="displayLabel" {...axisProps} padding={{ left: 24, right: 24 }} />
             <YAxis {...yAxisProps} domain={transition.domain} ticks={transition.ticks} />
             <MonthAxis groups={monthGroups} />
-            <ChartTooltip content={<ComparisonTooltip formats={formats} metric={metric} />} wrapperStyle={{ zIndex: 10 }} />
+            <ChartTooltip content={<ComparisonTooltip formats={formats} metric={metric} colorFor={colorFor} />} wrapperStyle={{ zIndex: 10 }} />
             {/* The comparison first, so this period's solid line is drawn on top. */}
             <Line
               dataKey="baselineTotal"
               type="linear"
-              stroke={LINE_COLOR}
+              stroke={lineColor}
               strokeWidth={2}
               strokeDasharray={BASELINE_DASH}
               strokeOpacity={BASELINE_OPACITY}
@@ -108,7 +111,7 @@ export default function ComparisonLineChart({ points, formats, names, granularit
             <Line
               dataKey="currentTotal"
               type="linear"
-              stroke={LINE_COLOR}
+              stroke={lineColor}
               strokeWidth={2}
               dot={dot}
               activeDot={{ r: 4 }}
@@ -120,11 +123,11 @@ export default function ComparisonLineChart({ points, formats, names, granularit
       {/* The period legend is not Recharts', so it goes under the frame. */}
       <div className="flex flex-wrap justify-center gap-x-5 gap-y-1 pt-2 text-xs text-deep-violet-blue">
         <span className="flex items-center gap-1.5 font-medium">
-          <LineSwatch />
+          <LineSwatch color={lineColor} />
           {names.current}
         </span>
         <span className="flex items-center gap-1.5 text-deep-violet-blue/70">
-          <LineSwatch dashed />
+          <LineSwatch color={lineColor} dashed />
           {names.baseline}
         </span>
       </div>

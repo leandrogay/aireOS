@@ -9,6 +9,7 @@ import {
 } from '@/components/ui/chart';
 import ChartFrame, { CHART_TOOLTIP_CLASS } from '@/components/ui/ChartFrame';
 
+import { NO_CUSTOMER_COLOR } from '@/app/utils/customerColors';
 import { formatMonth, formatUnits } from '@/app/utils/inventoryForm';
 import { AXIS_TICK, BAR_ANIMATION, MAX_BAR_SIZE, chartDataRange, metricYAxisProps, yearAxisProps } from '@/app/utils/trendChart';
 import useChartTransition from '@/hooks/useChartTransition';
@@ -16,16 +17,14 @@ import useMediaQuery from '@/hooks/useMediaQuery';
 
 import { labelledTooltipRow } from './chartTooltip';
 
-const chartConfig = {
-  sell_in: { label: 'Sell-in', color: 'var(--aire-deep-blue)' },
-};
-
 /**
- * Sell-in per month for one customer (backend get_customer_view `trend`).
+ * Sell-in per month for one customer (backend get_customer_view `trend`), in
+ * that customer's colour (utils/customerColors).
  *
- * @param {{ trend: Array<{ month: string, sell_in: number }> }} props
+ * @param {{ trend: Array<{ month: string, sell_in: number }>, color?: string }} props
  */
-export default function SellInTrendChart({ trend }) {
+export default function SellInTrendChart({ trend, color = NO_CUSTOMER_COLOR }) {
+  const chartConfig = { sell_in: { label: 'Sell-in', color } };
   const mobile = useMediaQuery('(max-width: 639px)');
   const rows = trend.map((row) => ({ ...row, label: formatMonth(row.month) }));
   // Fixed nice steps, so a filter change can move the bars and the axis together.

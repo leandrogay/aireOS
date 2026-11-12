@@ -28,7 +28,8 @@ import {
 } from "@/app/utils/periodComparison";
 import { DEFAULT_PRESET_ID, buildDateRangePresets } from "@/app/utils/dateRangePresets";
 import { rangeHasWeeklyMonths, weeklyGapMessage } from "@/app/utils/weeklyGaps";
-import { customerColorOrder, relabelFormatRows } from "@/app/utils/storeFormats";
+import { formatShadeLookup, formatsToShow, rankFormats, relabelFormatRows } from "@/app/utils/storeFormats";
+import { customerColor, customerPalette } from "@/app/utils/customerColors";
 import { comparisonInUse, periodInUse } from "@/app/utils/dataBounds";
 
 const NO_CUSTOMERS = [];
@@ -62,8 +63,9 @@ export default function DashboardPage() {
   // Only sets colours, so a failed read just leaves the customers with sales in
   // order, each still with its own colour, rather than an error on the page.
   const { customers: allCustomers, loading: allCustomersLoading } = useAllCustomers({ dataVersion });
-  // Matched to the customer records by customer_id, not by name (see customerColorOrder).
-  const colorOrder = customerColorOrder(allCustomers, customerOptions);
+  // Colours by customer_id, so the options' sales slugs (`sheng_siong`) and the
+  // records' names (`Sheng_Shiong`) get the same colour (see customerPalette).
+  const palette = customerPalette(allCustomers, customerOptions);
   const linkedRetailer = useSyncExternalStore(subscribeToLocation, retailerFromLocation, () => null);
   const linkedMatch = linkedRetailer?.match(/^(.+)_(offline|online)$/i);
   const linkedCustomer = linkedMatch
@@ -179,11 +181,11 @@ export default function DashboardPage() {
   // never its "nothing here" message. 'failed' (the list couldn't be read)
   // and 'empty' (no sales uploaded at all) show one DashboardStatus card
   // instead of the sections.
-  // Also 'loading' until every customer is in (useAllCustomers), since that
-  // list sets each customer's colour (customerColorOrder, by customer id):
-  // drawing before it would colour customers in the dropdown's order first
-  // and then switch. A failed read ends the wait (colours then follow the
-  // dropdown), and a later dataVersion refetch does not bring it back.
+  // Also 'loading' until every customer is in (useAllCustomers): a customer
+  // with sales but no record would take a spare colour before the records
+  // arrive and could switch after. A failed read ends the wait (the options'
+  // customer_ids still give every linked customer its colour), and a later
+  // dataVersion refetch does not bring it back.
   let pageStatus = 'ready';
   if (customerOptionsError && customerOptions.length === 0) pageStatus = 'failed';
   else if (customerOptionsLoading || allCustomersLoading) pageStatus = 'loading';
@@ -347,6 +349,16 @@ export default function DashboardPage() {
         baselineWeeksByFormat: relabelFormatRows(baselineFormatRows, currentFormatRows),
       })
     : null;
+  // One customer's store formats are shades of its colour, biggest format
+  // first (rankFormats), worked out once so the trend chart, the comparison
+  // and the summary tiles agree on every format's shade.
+  const formatColor = formatShadeLookup(
+    rankFormats(
+      formatsToShow(summary.summaryByMode[mode]?.storeFormats ?? []),
+      baseline ? formatsToShow(baselineSummary.summaryByMode[mode]?.storeFormats ?? []) : [],
+    ),
+    customerColor(customer, palette),
+  );
   const lastUpdated = customers
     .map((name) => channels[`${name}_${mode}`])
     .filter(Boolean)
@@ -417,7 +429,8 @@ export default function DashboardPage() {
               periodNames={periodNames}
               comparisonLoading={baselineSummary.loading}
               customerBars={customers.length === 0 ? [] : (comparingCustomers ? customerTrends.rows : null)}
-              customerColorOrder={colorOrder}
+              customerPalette={palette}
+              formatColor={formatColor}
               metric={metric}
               onMetricChange={setMetric}
               channelSwitch={
@@ -507,7 +520,8 @@ export default function DashboardPage() {
               // the default customers aren't picked yet, not because the user
               // unticked them all.
               noCustomers={!pageLoading && customers.length === 0}
-              customerColorOrder={colorOrder}
+              customerPalette={palette}
+              formatColor={formatColor}
             />
           </div>
 
@@ -528,7 +542,7 @@ export default function DashboardPage() {
               customerRows={customerTotals.rows}
               customerRowsLoading={customerTotals.loading}
               customerRowsError={customerTotals.error}
-              customerColorOrder={colorOrder}
+              customerPalette={palette}
               loading={pageLoading}
             />
           </div>

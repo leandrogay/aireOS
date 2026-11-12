@@ -1,24 +1,4 @@
-// AIRE palette assigned per store format, shared by the trend chart and the
-// Sell-out Summary mix bar so a format is the same colour everywhere. Reused
-// across offline (4 formats) and online (1 format) since only one channel is
-// ever on screen at once — safe to reuse HYPER's colour for FPON since they
-// never render together. FPON previously used --aire-cream, and UNITY
-// --aire-lavender; both are nearly invisible against the white card/cream
-// page background, so UNITY is dusty rose, which sits with the violets.
-export const FORMAT_COLORS = {
-  HYPER: 'var(--aire-deep-blue)',
-  SUPER: 'var(--aire-violet)',
-  FINEST: 'var(--aire-celest)',
-  UNITY: '#C98BA8',
-  FPON: 'var(--aire-deep-blue)',
-};
-
-// Formats the catalog doesn't know ("UNKNOWN") still get a visible colour.
-export const FALLBACK_FORMAT_COLOR = 'var(--aire-violet)';
-
-export function formatColor(format) {
-  return FORMAT_COLORS[format] ?? FALLBACK_FORMAT_COLOR;
-}
+import { customerShades } from './customerColors.js';
 
 // The summary query uses this when a sell-out row has no store format.
 const MISSING_FORMAT = 'UNKNOWN';
@@ -27,72 +7,52 @@ const MISSING_FORMAT = 'UNKNOWN';
 // off the legend, because there is no format to call it.
 export const UNNAMED_FORMAT = 'Total';
 
-// The original customer colours stay attached to their names, even if a new
-// customer is added or an old one is removed. These are shared by every
-// customer chart, summary tile and ranking.
-// FairPrice and Sheng Siong are darker shades of their first colours (violet
-// #A29BCC, sand #C4B6A6), which fell under 3:1 on the chart surface.
-const KNOWN_CUSTOMER_COLORS = {
-  fairprice: '#7A70B8',
-  nhg: '#2E7BA6',
-  prime: '#8A7460',
-  sheng_siong: '#A88B5E',
-  singhealth: '#C45C26',
-};
+// ==== Format colours ====
 
-const OTHER_CUSTOMER_COLORS = [
-  'var(--aire-celest)',
-  '#5C5299',
-  '#0D9488',
-  '#4F7A3A',
-  '#7C3AED',
-  '#E8922A',
-];
+// Store formats differ by customer (HYPER / SUPER / FINEST / UNITY are
+// FairPrice's), so a format has no colour of its own: one customer's formats
+// are shades of that customer's colour (utils/customerColors), handed out by
+// position. The biggest format by revenue takes the colour itself, the next
+// the first shade, and so on, with Others always last.
 
-// Past the palette, each customer still gets a colour of its own: this angle
-// keeps successive hues far apart without ever landing on the same one twice.
-const GOLDEN_ANGLE_DEGREES = 137.508;
-
-function extraCustomerColor(position) {
-  return `hsl(${(position * GOLDEN_ANGLE_DEGREES) % 360} 55% 45%)`;
+/**
+ * Format names in the order they take shades: this period's formats by
+ * revenue, biggest first, then any found only in the comparison period, then
+ * Others. Revenue whatever the chart shows, so switching Revenue / Volume
+ * never swaps two formats' shades. Ties go by name, so the order is stable.
+ *
+ * @param {Array<{ format: string, revenue?: number }>} formats this period, after formatsToShow
+ * @param {Array<{ format: string, revenue?: number }>} [baselineFormats] the comparison period, after formatsToShow
+ * @returns {string[]}
+ */
+export function rankFormats(formats, baselineFormats = []) {
+  const byRevenue = (a, b) => (b.revenue ?? 0) - (a.revenue ?? 0) || String(a.format).localeCompare(String(b.format));
+  const names = [
+    ...[...formats].sort(byRevenue).map((format) => format.format),
+    ...[...baselineFormats].sort(byRevenue).map((format) => format.format),
+  ];
+  const unique = [...new Set(names)];
+  return [...unique.filter((name) => name !== 'Others'), ...unique.filter((name) => name === 'Others')];
 }
 
 /**
- * The order customers take colours in: by customer_id, so a new customer takes
- * the next colour and nobody else's changes. Each slot is named the way the
- * page names that customer: the dashboard passes its Customer filter options,
- * named from the sales data (`fairprice`) and linked to a customer record by
- * `customer_id` (backend get_customer_options), so a renamed record
- * ("FairPrice", "Sheng_Shiong") keeps its colour. A record no option links to
- * keeps its own name (the inventory page names customers that way). Options
- * with no customer record go last, so they can't shift anyone either.
+ * Each format's colour, as a function every Dashboard part shares (trend
+ * chart, comparison chart and tooltip, Sell-out Summary tiles and mix bar), so
+ * one format is one shade across the page. The unnamed series (UNNAMED_FORMAT,
+ * a customer with no formats) is the customer's colour. A format not in
+ * `ranked` takes the shade after the last one.
  *
- * @param {Array<{ customer_id: number, customer_name: string }>} customers every customer (GET /api/inventory/customers)
- * @param {Array<{ value: string, customer_id?: number | null }>} [options] the page's customers, when it names them differently
- * @returns {string[]} customer names, as the page uses them
+ * @param {string[]} ranked from rankFormats
+ * @param {string} baseColor the customer's colour (customerColor)
+ * @returns {(format: string) => string}
  */
-export function customerColorOrder(customers, options = []) {
-  const nameById = new Map(
-    options.filter((option) => option.customer_id != null).map((option) => [option.customer_id, option.value]),
-  );
-  const byId = [...customers].sort((a, b) => a.customer_id - b.customer_id);
-  const named = byId.map((customer) => nameById.get(customer.customer_id) ?? customer.customer_name);
-  return [...new Set([...named, ...options.map((option) => option.value)])];
-}
-
-function customerColorKey(name) {
-  return String(name ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_');
-}
-
-// One customer's colour, the same on every page. No two customers in `order`
-// (customerColorOrder) share a colour, however many there are.
-export function customerColor(customerName, order) {
-  const key = customerColorKey(customerName);
-  if (Object.hasOwn(KNOWN_CUSTOMER_COLORS, key)) return KNOWN_CUSTOMER_COLORS[key];
-  const otherNames = [...new Set(order.map(customerColorKey))]
-    .filter((name) => !Object.hasOwn(KNOWN_CUSTOMER_COLORS, name));
-  const index = Math.max(otherNames.indexOf(key), 0);
-  return OTHER_CUSTOMER_COLORS[index] ?? extraCustomerColor(index - OTHER_CUSTOMER_COLORS.length);
+export function formatShadeLookup(ranked, baseColor) {
+  const shades = customerShades(baseColor, ranked.length + 1);
+  return (format) => {
+    if (format === UNNAMED_FORMAT) return baseColor;
+    const index = ranked.indexOf(format);
+    return shades[index === -1 ? ranked.length : index];
+  };
 }
 
 // Named formats stay as they are. Rows with no format become one "Others"
