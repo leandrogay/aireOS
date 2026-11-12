@@ -9,7 +9,7 @@ const MONTH_LABELS = Array.from({ length: 12 }, (_, monthIndex) =>
 );
 
 const yearButtonClass =
-  'flex size-7 cursor-pointer items-center justify-center rounded-md text-deep-violet-blue hover:bg-cream focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent';
+  'flex size-7 cursor-pointer items-center justify-center rounded-md text-deep-violet-blue hover:bg-lavander/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent';
 
 /**
  * Year switcher over a 4 × 3 grid of months, shared by Promotions' single
@@ -86,7 +86,7 @@ export default function MonthGrid({
               aria-pressed={selected || inRange}
               aria-label={`${label} ${viewYear}`}
               className={cn(
-                'cursor-pointer rounded-md px-1 py-1.5 text-sm text-deep-violet-blue transition hover:bg-cream focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet',
+                'cursor-pointer rounded-md px-1 py-1.5 text-sm text-deep-violet-blue transition hover:bg-lavander/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet',
                 isMuted(viewYear, monthIndex) && 'opacity-40',
                 disabled && 'cursor-not-allowed opacity-30 hover:bg-transparent',
                 inRange && 'bg-lavander hover:bg-lavander',

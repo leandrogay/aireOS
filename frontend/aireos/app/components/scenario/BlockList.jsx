@@ -95,7 +95,7 @@ export default function BlockList({ blocks, selectedId, onSelect, onToggle, impa
               onCheckedChange={(checked) => onToggle(block, checked)}
               aria-label={`${block.isActive ? 'Take off the Simulated line' : 'Show on the Simulated line'}: ${block.name}`}
               title={block.isActive ? 'On the Simulated line' : 'Off the Simulated line'}
-              className="data-checked:bg-scenario"
+              className="data-checked:bg-switch-on-scenario"
             />
           </li>
         );

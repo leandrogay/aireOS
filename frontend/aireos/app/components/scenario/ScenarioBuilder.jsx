@@ -16,6 +16,7 @@ import ScenarioBuilderSkeleton from '@/components/scenario/ScenarioBuilderSkelet
 import ScenarioPanel from '@/components/scenario/ScenarioPanel';
 import ScenarioTotals from '@/components/scenario/ScenarioTotals';
 import ScenarioYearComparison from '@/components/scenario/ScenarioYearComparison';
+import { customerColor, customerPalette, NO_CUSTOMER_COLOR } from '@/app/utils/customerColors';
 import { customerLabel } from '@/app/utils/retailerLabel';
 import {
   ALL_PACK_TYPE_VALUES,
@@ -56,6 +57,7 @@ import {
   updateScenarioBlock,
 } from '@/app/utils/scenarioBlocks';
 import { SCENARIO_SOURCES } from '@/app/utils/scenarioSources';
+import useAllCustomers from '@/hooks/useAllCustomers';
 import useForecastAlternatives from '@/hooks/useForecastAlternatives';
 import useForecastFilters from '@/hooks/useForecastFilters';
 import useForecastView from '@/hooks/useForecastView';
@@ -129,6 +131,9 @@ export default function ScenarioBuilder() {
   const [modelView, setModelView] = useState(MODEL_VIEWS.official);
   const view = useForecastView({ ready, productName, customerName, startDate, endDate });
   const { rows: officialRows, actuals, promotions, freshness } = view.data;
+  // The Actual line in the picked customer's colour, as on /forecast.
+  const { customers: allCustomers } = useAllCustomers();
+  const actualColor = customerName ? customerColor(customerName, customerPalette(allCustomers)) : NO_CUSTOMER_COLOR;
 
   // Months whose official forecast already includes the promotion entered
   // for them can be swapped for the forecast without it, so planned
@@ -424,6 +429,7 @@ export default function ScenarioBuilder() {
             endDate={endDate}
             metric="units"
             singleSeries={singleSeries}
+            actualColor={actualColor}
             scopeTags={[]}
             toolbar={
               <ForecastFilters

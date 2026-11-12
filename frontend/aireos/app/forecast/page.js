@@ -9,7 +9,10 @@ import TableCardHeader from '@/components/ui/TableCardHeader';
 import ForecastChart from '@/components/forecast/ForecastChart';
 import ForecastFilters from '@/components/forecast/ForecastFilters';
 import ForecastTable from '@/components/forecast/ForecastTable';
-import ForecastYearTotals from '@/components/forecast/ForecastYearTotals';
+import ForecastYearTotals, { formatVolume } from '@/components/forecast/ForecastYearTotals';
+import { cardClass } from '@/components/ui/formStyles';
+import { cn } from '@/lib/utils';
+import { customerColor, customerPalette, NO_CUSTOMER_COLOR } from '@/app/utils/customerColors';
 import ForecastHelpPanel, { ForecastHelpButton } from '@/components/forecast/ForecastHelpPanel';
 import ForecastInfo, { ForecastHelpProvider } from '@/components/forecast/ForecastInfo';
 import { initialPlanLines, missingMonthsLines } from '@/app/utils/forecastHelpText';
@@ -41,6 +44,7 @@ import useForecastView from '@/hooks/useForecastView';
 import useForecastInitialStatus from '@/hooks/useForecastInitialStatus';
 import useForecastRefreshStatus from '@/hooks/useForecastRefreshStatus';
 import useForecastYearTotals from '@/hooks/useForecastYearTotals';
+import useAllCustomers from '@/hooks/useAllCustomers';
 
 // useSearchParams (the ?tier= model) wants a Suspense boundary above it.
 export default function ForecastPage() {
@@ -61,6 +65,11 @@ function ForecastView() {
   // rows already here (utils/forecastTiers.js).
   const view = useForecastView({ ready, productName, customerName, startDate, endDate, tier: ALL_TIERS });
   const { rows: allRows, availability, actuals, promotions, freshness } = view.data;
+  // The Actual line is the picked customer's colour, as on every page; All
+  // customers is a total, so the no-customer colour. A failed read of the
+  // customer list leaves it at that colour rather than an error.
+  const { customers: allCustomers } = useAllCustomers();
+  const actualColor = customerName ? customerColor(customerName, customerPalette(allCustomers)) : NO_CUSTOMER_COLOR;
   const error = filters.error ?? view.error;
   // Rows start empty, so the chart needs `loading` while the options are
   // still on their way too, or it would briefly claim there is no data.
@@ -263,6 +272,7 @@ function ForecastView() {
             previousMissing={previousOff}
             currentMonths={currentMonths}
             previousMonths={previousMonths}
+            actualColor={actualColor}
             confidenceDots={singleSeries}
             notes={modelNotes}
             emptyMessage={allRows.length ? NO_DATA_FOR_TIER : undefined}
@@ -277,8 +287,27 @@ function ForecastView() {
               label="Full-year totals"
               header={<TableCardHeader title="Full-year totals" detail={<>Actual and forecast volume in cartons for each calendar year in view{modelLabel ? ` · ${modelLabel}` : ''} <ForecastInfo helpKey="yearColumns" label="About the year columns" className="inline-flex align-middle" /></>} />}
             >
-              <ForecastYearTotals years={yearTotals} loading={yearTotalsBusy} horizonVolume={horizonVolume} />
+              <ForecastYearTotals years={yearTotals} loading={yearTotalsBusy} />
             </TableCard>
+          ) : null}
+
+          {/* Each SKU's whole Current line from the backend's `horizon`: it has
+              no actual/forecast split, so it is a card of its own, not a year row. */}
+          {!yearTotalsBusy && yearTotals.length ? (
+            <section className={cn(cardClass, 'flex items-center justify-between gap-3')}>
+              <div className="min-w-0">
+                <h2 className="text-sm font-medium text-deep-violet-blue">Next 12 months forecast <ForecastInfo helpKey="next12" label="About the next 12 months" className="inline-flex align-middle" /></h2>
+                {/* The 12 months start where the latest run's Current line does,
+                    not today, so the run time anchors them (as "Forecast last updated"). */}
+                <p className="mt-1 text-xs text-deep-violet-blue/70">
+                  Forecast volume in cartons{modelLabel ? ` · ${modelLabel}` : ''}
+                  {lastRun ? ` · As of the forecast run on ${formatSgtTimestamp(lastRun)}` : ''}
+                </p>
+              </div>
+              <span className="shrink-0 text-sm font-medium tabular-nums text-deep-violet-blue">
+                {formatVolume(horizonVolume)}
+              </span>
+            </section>
           ) : null}
 
           {points.length > 0 && hasTableColumn ? (

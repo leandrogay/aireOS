@@ -14,7 +14,7 @@ import {
 } from '@/app/utils/inventoryForm';
 
 import CustomerDropdown from './CustomerDropdown';
-import { formFieldClass, formLabelClass } from './InventoryChrome';
+import InventoryMonthField from './InventoryMonthField';
 import InventoryQuantityTable, { INVENTORY_QUANTITY_COLUMNS } from './InventoryQuantityTable';
 import { primaryButtonClass, secondaryButtonClass } from '@/components/ui/formStyles';
 
@@ -228,20 +228,10 @@ export default function InventoryBulkEditForm({ customers, editRow, onSaved }) {
             resetTable();
           }}
         />
-        <label>
-          <span className={formLabelClass}>
-            Month<span className="text-red-700"> *</span>
-          </span>
-          <input
-            type="month"
-            value={month}
-            onChange={(e) => {
-              setMonth(e.target.value);
-              resetTable();
-            }}
-            className={formFieldClass}
-          />
-        </label>
+        <InventoryMonthField value={month} onChange={(value) => {
+          setMonth(value);
+          resetTable();
+        }} />
       </div>
 
       {showTable && loading && <p className="text-sm text-deep-violet-blue/70">Loading…</p>}

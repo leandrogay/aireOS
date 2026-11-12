@@ -43,10 +43,10 @@ export const SKU_HISTORY_COLUMNS = [
 ];
 
 export const SKU_PRICE_PERIOD_COLUMNS = [
-  { key: 'price', label: 'Price', width: '9rem' },
-  { key: 'from', label: 'Effective from' },
-  { key: 'to', label: 'Effective to' },
-  { key: 'action', label: 'Action', width: '8rem' },
+  { key: 'price', label: 'Price', width: '8rem' },
+  { key: 'from', label: 'Effective from', width: '15rem' },
+  { key: 'to', label: 'Effective to', width: '15rem' },
+  { key: 'action', label: 'Action', width: '10rem' },
 ];
 
 export const SKU_PRICE_CORRECTION_COLUMNS = [

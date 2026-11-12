@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 
 import { TABLE_HEADER_CLASS } from '@/components/ui/SortHeader';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -92,30 +92,6 @@ export default function InventoryTableFrame({
   // paginate clamps the page, so a shorter list never lands on an empty one.
   const { pageRows, currentPage, totalPages } = paginate(visible, page, pageSize);
 
-  // The table keeps the height of the tallest full page it has shown for this
-  // list and page size, so a short last page leaves empty space instead of
-  // the card shrinking and the footer's arrows jumping away from the cursor.
-  const boxRef = useRef(null);
-  const [tallest, setTallest] = useState({ key: '', height: 0 });
-  const heightKey = `${listKey}|${activeMonthFilter.join(',')}|${pageSize}`;
-  const fullPage = pageRows.length === pageSize;
-  const minHeight = totalPages > 1 && tallest.key === heightKey ? tallest.height : undefined;
-
-  useEffect(() => {
-    const box = boxRef.current;
-    if (!box || !fullPage) return undefined;
-    const observer = new ResizeObserver(() => {
-      // A hidden tab measures 0; keep what was measured while it showed.
-      const height = box.offsetHeight;
-      if (!height) return;
-      setTallest((current) => (
-        current.key === heightKey && current.height >= height ? current : { key: heightKey, height }
-      ));
-    });
-    observer.observe(box);
-    return () => observer.disconnect();
-  }, [fullPage, heightKey]);
-
   function changePage(next) {
     setPaging({ page: next, listKey });
   }
@@ -156,10 +132,8 @@ export default function InventoryTableFrame({
       )}
     >
 
-      {/* One page at full height, so there is no inner scroll box and no long
-          page; TableGrid still scrolls sideways for a wide table on a small
-          screen. */}
-      <div ref={boxRef} style={{ minHeight }}>
+      {/* TableGrid still scrolls sideways for a wide table on a small screen. */}
+      <div>
         <TableGrid
           columns={gridColumns}
           minWidth={minWidth}

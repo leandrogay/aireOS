@@ -251,7 +251,7 @@ export default function BlockTable({
                 disabled={toggling}
                 onCheckedChange={(checked) => onToggleActive(block, checked)}
                 aria-label={`${block.isActive ? 'Take off the Simulated line' : 'Show on the Simulated line'}: ${block.name}`}
-                className="data-checked:bg-scenario"
+                className="data-checked:bg-switch-on-scenario"
               />
             </td>
           </ExpandableRow>

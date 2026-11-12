@@ -15,7 +15,7 @@ import SegmentedControl from '@/components/ui/SegmentedControl';
 export default function ChannelSwitch({ mode, onChange, onlineEnabled = true }) {
   return (
     <SegmentedControl
-      look="soft"
+      look="tint"
       fullWidth
       className="w-[152px]"
       value={mode}

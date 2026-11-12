@@ -24,7 +24,7 @@ function PillGroup({ label, helpKey, options, selected, onToggle }) {
                 'inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-medium transition',
                 isActive
                   ? 'border-transparent font-semibold shadow-sm'
-                  : 'border-lavander bg-white text-deep-violet-blue/55 hover:bg-cream'
+                  : 'border-deep-violet-blue/15 bg-white/40 text-deep-violet-blue/60 hover:bg-white/70'
               )}
               style={
                 isActive

@@ -20,9 +20,12 @@ import {
 import { POPUP_SHADOW_CLASS } from '@/components/ui/popupShadow';
 import { cn } from '@/lib/utils';
 import { modelNotice } from '@/app/utils/aiModels';
+import { customerPalette } from '@/app/utils/customerColors';
 import useAiModelStatus from '@/hooks/useAiModelStatus';
+import useAllCustomers from '@/hooks/useAllCustomers';
 import useAssistant, { ALL_CUSTOMERS } from '@/hooks/useAssistant';
 import useCustomerOptions from '@/hooks/useCustomerOptions';
+import { ASSISTANT } from '@/app/config/transitions';
 import AssistantMessage from './AssistantMessage';
 import AssistantUnavailable from './AssistantUnavailable';
 // The words shown while the assistant works ("Pondering…"); edit the list there.
@@ -44,7 +47,7 @@ const SPRING_BOUNCE = {
     opacity: 1,
     y: 0,
     scale: 1,
-    transition: { type: 'spring', stiffness: 520, damping: 30, mass: 0.7 },
+    transition: ASSISTANT.message,
   },
 };
 
@@ -55,8 +58,8 @@ const MotionMessageScrollerItem = motion.create(MessageScrollerItem);
 // quicker, before it unmounts (AnimatePresence). Only transform and opacity
 // move, so the panel's size transition (full screen) is untouched.
 const PANEL_POP = {
-  closed: { opacity: 0, scale: 0.9, y: 16, transition: { duration: 0.15, ease: 'easeIn' } },
-  open: { opacity: 1, scale: 1, y: 0, transition: { type: 'spring', stiffness: 420, damping: 32 } },
+  closed: { opacity: 0, scale: 0.9, y: 16, transition: ASSISTANT.panelOut },
+  open: { opacity: 1, scale: 1, y: 0, transition: ASSISTANT.panelIn },
 };
 
 const MotionCard = motion.create(Card);
@@ -224,6 +227,12 @@ export default function AssistantWidget() {
     dataVersion: timesOpened,
     enabled: pathname !== '/login',
   });
+  // Customer records, once the panel is first opened, so a chart draws each
+  // customer in the colour it has on every page: with the options above
+  // (named by sales slug, as the answers name customers) they make the same
+  // palette as the Dashboard's.
+  const { customers: allCustomers } = useAllCustomers({ enabled: timesOpened > 0 });
+  const palette = customerPalette(allCustomers, customerOptions);
   const reduceMotion = useReducedMotion();
   // Read again on each opening and after each failed question, so a question
   // that just found the model retired turns the panel into its unavailable state.
@@ -262,7 +271,7 @@ export default function AssistantWidget() {
             initial={reduceMotion ? false : { opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={reduceMotion ? undefined : { opacity: 0 }}
-            transition={{ duration: 0.1 }}
+            transition={ASSISTANT.backdrop}
             onClick={() => setExpanded(false)}
             className={DIALOG_BACKDROP_CLASS}
           />
@@ -281,7 +290,7 @@ export default function AssistantWidget() {
               POPUP_SHADOW_CLASS,
               // Placed by its four edges (not width/height) so the move between the
               // two sizes can be animated; 100% is the window, scrollbar excluded.
-              'transition-[top,left,right,bottom] duration-300 ease-out motion-reduce:transition-none',
+              'transition-[top,left,right,bottom] duration-(--motion-enter) ease-out motion-reduce:transition-none',
               // Full screen is centred and exactly as wide as the messages inside it
               // (max-w-3xl, 48rem on MessageScrollerContent), over the blurred page.
               expanded
@@ -341,6 +350,7 @@ export default function AssistantWidget() {
                           <AssistantMessage
                             message={message}
                             onFollowUp={askQuestion}
+                            palette={palette}
                             animate={!reduceMotion && i >= animateFrom}
                             expanded={expanded}
                           />

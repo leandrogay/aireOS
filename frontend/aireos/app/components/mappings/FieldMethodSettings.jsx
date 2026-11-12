@@ -2,13 +2,14 @@
 
 import { inputClass, labelClass } from '@/components/ui/formStyles';
 import SelectDropdown from '@/components/ui/SelectDropdown';
+import { glassNoteClass } from '@/components/ui/surfaceStyles';
 import { rowsAboveChoices } from '@/app/utils/fieldDecision';
 import { MEASURE_FIELDS, fieldLabel, groupChoices, groupOptionLabel, periodLabel } from '@/app/utils/mappingReview';
 import { cn } from '@/lib/utils';
 
 import StepsEditor from './StepsEditor';
 
-const note = 'rounded-md bg-cream/60 px-2 py-1.5 text-[11px] text-deep-violet-blue';
+const note = cn(glassNoteClass, 'px-2 py-1.5 text-[11px] text-deep-violet-blue');
 
 /** A few of a column's values, as a picker's option says them. */
 function examples(values) {
@@ -70,7 +71,7 @@ function RowsAbove({ draft, onChange, groups, layout }) {
         <ul className="space-y-1">
           {choices.map((choice) => (
             <li key={choice.row}>
-              <label className="flex cursor-pointer items-start gap-2 rounded-md border border-lavander p-2 hover:bg-cream/50">
+              <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-deep-violet-blue/15 bg-white/40 p-2 hover:bg-white/70">
                 <input
                   type="radio"
                   name="rows-above"

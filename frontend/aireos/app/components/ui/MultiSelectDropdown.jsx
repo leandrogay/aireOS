@@ -6,7 +6,7 @@ import Dropdown from '@/components/ui/Dropdown';
 import { cn } from '@/lib/utils';
 
 const checkRowClass =
-  'flex min-w-0 cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2 py-1 text-sm text-deep-violet-blue hover:bg-cream';
+  'flex min-w-0 cursor-pointer items-center gap-2 overflow-hidden rounded-md px-2 py-1 text-sm text-deep-violet-blue hover:bg-lavander/50';
 
 /**
  * What the closed button says: the "all" label when nothing narrows the list,

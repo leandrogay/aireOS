@@ -79,7 +79,7 @@ export default function DateRangeControl({ start, end, presets, latestDataEnd, e
       </PopoverTrigger>
       {/* Start-aligned: Period is the left-hand control, so the popover has
           room to open rightwards instead of over the sidebar. */}
-      <PopoverContent align="start" className="w-auto max-w-[calc(100vw-2rem)] bg-white p-4">
+      <PopoverContent align="start" className="aire-glass-dropdown-panel w-auto max-w-[calc(100vw-2rem)] p-4">
         <div className="flex flex-col gap-4 sm:flex-row sm:gap-5">
           <div className="flex flex-col gap-2 sm:w-36 sm:border-r sm:border-lavander sm:pr-5">
             <p className={sectionLabelClass}>Presets</p>

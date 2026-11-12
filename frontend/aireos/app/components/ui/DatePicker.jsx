@@ -16,7 +16,7 @@ import { cn } from '@/lib/utils';
 
 // The calendar panel, shared with ui/RangeDatePicker's typed variant.
 export const calendarPanelClass =
-  'w-auto max-w-[95vw] gap-0 overflow-hidden rounded-md border border-lavander bg-white p-1 text-deep-violet-blue ring-0';
+  'aire-glass-dropdown-panel w-auto max-w-[95vw] gap-0 overflow-hidden rounded-md border border-lavander p-1 text-deep-violet-blue ring-0';
 
 // The typed variants' box: the form input look around a dd/mm/yyyy text box
 // and the calendar icon, so it lines up with a Dropdown 'field' beside it.
@@ -26,7 +26,7 @@ export const typedBoxClass = cn(
 );
 export const typedInputClass = 'h-8 bg-transparent tabular-nums outline-none disabled:cursor-not-allowed';
 export const calendarIconClass =
-  'flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-deep-violet-blue/50 hover:bg-cream hover:text-deep-violet-blue focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet disabled:cursor-not-allowed disabled:hover:bg-transparent';
+  'flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-deep-violet-blue/50 hover:bg-lavander/50 hover:text-deep-violet-blue focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet disabled:cursor-not-allowed disabled:hover:bg-transparent';
 
 /**
  * One month grid with a month/year dropdown, opening on the picked day's

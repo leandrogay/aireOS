@@ -121,10 +121,20 @@ def run_query(query: str, query_parameters: list | None = None):
     return get_bigquery_client().query(query, job_config=job_config).result()
 
 
+def read_frame(query: str, query_parameters: list | None = None) -> pd.DataFrame:
+    """Run one read and return its rows as a DataFrame, downloaded over REST.
+
+    The forecast reads are small, so the BigQuery Storage API (a separate package
+    and IAM permission) would gain nothing; turning it off also stops the
+    "BigQuery Storage module not found" warning on every query.
+    """
+    return run_query(query, query_parameters).to_dataframe(create_bqstorage_client=False)
+
+
 def _read_output_built_at() -> str | None:
-    df = run_query(
+    df = read_frame(
         f"SELECT MAX(output_built_at) AS output_built_at FROM `{BQ_FORECAST_OUTPUT_VIEW}`"
-    ).to_dataframe()
+    )
     if df.empty:
         return None
     return _iso_stamp(df.iloc[0]["output_built_at"])
@@ -381,7 +391,7 @@ def _read_forecast_scope(product_name: str | None, customer_name: str | None) ->
             "WHERE product_name = @product_name) AS skus"
         )
         query_parameters.append(bigquery.ScalarQueryParameter("product_name", "STRING", product_name))
-    df = run_query(f"SELECT {', '.join(parts)}", query_parameters).to_dataframe()
+    df = read_frame(f"SELECT {', '.join(parts)}", query_parameters)
     record = df.iloc[0].to_dict() if not df.empty else {}
     return {
         "customer_ids": [int(value) for value in record.get("customer_ids", [])] if customer_name else None,
@@ -481,7 +491,7 @@ def _read_forecast_output_rows(
         WHERE {" AND ".join(where_clauses)}
         ORDER BY customer.customer_name, product.product_name, output.tier_order, output.month_year
     """
-    df = run_query(query, query_parameters).to_dataframe()
+    df = read_frame(query, query_parameters)
     if df.empty:
         return []
     rows = with_tier0_initial([_forecast_output_row(record) for record in df.to_dict(orient="records")])
@@ -734,7 +744,7 @@ def _read_forecast_alternatives(scope: dict, start_date: str | None, end_date: s
           AND alt_forecast_current IS NOT NULL
         ORDER BY customer_name, product_name, month_year
     """
-    df = run_query(query, query_parameters).to_dataframe()
+    df = read_frame(query, query_parameters)
     if df.empty:
         return []
     return [_forecast_alternative_row(record) for record in df.to_dict(orient="records")]
@@ -768,7 +778,7 @@ def _read_current_horizon(scope: dict) -> list[dict]:
         WHERE {" AND ".join(where_clauses)}
         GROUP BY tier, customer_id, sku
     """
-    df = run_query(query, query_parameters).to_dataframe()
+    df = read_frame(query, query_parameters)
     return [
         {
             "tier": _json_str(record.get("tier")),
@@ -818,7 +828,7 @@ def get_realised_prices(
     """
     df = forecast_cache.single_flight(
         ("realised_prices", product_name or None, customer_name or None),
-        lambda: run_query(query, query_parameters).to_dataframe(),
+        lambda: read_frame(query, query_parameters),
     )
 
     prices = {}
@@ -858,7 +868,7 @@ def get_forecast_actuals(
     # rebuilt. Overlapping identical reads still share one query.
     df = forecast_cache.single_flight(
         ("forecast_actuals", product_name or None, customer_name or None, start_date or None, end_date or None),
-        lambda: run_query(query, query_parameters).to_dataframe(),
+        lambda: read_frame(query, query_parameters),
     )
     if df.empty:
         return []
@@ -907,7 +917,7 @@ def _read_forecast_options() -> dict:
         FROM options
         GROUP BY product_name, customer_name
     """
-    df = run_query(query).to_dataframe()
+    df = read_frame(query)
     if df.empty:
         return {
             "products": [],
@@ -953,7 +963,7 @@ def get_sales_loaded_at(customer_name: str | None = None) -> str | None:
     """
     df = forecast_cache.single_flight(
         ("sales_loaded_at", customer_name),
-        lambda: run_query(query, query_parameters).to_dataframe(),
+        lambda: read_frame(query, query_parameters),
     )
     if df.empty:
         return None
@@ -973,7 +983,7 @@ def get_initial_meta() -> list[dict]:
         FROM `{config.BQ_FORECAST_DATASET}.aire_forecasting_initial_meta`
         ORDER BY forecast_year
     """
-    df = run_query(query).to_dataframe()
+    df = read_frame(query)
     return [
         {
             "forecast_year": int(record["forecast_year"]),

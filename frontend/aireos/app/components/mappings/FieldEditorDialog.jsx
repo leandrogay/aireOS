@@ -52,8 +52,10 @@ function MethodOption({ item, checked, isCurrent, onChoose }) {
     <li>
       <label
         className={cn(
-          'flex cursor-pointer items-start gap-2 rounded-md border px-2 py-1.5 text-xs text-deep-violet-blue',
-          checked ? 'border-deep-violet-blue bg-lavander/40' : 'border-lavander hover:bg-cream/60',
+          'flex cursor-pointer items-start gap-2 rounded-lg border px-2 py-1.5 text-xs text-deep-violet-blue transition-colors duration-(--motion-control)',
+          // Frosted panes with a clear edge; the chosen one tinted and outlined
+          // in ink (as ChannelSplit's retailer options).
+          checked ? 'border-deep-violet-blue bg-lavander/60 ring-1 ring-deep-violet-blue' : 'border-deep-violet-blue/15 bg-white/40 hover:bg-white/70',
           item.reason && 'cursor-not-allowed opacity-60',
         )}
         title={item.reason || item.help}
@@ -108,9 +110,11 @@ function EditorForm({ entry, mapping, state, layout, onApply, onClose }) {
     onApply(field, draft);
   }
 
+  // No card of its own: the dialog's frosted glass (ui/dialog, aire-glass-float)
+  // is the surface, as it is for every other dialog.
   return (
-    <form noValidate onSubmit={handleSubmit} className="flex max-h-[85vh] flex-col rounded-lg border border-lavander bg-white shadow-sm">
-      <div className="border-b border-lavander py-3 pl-4 pr-12">
+    <form noValidate onSubmit={handleSubmit} className="flex max-h-[85vh] flex-col">
+      <div className="border-b border-deep-violet-blue/10 py-3 pl-4 pr-12">
         <h2 className="font-serif text-xl text-deep-violet-blue">How is {entry.label} filled?</h2>
         <p className="mt-0.5 text-xs text-deep-violet-blue/65">
           {entry.help} <span className="text-deep-violet-blue/45">Now: {decisionSummary(current)}.</span>
@@ -187,7 +191,7 @@ function EditorForm({ entry, mapping, state, layout, onApply, onClose }) {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center justify-end gap-2 rounded-b-lg border-t border-lavander bg-cream/40 px-4 py-3">
+      <div className="flex flex-wrap items-center justify-end gap-2 rounded-b-xl border-t border-deep-violet-blue/10 bg-white/40 px-4 py-3">
         {problem && (
           <p className={cn('mr-auto flex items-center gap-1 text-xs', blocked ? 'text-red-700' : 'text-amber-900')}>
             <CircleAlert aria-hidden="true" className="size-3.5 shrink-0" />
@@ -232,7 +236,7 @@ export default function FieldEditorDialog({ entry, mapping, state, layout, onApp
     >
       <DialogContent
         aria-label={entry ? `How ${entry.label} is filled` : 'Field'}
-        className="bg-transparent p-0 ring-0 sm:max-w-3xl lg:max-w-5xl"
+        className="p-0 sm:max-w-3xl lg:max-w-5xl"
       >
         {entry && (
           <EditorForm

@@ -9,11 +9,12 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from '@/components/ui/chart';
+import ChartFrame, { CHART_TOOLTIP_CLASS } from '@/components/ui/ChartFrame';
 
 import { formatMonth, formatUnits } from '@/app/utils/inventoryForm';
 import { customerLabel } from '@/app/utils/retailerLabel';
-import { customerColor, customerColorOrder } from '@/app/utils/storeFormats';
-import { BAR_ANIMATION, chartDataRange, metricYAxisProps, yearAxisProps } from '@/app/utils/trendChart';
+import { customerColorById, customerPalette } from '@/app/utils/customerColors';
+import { AXIS_TICK, BAR_ANIMATION, chartDataRange, metricYAxisProps, yearAxisProps } from '@/app/utils/trendChart';
 import useChartTransition from '@/hooks/useChartTransition';
 import useMediaQuery from '@/hooks/useMediaQuery';
 
@@ -70,29 +71,30 @@ export default function EndingStockChart({ monthly, allCustomers }) {
     return <p className="text-sm text-deep-violet-blue/70">No inventory data for these filters.</p>;
   }
 
-  const colorOrder = customerColorOrder(allCustomers);
+  // By customer_id, the same colour the customer has on every page.
+  const palette = customerPalette(allCustomers);
   const config = Object.fromEntries(
     customers.map(([id, name]) => [
       `c${id}`,
-      { label: customerLabel(name), color: customerColor(name, colorOrder) },
+      { label: customerLabel(name), color: customerColorById(id, palette) },
     ]),
   );
 
   return (
     <div className="space-y-2">
-      <div className="overflow-visible rounded-xl border border-lavander bg-white pl-1 pr-3 pt-2">
+      <ChartFrame>
         <ChartContainer config={config} className="aspect-auto h-[308px] w-full">
           <BarChart
             accessibilityLayer
             data={transition.rows}
             margin={{ top: 8, right: 8, left: 0, bottom: 8 }}
           >
-            <CartesianGrid vertical={false} stroke="var(--aire-lavender)" />
+            <CartesianGrid vertical={false} />
             <XAxis
               dataKey={mobile ? 'month' : 'label'}
               interval={0}
               height={mobile ? 28 : 52}
-              tick={{ fontSize: 9, fill: '#3A4369' }}
+              tick={AXIS_TICK}
               angle={mobile ? 0 : -40}
               textAnchor={mobile ? 'middle' : 'end'}
               tickMargin={6}
@@ -103,14 +105,14 @@ export default function EndingStockChart({ monthly, allCustomers }) {
               ticks={transition.ticks}
               tickFormatter={formatUnits}
               width={48}
-              tick={{ fontSize: 10, fill: '#3A4369' }}
+              tick={AXIS_TICK}
             />
             {/* Above the legend, which is drawn after it and would show through. */}
             <ChartTooltip
               wrapperStyle={{ zIndex: 10 }}
               content={
                 <ChartTooltipContent
-                  className="border-violet/40 bg-white"
+                  className={CHART_TOOLTIP_CLASS}
                   formatter={labelledTooltipRow(config, (value) => `${formatUnits(value)} units`)}
                 />
               }
@@ -130,7 +132,7 @@ export default function EndingStockChart({ monthly, allCustomers }) {
             ))}
           </BarChart>
         </ChartContainer>
-      </div>
+      </ChartFrame>
     </div>
   );
 }

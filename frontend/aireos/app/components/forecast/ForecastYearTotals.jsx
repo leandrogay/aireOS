@@ -10,20 +10,20 @@ import { cn } from '@/lib/utils';
 // Volume in cartons; the card's detail line says so, so the headings don't.
 const COLUMNS = [
   { key: 'year', label: 'Year' },
-  { key: 'actual', label: 'Actual', width: '9rem', align: 'right' },
-  { key: 'forecast', label: 'Forecast', width: '9rem', align: 'right' },
-  { key: 'total', label: 'Total', width: '9rem', align: 'right' },
+  { key: 'actual', label: 'YTD actual', width: '9rem', align: 'right' },
+  { key: 'forecast', label: 'Rest-of-year forecast', width: '9rem', align: 'right' },
+  { key: 'total', label: 'Full year', width: '9rem', align: 'right' },
 ];
 
-// The darker header line of the compact report tables (Inventory's sell-in
-// comparison, the Scenario builder's tables); a step darker than their cream
+// The darker header line of the compact report table (Inventory's sell-in
+// comparison); a step darker than their cream
 // header, so the column lines still read on it.
 export const HEADER_RULE = 'border-[#C5CBE0]';
 
 const CELL_CLASS = 'px-4 py-2.5';
 const NUMBER_CELL_CLASS = 'px-4 py-2.5 text-right tabular-nums';
 
-function formatVolume(value) {
+export function formatVolume(value) {
   if (value == null) return '—';
   return Math.round(value).toLocaleString();
 }
@@ -40,19 +40,16 @@ export function mixCaption(year) {
 /**
  * One row per calendar year under the chart: actual, forecast and the
  * combined total, in cartons (the Forecast page shows volume only), on the
- * shared TableGrid. The next-12-month Current total (each SKU's whole Current
- * line, from the backend's `horizon`) is a footer line under the rows, since
- * it has no actual/forecast split. Year figures come from
+ * shared TableGrid. Year figures come from
  * forecastYearTotals.buildYearlyTotals. Phones get one card per year.
  * Goes inside the page's TableCard.
  *
  * @param {{
  *   years: object[],
  *   loading?: boolean,
- *   horizonVolume?: number | null,
  * }} props
  */
-export default function ForecastYearTotals({ years, loading = false, horizonVolume = null }) {
+export default function ForecastYearTotals({ years, loading = false }) {
   if (!loading && !years.length) return null;
 
   return (
@@ -68,8 +65,8 @@ export default function ForecastYearTotals({ years, loading = false, horizonVolu
                 title={String(year.year)}
                 subtitle={mixCaption(year) || undefined}
                 fields={[
-                  { label: 'Actual', value: <span className="tabular-nums">{formatVolume(year.volume.actual)}</span> },
-                  { label: 'Forecast', value: <span className="tabular-nums">{formatVolume(year.volume.forecast)}</span> },
+                  { label: 'YTD', value: <span className="tabular-nums">{formatVolume(year.volume.actual)}</span> },
+                  { label: 'MTG', value: <span className="tabular-nums">{formatVolume(year.volume.forecast)}</span> },
                   { label: 'Total', value: <span className="font-medium tabular-nums">{formatVolume(year.volume.total)}</span> },
                 ]}
               />
@@ -97,17 +94,6 @@ export default function ForecastYearTotals({ years, loading = false, horizonVolu
           })}
         </TableGrid>
       </div>
-
-      {!loading && (
-        // The footer strip, like TablePagination's: not a year, so not a row.
-        <div className="flex items-center justify-between gap-3 border-t border-lavander px-4 py-3 text-sm text-deep-violet-blue">
-          <span className="inline-flex items-center gap-0.5 text-deep-violet-blue/70">
-            Next 12 months forecast
-            <ForecastInfo helpKey="next12" label="About the next 12 months" />
-          </span>
-          <span className="font-medium tabular-nums">{formatVolume(horizonVolume)}</span>
-        </div>
-      )}
     </div>
   );
 }

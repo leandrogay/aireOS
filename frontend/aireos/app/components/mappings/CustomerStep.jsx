@@ -18,7 +18,7 @@ import { cn } from '@/lib/utils';
 import ChannelSplit from './ChannelSplit';
 import ResetButton from './ResetButton';
 
-const smallButton = 'h-7 border-deep-violet-blue/30 bg-white px-2 text-xs text-deep-violet-blue hover:bg-cream';
+const smallButton = 'h-7 border-deep-violet-blue/30 bg-white px-2 text-xs text-deep-violet-blue hover:bg-lavander/50';
 
 // The retailer decisions ChannelSplit can show (retailerSplit.splitFromDecision).
 const SPLIT_MODES = ['offline', 'online', 'split'];
@@ -321,7 +321,7 @@ export default function CustomerStep({
               initial={reduceMotion ? false : { opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={reduceMotion ? undefined : { opacity: 0, height: 0 }}
-              transition={{ height: CARD_REVEAL.layout, opacity: { duration: 0.15, ease: 'easeOut' } }}
+              transition={CARD_REVEAL.expand}
               // Clipped while it grows; the padding keeps focus rings inside the clip.
               className="-mx-1 overflow-hidden px-1 pb-1"
             >
@@ -367,7 +367,7 @@ export default function CustomerStep({
                     initial={reduceMotion ? false : { opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: 'auto' }}
                     exit={reduceMotion ? undefined : { opacity: 0, height: 0 }}
-                    transition={{ height: CARD_REVEAL.layout, opacity: { duration: 0.15, ease: 'easeOut' } }}
+                    transition={CARD_REVEAL.expand}
                     className="-mx-1 overflow-hidden px-1"
                   >
                     <ul className="space-y-1 pt-1.5 pb-px">

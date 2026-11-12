@@ -1,6 +1,7 @@
 'use client';
 
 import ToggleField from '@/components/ui/ToggleField';
+import { glassInsetClass } from '@/components/ui/surfaceStyles';
 import { PROPOSER } from '@/app/utils/mappingReview';
 
 import ResetButton from './ResetButton';
@@ -21,7 +22,7 @@ import ResetButton from './ResetButton';
  */
 export default function FileSettings({ instructions, changed, onChange, onReset, disabled }) {
   return (
-    <div className="mt-2 rounded-md border border-lavander px-2 py-2">
+    <div className={`${glassInsetClass} mt-2 px-2 py-2`}>
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs font-medium text-deep-violet-blue">For the whole file</p>
         {changed && (

@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice">
+  <!-- AIRE dark wallpaper: the same waves as aire-waves-lavender-light.svg, in deep blue
+       and violet with a dim lavender glow, behind the dark glass cards. -->
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#11142A"/>
+      <stop offset="1" stop-color="#1B2040"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.78" cy="0.16" r="0.5">
+      <stop offset="0" stop-color="#A29BCC" stop-opacity="0.55"/>
+      <stop offset="0.5" stop-color="#625B90" stop-opacity="0.25"/>
+      <stop offset="1" stop-color="#625B90" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="celest" cx="0.1" cy="0.25" r="0.45">
+      <stop offset="0" stop-color="#A7D2F2" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#A7D2F2" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="w1" x1="0" y1="0" x2="1" y2="0.4">
+      <stop offset="0" stop-color="#252B4A"/>
+      <stop offset="1" stop-color="#3A3866"/>
+    </linearGradient>
+    <linearGradient id="w2" x1="0" y1="0" x2="1" y2="0.5">
+      <stop offset="0" stop-color="#2B3A5E"/>
+      <stop offset="0.5" stop-color="#3E3C70"/>
+      <stop offset="1" stop-color="#524A88"/>
+    </linearGradient>
+    <linearGradient id="w3" x1="0" y1="0" x2="1" y2="0.6">
+      <stop offset="0" stop-color="#4A4580"/>
+      <stop offset="1" stop-color="#625B90"/>
+    </linearGradient>
+    <linearGradient id="w4" x1="0" y1="0" x2="1" y2="0.5">
+      <stop offset="0" stop-color="#6E66A6"/>
+      <stop offset="1" stop-color="#8C84C0"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#DFE4F7" stop-opacity="0.22"/>
+      <stop offset="0.16" stop-color="#DFE4F7" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="soft" x="-10%" y="-20%" width="120%" height="140%">
+      <feDropShadow dx="0" dy="-14" stdDeviation="22" flood-color="#05081A" flood-opacity="0.45"/>
+    </filter>
+    <filter id="blur" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="40"/>
+    </filter>
+  </defs>
+  <rect width="1600" height="1000" fill="url(#sky)"/>
+  <rect width="1600" height="1000" fill="url(#celest)"/>
+  <rect width="1600" height="1000" fill="url(#glow)"/>
+  <ellipse cx="420" cy="380" rx="360" ry="140" fill="#625B90" opacity="0.25" filter="url(#blur)"/>
+
+  <g filter="url(#soft)">
+    <path d="M0,540 C300,410 620,320 960,370 C1250,412 1420,290 1600,210 L1600,1000 L0,1000 Z" fill="url(#w1)"/>
+    <path d="M0,540 C300,410 620,320 960,370 C1250,412 1420,290 1600,210 L1600,1000 L0,1000 Z" fill="url(#sheen)"/>
+  </g>
+  <g filter="url(#soft)">
+    <path d="M0,690 C260,590 560,505 880,565 C1180,622 1400,505 1600,455 L1600,1000 L0,1000 Z" fill="url(#w2)"/>
+    <path d="M0,690 C260,590 560,505 880,565 C1180,622 1400,505 1600,455 L1600,1000 L0,1000 Z" fill="url(#sheen)"/>
+  </g>
+  <g filter="url(#soft)">
+    <path d="M0,815 C320,715 640,690 960,760 C1240,822 1420,750 1600,690 L1600,1000 L0,1000 Z" fill="url(#w3)"/>
+    <path d="M0,815 C320,715 640,690 960,760 C1240,822 1420,750 1600,690 L1600,1000 L0,1000 Z" fill="url(#sheen)"/>
+  </g>
+  <g filter="url(#soft)">
+    <path d="M0,935 C360,862 720,878 1040,926 C1300,966 1460,936 1600,895 L1600,1000 L0,1000 Z" fill="url(#w4)"/>
+    <path d="M0,935 C360,862 720,878 1040,926 C1300,966 1460,936 1600,895 L1600,1000 L0,1000 Z" fill="url(#sheen)"/>
+  </g>
+</svg>

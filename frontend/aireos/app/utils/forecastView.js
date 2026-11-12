@@ -1,3 +1,4 @@
+import { NO_CUSTOMER_COLOR } from '@/app/utils/customerColors';
 import { dataMonthsByMonth, initialVsActual, monthNotes, monthlyActuals } from '@/app/utils/forecastActuals';
 import {
   CURRENT_DETAIL_LABEL,
@@ -24,8 +25,10 @@ export const DEFAULT_PRODUCT_NAME = 'Aire Ultra Tape L';
 const ALL_FORECAST_SERIES = [
   // Breaks at a month with no actual; ForecastChart joins each gap with a
   // dashed segment (forecastActuals.withActualBridges), so a missing month
-  // is never drawn as a point, let alone as 0.
-  { key: 'actual', label: 'Actual', color: '#3A4369', dash: undefined, shape: 'circle', connectNulls: false },
+  // is never drawn as a point, let alone as 0. Its colour here is the one for
+  // no single customer; with one customer picked it is that customer's
+  // (forecastSeriesWithActualColor).
+  { key: 'actual', label: 'Actual', color: NO_CUSTOMER_COLOR, dash: undefined, shape: 'circle', connectNulls: false },
   // The year's Jan-Dec plan (aire_forecasting_initial), always Tier 0's:
   // made from 1 Sep, rebuilt by every retrain until it locks at the end of
   // 31 Oct (forecastLineText INITIAL_BUILD_DAY / INITIAL_LOCK_DAY). 2026 was a one-off
@@ -35,7 +38,8 @@ const ALL_FORECAST_SERIES = [
   // The same model retrained with one month less sales (forecast_previous,
   // rebuilt on every retrain; previous_data_month). A model with none for the
   // SKUs in scope greys its pill out instead of drawing it.
-  // Faint, so Current reads as the line to plan on.
+  // Thinner and dashed, so Current reads as the line to plan on. Kept at full
+  // opacity: faded, it vanished into the lavender promo bands behind it.
   {
     key: 'previous',
     label: 'Previous forecast',
@@ -43,7 +47,6 @@ const ALL_FORECAST_SERIES = [
     dash: '8 3',
     shape: 'triangle',
     connectNulls: false,
-    strokeOpacity: 0.45,
     strokeWidth: 1.8,
   },
   // The latest run, 12 months after the newest sales month. Bold and solid.
@@ -51,6 +54,18 @@ const ALL_FORECAST_SERIES = [
 ];
 
 export const FORECAST_SERIES = ALL_FORECAST_SERIES.filter((series) => !series.archived);
+
+/**
+ * The forecast lines with Actual drawn in `actualColor`: the picked customer's
+ * colour (utils/customerColors), or NO_CUSTOMER_COLOR for All customers. The
+ * Current, Previous and Initial lines keep their own colours.
+ *
+ * @param {string} actualColor
+ * @returns {typeof FORECAST_SERIES}
+ */
+export function forecastSeriesWithActualColor(actualColor) {
+  return FORECAST_SERIES.map((series) => (series.key === 'actual' ? { ...series, color: actualColor } : series));
+}
 
 export const ALL_SERIES_VISIBLE = Object.fromEntries(
   FORECAST_SERIES.map((series) => [series.key, true])
@@ -81,7 +96,9 @@ export const PROMO_OVERLAY_TYPES = [
   {
     value: 'monthly',
     label: 'Monthly',
-    color: '#DFE4F7',
+    // Deeper than brand lavender (#DFE4F7), which is all but the chart's own
+    // background colour, so a lavender band could not be seen.
+    color: '#B9C1E6',
     swatch: '#3A4369',
     selectedBg: '#3A4369',
     selectedFg: '#FFFFFF',

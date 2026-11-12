@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { AlertTriangle } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import DatePicker from '@/components/ui/DatePicker';
 import StatusPill from '@/components/ui/StatusPill';
 import TableGrid from '@/components/ui/TableGrid';
 import TableRow from '@/components/ui/TableRow';
@@ -126,8 +127,8 @@ export default function SkuDetails({ open, sku, loading, error, onCorrectPricePe
           </p>
         )}
         {!loading && !error && sku && (
-          <div className="space-y-5">
-            <section className="space-y-2">
+          <div className="min-w-0 space-y-5">
+            <section className="min-w-0 space-y-2">
               <h3 className="text-sm font-semibold text-deep-violet-blue">Price periods</h3>
               <p className="text-xs text-deep-violet-blue/65">
                 Correct a saved price or date entered by mistake. This may change past calculated revenue; supplied revenue stays the same.
@@ -153,7 +154,7 @@ export default function SkuDetails({ open, sku, loading, error, onCorrectPricePe
               <TableGrid
                 variant="nested"
                 columns={SKU_PRICE_PERIOD_COLUMNS}
-                minWidth="38rem"
+                minWidth="48rem"
                 emptyState={!sku.price_periods?.length
                   ? 'No price periods available. Ask an administrator to reconcile the price history.'
                   : null}
@@ -175,24 +176,24 @@ export default function SkuDetails({ open, sku, loading, error, onCorrectPricePe
                     </td>
                     <td className="px-4 py-2">
                       {editing?.periodId === period.price_period_id ? (
-                        <input
-                          type="date"
-                          aria-label="Correct effective from"
+                        <DatePicker
+                          variant="input"
+                          ariaLabel="Correct effective from"
                           value={editing.effective_from}
-                          onChange={(event) => setEditing({ ...editing, effective_from: event.target.value })}
-                          className="w-full rounded-md border border-lavander bg-cream px-2 py-1 text-sm text-deep-violet-blue"
+                          onChange={(value) => setEditing({ ...editing, effective_from: value })}
+                          boxClassName="bg-cream"
                         />
                       ) : period.effective_from}
                     </td>
                     <td className="px-4 py-2">
                       {editing?.periodId === period.price_period_id ? (
-                        <input
-                          type="date"
-                          aria-label="Correct effective to"
+                        <DatePicker
+                          variant="input"
+                          ariaLabel="Correct effective to"
                           value={editing.effective_to}
-                          min={editing.effective_from || undefined}
-                          onChange={(event) => setEditing({ ...editing, effective_to: event.target.value })}
-                          className="w-full rounded-md border border-lavander bg-cream px-2 py-1 text-sm text-deep-violet-blue"
+                          min={editing.effective_from || ''}
+                          onChange={(value) => setEditing({ ...editing, effective_to: value })}
+                          boxClassName="bg-cream"
                         />
                       ) : (period.effective_to || 'Until changed')}
                     </td>

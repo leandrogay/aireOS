@@ -35,17 +35,17 @@ export const NAV_ITEMS = [
     ],
   },
   {
-    label: 'Promotions',
-    href: '/promotions',
-    icon: Tag,
-    description: 'Plan promotion events by store, period, mechanic and SKU.',
-  },
-  {
     label: 'Inventory',
     href: '/inventory',
     icon: Package,
     description: 'Ending stock, days of holding and a sell-in plan per customer.',
     children: [{ label: 'DOH settings', href: '/doh' }],
+  },
+  {
+    label: 'Promotions',
+    href: '/promotions',
+    icon: Tag,
+    description: 'Plan promotion events by store, period, mechanic and SKU.',
   },
   // Database has no page of its own, so it links to its first child.
   {

@@ -41,11 +41,15 @@ export function Category({ title, note, children }) {
  * A card with a title and an optional note, for free-form content. Use
  * Section when the body is a grid of variants.
  *
- * @param {{ title: string, note?: string, children: React.ReactNode }} props
+ * `bare` drops the white card, so what's inside sits on the page wallpaper.
+ * Glass cards (ChartCard, TableCard) take their look from what's behind them;
+ * on a solid white card they read as flat white.
+ *
+ * @param {{ title: string, note?: string, bare?: boolean, children: React.ReactNode }} props
  */
-export function Panel({ title, note, children }) {
+export function Panel({ title, note, bare = false, children }) {
   return (
-    <section className="mb-3 rounded-lg border border-lavander bg-white p-4 shadow-sm">
+    <section className={bare ? 'mb-3 px-1 py-2' : 'mb-3 rounded-lg border border-lavander bg-white p-4 shadow-sm'}>
       <h3 className="font-serif text-lg text-deep-violet-blue">{title}</h3>
       {note && <p className="mb-3 text-xs text-deep-violet-blue/60">{note}</p>}
       {children}
@@ -58,11 +62,11 @@ const VARIANT_GRID_CLASS = 'grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2 lg:g
 /**
  * A Panel whose body is a grid of Variants.
  *
- * @param {{ title: string, note?: string, children: React.ReactNode }} props
+ * @param {{ title: string, note?: string, bare?: boolean, children: React.ReactNode }} props
  */
-export function Section({ title, note, children }) {
+export function Section({ title, note, bare = false, children }) {
   return (
-    <Panel title={title} note={note}>
+    <Panel title={title} note={note} bare={bare}>
       <div className={VARIANT_GRID_CLASS}>{children}</div>
     </Panel>
   );
@@ -94,7 +98,7 @@ export function Variant({ name, props, value, children }) {
  */
 export function ReferenceTable({ head, rows }) {
   return (
-    <div className="overflow-x-auto rounded-md border border-lavander">
+    <div className="overflow-x-auto rounded-md border border-lavander bg-white">
       <table className="w-full text-left text-xs text-deep-violet-blue">
         <thead className="bg-cream">
           <tr className="border-b border-lavander">
@@ -147,14 +151,16 @@ export function WhichToUse({ rows, note, children }) {
  * @param {{
  *   rows: string[][],
  *   leaveAsIs?: string[][],
+ *   bare?: boolean,
  *   children?: React.ReactNode,
  * }} props rows are [Page, File (components/), Uses now, Migrate to];
  * leaveAsIs rows are [Page, File (components/), Why it stays]; children are
  * Variants named "Old: …" and "New: …", old first
  */
-export function NotMigrated({ rows, leaveAsIs, children }) {
+export function NotMigrated({ rows, leaveAsIs, bare = false, children }) {
   return (
     <Panel
+      bare={bare}
       title="Not migrated yet"
       note="Pages that still use the old version. Move one to the kit when you're next working in its file, not as a standalone change, and remove its row here."
     >

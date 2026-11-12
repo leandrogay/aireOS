@@ -253,9 +253,13 @@ export function metricYAxisProps(metric, { min = 0, max = 0 }) {
     ticks,
     tickFormatter: axisTickFormatter(step * reach, reach, metric === 'units' ? '' : '$'),
     width: 50,
-    tick: { fontSize: 10 },
+    tick: AXIS_TICK,
   };
 }
+
+// One tick size for every chart's axes. The colour comes from ChartContainer
+// (ui/chart: muted-foreground), so it follows the light/dark theme.
+export const AXIS_TICK = { fontSize: 11 };
 
 // Room above the plot for the top tick label and a point's hover dot.
 export const CHART_TOP_MARGIN = 12;

@@ -11,7 +11,7 @@ function ChannelToggle({ value, channel, onChange, disabled }) {
       value={channel}
       onChange={onChange}
       options={options}
-      look="outline"
+      look="tint"
       ariaLabel={`Channel for ${value}`}
       className="shrink-0"
     />
@@ -32,7 +32,9 @@ export default function ChannelValueList({ rows, onChange, disabled }) {
   const online = rows.filter((row) => row.channel === 'online').length;
   return (
     <>
-      <ul className="max-h-64 divide-y divide-lavander overflow-y-auto rounded-md border border-lavander">
+      {/* Solid rows in a clear frame (surfaceStyles.glassTableFrameClass), with a
+          thin scrollbar so the long list doesn't carry a heavy bar inside the card. */}
+      <ul className="max-h-64 divide-y divide-deep-violet-blue/10 overflow-y-auto rounded-lg border border-deep-violet-blue/15 bg-white [scrollbar-width:thin]">
         {rows.map((row) => (
           <li key={row.value} className="flex items-center gap-2 px-2 py-1">
             <span className="min-w-0 flex-1 truncate font-mono text-xs" title={row.value}>

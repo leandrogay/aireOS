@@ -3,6 +3,7 @@
 import { Bar, BarChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from 'recharts';
 
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip } from '@/components/ui/chart';
+import ChartFrame, { CHART_TOOLTIP_CLASS } from '@/components/ui/ChartFrame';
 import { ESTIMATE_PILL_CLASS } from '@/components/dashboard/EstMark';
 import { hasEstimate } from '@/app/utils/estimatedRevenue';
 import { cn } from '@/lib/utils';
@@ -43,7 +44,13 @@ function TrendTooltip({ active, payload, metric, series }) {
   const total = series.reduce((sum, item) => sum + (row[item.key] ?? 0), 0);
 
   return (
-    <div className="grid min-w-40 grid-cols-[auto_auto] items-center gap-x-6 gap-y-1.5 rounded-lg border border-lavander bg-white px-2.5 py-1.5 text-xs shadow-xl">
+    // ChartTooltipContent's box in the shared tooltip look; the rows are this chart's own.
+    <div
+      className={cn(
+        'grid min-w-40 grid-cols-[auto_auto] items-center gap-x-6 gap-y-1.5 rounded-lg border px-2.5 py-1.5 text-xs shadow-xl',
+        CHART_TOOLTIP_CLASS,
+      )}
+    >
       <div className="col-span-2 font-medium text-deep-violet-blue">{row.exactLabel}</div>
       {series.map((item) => (
         <div key={item.key} className="col-span-2 grid grid-cols-subgrid">
@@ -79,11 +86,11 @@ function TrendTooltip({ active, payload, metric, series }) {
  * since the bars would be too thin to read. Customers
  * without the active channel (NHG has no online sales) are left off.
  *
- * @param {{ customers: Array<object>, mode: 'offline' | 'online', metric: 'revenue' | 'units', granularity: 'week' | 'month', colorOrder: string[] }} props
+ * @param {{ customers: Array<object>, mode: 'offline' | 'online', metric: 'revenue' | 'units', granularity: 'week' | 'month', palette: { byName: Map<string, string> } }} props
  */
-export default function CustomerTrendChart({ customers, mode, metric, granularity, colorOrder }) {
+export default function CustomerTrendChart({ customers, mode, metric, granularity, palette }) {
   const mobile = useMediaQuery('(max-width: 639px)');
-  const series = trendSeries(customers, mode, colorOrder);
+  const series = trendSeries(customers, mode, palette);
   const rows = trendRows(customers, series, mode, metric, granularity);
   const kind = trendChartKind({ customerCount: series.length, periodCount: rows.length, mobile });
   const chartConfig = Object.fromEntries(series.map((item) => [item.key, { label: item.label, color: item.color }]));
@@ -116,6 +123,12 @@ export default function CustomerTrendChart({ customers, mode, metric, granularit
   const tooltip = (
     <ChartTooltip content={<TrendTooltip metric={metric} series={series} />} wrapperStyle={{ zIndex: 10 }} />
   );
+  const legend = (
+    <ChartLegend
+      height={mobile ? 52 : undefined}
+      content={<ChartLegendContent className="max-sm:flex-wrap max-sm:gap-x-3 max-sm:gap-y-1 max-sm:px-1 max-sm:[&>div]:whitespace-nowrap" />}
+    />
+  );
 
   if (customers.length === 0) {
     return (
@@ -134,7 +147,7 @@ export default function CustomerTrendChart({ customers, mode, metric, granularit
   }
 
   return (
-    <div className="flex flex-1 flex-col">
+    <ChartFrame fill>
       <ChartContainer config={chartConfig} className={CHART_SIZE_CLASS}>
         {kind === 'bars' ? (
           <BarChart accessibilityLayer data={transition.rows} margin={margin}>
@@ -143,9 +156,9 @@ export default function CustomerTrendChart({ customers, mode, metric, granularit
             {yAxis}
             <MonthAxis groups={monthGroups} />
             {tooltip}
-            <ChartLegend content={<ChartLegendContent />} />
+            {legend}
             {series.map((item) => (
-              <Bar key={item.key} dataKey={item.key} fill={`var(--color-${item.key})`} maxBarSize={MAX_BAR_SIZE} {...BAR_ANIMATION} {...transition.seriesAnimation} />
+              <Bar key={item.key} dataKey={item.key} fill={`var(--color-${item.key})`} radius={[10, 10, 0, 0]} maxBarSize={MAX_BAR_SIZE} {...BAR_ANIMATION} {...transition.seriesAnimation} />
             ))}
           </BarChart>
         ) : (
@@ -155,7 +168,7 @@ export default function CustomerTrendChart({ customers, mode, metric, granularit
             {yAxis}
             <MonthAxis groups={monthGroups} />
             {tooltip}
-            <ChartLegend content={<ChartLegendContent />} />
+            {legend}
             {series.map((item) => (
               <Line
                 key={item.key}
@@ -171,6 +184,6 @@ export default function CustomerTrendChart({ customers, mode, metric, granularit
           </LineChart>
         )}
       </ChartContainer>
-    </div>
+    </ChartFrame>
   );
 }

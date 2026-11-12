@@ -17,28 +17,34 @@ const HIGHLIGHT_SPRING = { type: 'spring', stiffness: 500, damping: 40 };
 
 // `tint`: lavender track, for a switch inside a card (chart metric, form
 // mode). `outline`: white track with a border, for a page's top-level tabs.
-// `glass`: a tinted track with a bordered white thumb for the dashboard's
-// chart controls. `soft`: a see-through track with a white pill, lighter
-// than the solid navy of `tint`; for choosing which data a page shows (the
-// dashboard's Offline / Online) as opposed to how to draw it.
+// `glass` and `soft` share one frosted look for the dashboard: a see-through
+// track with a faint violet edge and a white thumb that floats on a soft
+// shadow rather than a dark outline. `glass` is for a chart's controls (how
+// to draw it), `soft` for choosing which data a page shows (Offline /
+// Online); they stay separate keys so the two can drift apart later.
+const FROSTED_TRACK =
+  'rounded-lg bg-white/40 ring-1 ring-inset ring-violet/25 shadow-[inset_0_1px_2px_rgb(15_30_74/0.06)] backdrop-blur-sm';
+// Two-layer violet-tinted shadow (like POPUP_SHADOW_CLASS, smaller) so the thumb lifts off the track.
+const FROSTED_THUMB =
+  'bg-white ring-1 ring-violet/20 shadow-[0_1px_2px_rgb(15_30_74/0.10),0_3px_8px_-3px_rgb(15_30_74/0.18)]';
 const TRACK_LOOK = {
   tint: 'rounded-lg bg-lavander',
   outline: 'rounded-md border border-violet/40 bg-lavander/35 shadow-sm',
-  glass: 'rounded-lg border border-deep-violet-blue/30 bg-lavander/55 shadow-sm',
-  soft: 'rounded-lg bg-lavander/45 shadow-sm ring-1 ring-violet/25 backdrop-blur-sm',
+  glass: FROSTED_TRACK,
+  soft: FROSTED_TRACK,
 };
 // not-data-disabled: a disabled option keeps its faded look under the pointer.
 const SEGMENT_HOVER = {
   tint: 'not-data-disabled:hover:bg-white/60',
-  outline: 'not-data-disabled:hover:bg-cream',
-  glass: 'not-data-disabled:hover:bg-white/45',
-  soft: '',
+  outline: 'not-data-disabled:hover:bg-lavander/50',
+  glass: 'not-data-disabled:hover:bg-lavander/40',
+  soft: 'not-data-disabled:hover:bg-lavander/40',
 };
 const HIGHLIGHT_LOOK = {
   tint: 'bg-deep-violet-blue shadow-sm',
   outline: 'bg-deep-violet-blue shadow-sm ring-1 ring-deep-violet-blue/40',
-  glass: 'bg-white shadow-sm ring-1 ring-deep-violet-blue/55',
-  soft: 'bg-white shadow-sm ring-1 ring-deep-violet-blue/45',
+  glass: FROSTED_THUMB,
+  soft: FROSTED_THUMB,
 };
 const ACTIVE_TEXT = {
   tint: 'text-white',
@@ -49,8 +55,8 @@ const ACTIVE_TEXT = {
 const INACTIVE_TEXT = {
   tint: 'text-deep-violet-blue/70',
   outline: 'text-deep-violet-blue/70',
-  glass: 'text-deep-violet-blue/80',
-  soft: 'text-deep-violet-blue/75',
+  glass: 'text-deep-violet-blue/65',
+  soft: 'text-deep-violet-blue/65',
 };
 const TRACK_SIZE = {
   sm: 'h-7 text-[11px]',

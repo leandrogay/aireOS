@@ -96,7 +96,7 @@ export default function HeaderCheckboxFilter({ id, label, selected, options, ope
               <button
                 type="button"
                 onClick={() => onChange([])}
-                className="shrink-0 cursor-pointer border-b border-lavander bg-white px-3 py-1.5 text-left text-[11px] font-medium text-deep-violet-blue hover:bg-cream"
+                className="shrink-0 cursor-pointer border-b border-lavander bg-white px-3 py-1.5 text-left text-[11px] font-medium text-deep-violet-blue hover:bg-lavander/50"
               >
                 Clear
               </button>
@@ -112,7 +112,7 @@ export default function HeaderCheckboxFilter({ id, label, selected, options, ope
                   return (
                     <label
                       key={option.value}
-                      className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-[11px] font-normal normal-case tracking-normal text-deep-violet-blue hover:bg-cream"
+                      className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-[11px] font-normal normal-case tracking-normal text-deep-violet-blue hover:bg-lavander/50"
                     >
                       <input
                         type="checkbox"
