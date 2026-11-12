@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils';
 const COLUMNS = [
   { key: 'year', label: 'Year' },
   { key: 'actual', label: 'YTD actual', width: '9rem', align: 'right' },
-  { key: 'forecast', label: 'MTG forecast', width: '9rem', align: 'right' },
+  { key: 'forecast', label: 'Rest-of-year forecast', width: '9rem', align: 'right' },
   { key: 'total', label: 'Full year', width: '9rem', align: 'right' },
 ];
 
