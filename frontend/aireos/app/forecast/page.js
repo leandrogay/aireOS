@@ -3,6 +3,8 @@
 import { Suspense, useEffect, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 
+import useBudgets from '@/hooks/useBudgets';
+import { BUDGET_SERIES, withBudgetPoints } from '@/app/utils/budgetPlanning';
 import PageLayout from '@/components/layout/PageLayout';
 import TableCard from '@/components/ui/TableCard';
 import TableCardHeader from '@/components/ui/TableCardHeader';
@@ -35,6 +37,7 @@ import {
   ALL_PROMO_TYPE_VALUES,
   ALL_SERIES_VISIBLE,
   buildMonthlyPoints,
+  emptyMonthlyPoint,
   formatSgtTimestamp,
   toggleSelectedValue,
   toggleSeriesVisibility,
@@ -60,7 +63,7 @@ function ForecastView() {
   const { productName, customerName, startDate, endDate, ready } = filters;
   const [selectedPromoTypes, setSelectedPromoTypes] = useState(ALL_PROMO_TYPE_VALUES);
   const [selectedPackTypes, setSelectedPackTypes] = useState(ALL_PACK_TYPE_VALUES);
-  const [visibleSeries, setVisibleSeries] = useState(ALL_SERIES_VISIBLE);
+  const [visibleSeries, setVisibleSeries] = useState({ ...ALL_SERIES_VISIBLE, budget: true });
   // Every tier comes back in one request, so switching models redraws from
   // rows already here (utils/forecastTiers.js).
   const view = useForecastView({ ready, productName, customerName, startDate, endDate, tier: ALL_TIERS });
@@ -115,7 +118,9 @@ function ForecastView() {
   // only show once a single customer and SKU are picked.
   const singleSeries = Boolean(productName && customerName);
   // Volume only (cartons): the page shows no revenue.
-  const points = buildMonthlyPoints(rows, actuals, 'units', { singleSeries });
+  const budgets = useBudgets();
+  const points = withBudgetPoints(buildMonthlyPoints(rows, actuals, 'units', { singleSeries }), budgets.data.rows,
+    { productName, customerName, startDate, endDate }, emptyMonthlyPoint);
   // "Next 12 months" is each SKU's whole Current line, which the date
   // filter can cut short (a Jan-Dec view of a line running Sep-Aug), so it
   // comes from the backend's total, not from the points in view.
@@ -247,6 +252,7 @@ function ForecastView() {
 
           <ForecastChart
             points={points}
+            extraSeries={[BUDGET_SERIES]}
             startDate={startDate}
             endDate={endDate}
             singleSeries={singleSeries}
@@ -274,7 +280,7 @@ function ForecastView() {
             previousMonths={previousMonths}
             actualColor={actualColor}
             confidenceDots={singleSeries}
-            notes={modelNotes}
+            notes={[...modelNotes, ...(budgets.error ? [`Budget unavailable: ${budgets.error}`] : [])]}
             emptyMessage={allRows.length ? NO_DATA_FOR_TIER : undefined}
             loading={loading}
           />

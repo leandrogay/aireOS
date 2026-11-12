@@ -11,8 +11,10 @@ import useLastYearActuals from '@/hooks/useLastYearActuals';
  * the engine's per-month uplift.
  *
  * @param {{
+ *   allowOfficialPlanning?: boolean,
  *   ready: boolean,
  *   productName: string,
+ *   skuRange: string,        the Scenario builder's SKU range filter ('' = all)
  *   customerName: string,
  *   startDate: string,
  *   endDate: string,
@@ -22,11 +24,19 @@ import useLastYearActuals from '@/hooks/useLastYearActuals';
  *   monthItems: Map,         month_year → [{ itemId, name }]
  *   onOpenItem: (itemId: string) => void,
  *   scope: string,           what the rows add up, e.g. "Fairprice · All SKUs"
+ *   breakdowns: Map,         month_year → the chart point's breakdown (scenarioComposition)
+ *   splits: Map,             month_year → scenarioTier0Split.monthSplit (the Promotions column, plan status)
+ *   split: boolean,          Tier 0 is split into its baseline and carried promotions
+ *   detailsFor: (month: string) => import('react').ReactNode,
+ *   flagged: (month: string) => boolean,
+ *   baseLabel?: string,      Current or Initial base in budget mode
  * }} props
  */
 export default function MonthlyPlan({
+  allowOfficialPlanning = true,
   ready,
   productName,
+  skuRange = '',
   customerName,
   startDate,
   endDate,
@@ -36,9 +46,15 @@ export default function MonthlyPlan({
   monthItems,
   onOpenItem,
   scope,
+  breakdowns,
+  splits,
+  split,
+  detailsFor,
+  flagged,
+  baseLabel = 'Current',
 }) {
-  const lastYear = useLastYearActuals({ ready, productName, customerName, startDate, endDate, actuals });
-  const planRows = buildPlanRows({ rows, lastYearActuals: lastYear.actuals, byMonth, monthItems });
+  const lastYear = useLastYearActuals({ ready, productName, skuRange, customerName, startDate, endDate, actuals });
+  const planRows = buildPlanRows({ rows, lastYearActuals: lastYear.actuals, byMonth, monthItems, breakdowns, splits });
 
   return (
     <div className="space-y-1.5">
@@ -48,10 +64,15 @@ export default function MonthlyPlan({
         </p>
       ) : null}
       <MonthlyPlanTable
+        allowOfficialPlanning={allowOfficialPlanning}
         rows={planRows}
         lastYearLoading={lastYear.loading}
         onOpenItem={onOpenItem}
         scope={scope}
+        split={split}
+        detailsFor={detailsFor}
+        flagged={flagged}
+        baseLabel={baseLabel}
       />
     </div>
   );

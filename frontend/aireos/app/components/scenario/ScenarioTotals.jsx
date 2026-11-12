@@ -3,6 +3,7 @@
 import { useState } from 'react';
 
 import TabTransition from '@/components/ui/TabTransition';
+import TableCard from '@/components/ui/TableCard';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 const triggerClass =
@@ -26,16 +27,22 @@ export default function ScenarioTotals({ singleSeries, yearTable, monthlyPlan })
 
   return (
     <Tabs value={tab} onValueChange={setPicked}>
-      <TabsList className="h-7 bg-lavander p-0.5">
-        <TabsTrigger value="year" className={triggerClass}>By year</TabsTrigger>
-        <TabsTrigger value="month" className={triggerClass}>By month</TabsTrigger>
-      </TabsList>
-      <TabTransition value={tab}>
-        <TabsContent value="year" className="pt-2">{yearTable}</TabsContent>
-        <TabsContent value="month" className="pt-2">
-          {tab === 'month' ? monthlyPlan : null}
-        </TabsContent>
-      </TabTransition>
+      <TableCard label="Scenario totals" header={(
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <TabsList className="h-7 bg-lavander p-0.5">
+            <TabsTrigger value="year" className={triggerClass}>By year</TabsTrigger>
+            <TabsTrigger value="month" className={triggerClass}>By month</TabsTrigger>
+          </TabsList>
+          <span className="text-xs text-deep-violet-blue/60">Units · cartons</span>
+        </div>
+      )}>
+        <TabTransition value={tab}>
+          <TabsContent value="year" className="mt-0">{yearTable}</TabsContent>
+          <TabsContent value="month" className="mt-0">
+            {tab === 'month' ? monthlyPlan : null}
+          </TabsContent>
+        </TabTransition>
+      </TableCard>
     </Tabs>
   );
 }

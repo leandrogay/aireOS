@@ -1,17 +1,26 @@
 -- Tier 0 legacy baseline: the P&L sell-out base, for every forecast origin.
 --
 -- Project: aire-data
--- Dataset: Aire_Data_Analytics
+-- Dataset: aireos_forecast_validation_sg (the application dataset; the older
+--          Aire_Data_Analytics copy still has the growth factor and is reference only)
 -- Grain: origin month + customer + SKU + target month
 -- history_months = months of sales the series had at that origin.
 --
--- The P&L's "Forecast with Build" sheet sets each future Sell-out Base by hand
--- from two habits: same month last year x a growth factor (=M58*1.2,
--- =L104*1.05) or a recent month carried forward (=X58, =W104). This automates
--- both, as in backend/app/services/pl_forecast.py (forecast_sku):
+-- Matches the live view captured on 2026-11-09
+-- (live_2026-11-09_aireos_forecast_validation_sg_fc_tier0_forecasts.txt).
 --
---   predicted = 0.5 x (same month last year x YoY growth) + 0.5 x (3-month run-rate)
---               (run-rate only when last year or the growth window is missing)
+-- The P&L's "Forecast with Build" sheet sets each future Sell-out Base by hand
+-- from two habits: same month last year (there with a growth factor, =M58*1.2,
+-- =L104*1.05) or a recent month carried forward (=X58, =W104). This automates
+-- both, as in backend/app/services/pl_forecast.py (forecast_sku), but
+-- CHANGED (8 Nov evening, team decision): no growth factor.
+--
+--   predicted = 0.5 x (same month last year) + 0.5 x (3-month run-rate)
+--               (run-rate only when that month last year is missing)
+--
+-- Growth is a planning choice, not a model output: the Scenario builder applies
+-- it on top of this base as a growth building block (scenario_building_blocks,
+-- kind = 'growth'), never here.
 --
 -- No promotion uplift. The P&L's Sell-out Building Blocks are hand-entered
 -- activity cartons (AO, display, expansion, promoter sampling) that the
@@ -22,24 +31,23 @@
 -- Every month in fc_training_input is also used as an origin: the formula is
 -- recomputed from only the history up to that month. One view therefore
 -- serves three uses in run_tier0_legacy:
---   - the latest origin        -> the live 13-month forecast (future months)
+--   - the latest origin        -> the live 15-month forecast (future months)
 --   - the origin 3 months back -> the holdout score, same cut-off as Tier 1
 --   - every earlier origin     -> past errors, which give the 80% range
 --
 -- Tuning values match pl_forecast.ForecastParams; change them in `params` only.
 -- Safe to rerun: this script only creates or replaces a BigQuery view.
 
-CREATE OR REPLACE VIEW `aire-data.Aire_Data_Analytics.fc_tier0_forecasts` AS
+CREATE OR REPLACE VIEW `aire-data.aireos_forecast_validation_sg.fc_tier0_forecasts` AS
 WITH params AS (
   SELECT
-    0.5  AS ly_weight,        -- share of the forecast from last year x growth
-    0.85 AS growth_floor,     -- YoY growth is clipped to [floor, cap]
-    1.25 AS growth_cap,
-    13   AS horizon_months    -- same horizon as the Tier 1 models
+    0.5  AS ly_weight,        -- share of the forecast from the same month last year
+    -- REMOVED (8 Nov evening): growth_floor 0.85 and growth_cap 1.25 (no growth factor)
+    15   AS horizon_months    -- same horizon as the Tier 1 models
 ),
 history AS (
   SELECT customer_id, sku, month_year, quantity_cartons
-  FROM `aire-data.Aire_Data_Analytics.fc_training_input`
+  FROM `aire-data.aireos_forecast_validation_sg.fc_training_input`
 ),
 last AS (
   SELECT MAX(month_year) AS last_month FROM history
@@ -60,21 +68,15 @@ series_latest AS (
   GROUP BY origin_month, customer_id, sku
 ),
 series_rates AS (
-  -- Run-rate over the latest 3 months; growth only when those 3 months and the
-  -- same 3 months a year earlier are all present.
+  -- Run-rate: the average of the months present in the latest 3 (a missing file is skipped).
+  -- CHANGED (8 Nov evening): the recent and last-year totals that fed the growth factor are removed.
   SELECT
     l.origin_month,
     l.customer_id,
     l.sku,
     l.latest_month,
     COUNT(*) AS history_months,
-    AVG(IF(k.month_year > DATE_SUB(l.latest_month, INTERVAL 3 MONTH), k.quantity_cartons, NULL)) AS run_rate,
-    COUNTIF(k.month_year > DATE_SUB(l.latest_month, INTERVAL 3 MONTH)) AS recent_months,
-    SUM(IF(k.month_year > DATE_SUB(l.latest_month, INTERVAL 3 MONTH), k.quantity_cartons, 0)) AS recent_total,
-    COUNTIF(k.month_year > DATE_SUB(l.latest_month, INTERVAL 15 MONTH)
-        AND k.month_year <= DATE_SUB(l.latest_month, INTERVAL 12 MONTH)) AS last_year_months,
-    SUM(IF(k.month_year > DATE_SUB(l.latest_month, INTERVAL 15 MONTH)
-       AND k.month_year <= DATE_SUB(l.latest_month, INTERVAL 12 MONTH), k.quantity_cartons, 0)) AS last_year_total
+    AVG(IF(k.month_year > DATE_SUB(l.latest_month, INTERVAL 3 MONTH), k.quantity_cartons, NULL)) AS run_rate
   FROM series_latest l
   JOIN known_history k
     ON k.origin_month = l.origin_month
@@ -82,15 +84,7 @@ series_rates AS (
    AND k.sku = l.sku
   GROUP BY l.origin_month, l.customer_id, l.sku, l.latest_month
 ),
-series_growth AS (
-  SELECT
-    r.*,
-    IF(r.recent_months = 3 AND r.last_year_months = 3 AND r.last_year_total > 0,
-       LEAST(GREATEST(r.recent_total / r.last_year_total, p.growth_floor), p.growth_cap),
-       NULL) AS growth
-  FROM series_rates r
-  CROSS JOIN params p
-),
+-- REMOVED (8 Nov evening): series_growth (the clipped year-on-year growth factor)
 
 -- ---- Target months ----------------------------------------------------------
 -- Forecast from the month after the series' own latest month, like
@@ -103,10 +97,9 @@ targets AS (
     g.latest_month,
     g.history_months,
     g.run_rate,
-    g.growth,
     target_month,
     DATE_DIFF(target_month, g.latest_month, MONTH) AS horizon
-  FROM series_growth g
+  FROM series_rates g                              -- CHANGED (8 Nov evening): was series_growth
   CROSS JOIN params p
   CROSS JOIN UNNEST(GENERATE_DATE_ARRAY(
     DATE_ADD(g.latest_month, INTERVAL 1 MONTH),
@@ -116,6 +109,9 @@ targets AS (
 kept_targets AS (
   -- Past origins keep only months with actual sales (to score against);
   -- the latest origin keeps the months fc_future_input asks for.
+  -- CHANGED (1 Nov): origins in the last 3 months also keep their future months, so the
+  -- Initial refresh (A9b) can read Tier 0's forecast as of a September-November cutoff.
+  -- CHANGED (8 Nov): December origins keep all of the next year (last rule below).
   SELECT
     t.*,
     a.quantity_cartons AS actual_quantity_cartons
@@ -123,19 +119,28 @@ kept_targets AS (
   CROSS JOIN last
   LEFT JOIN history a
     ON a.customer_id = t.customer_id AND a.sku = t.sku AND a.month_year = t.target_month
-  LEFT JOIN `aire-data.Aire_Data_Analytics.fc_future_input` f
+  LEFT JOIN `aire-data.aireos_forecast_validation_sg.fc_future_input` f
     ON f.customer_id = t.customer_id AND f.sku = t.sku AND f.month_year = t.target_month
   WHERE (t.origin_month < last.last_month AND a.month_year IS NOT NULL)
      OR (t.origin_month = last.last_month AND f.month_year IS NOT NULL)
+     OR (t.origin_month >= DATE_SUB(last.last_month, INTERVAL 3 MONTH)
+         AND t.target_month > last.last_month)
+     -- CHANGED (8 Nov, confirm with the file's owner): a December origin keeps all 12 months of the
+     -- next year, so a yearly Initial built after the fact (A11.3 uses DATE '2025-12-01') covers
+     -- January-December even where sales have arrived since. Only rows without actuals are added,
+     -- so the holdout score and the 80% range (both use rows with actuals) don't change.
+     OR (EXTRACT(MONTH FROM t.origin_month) = 12
+         AND t.target_month <= DATE_ADD(t.origin_month, INTERVAL 12 MONTH))
 ),
 forecast AS (
   SELECT
     t.*,
-    IF(t.growth IS NOT NULL AND ly.quantity_cartons IS NOT NULL,
-       p.ly_weight * ly.quantity_cartons * t.growth + (1 - p.ly_weight) * t.run_rate,
+    -- CHANGED (8 Nov evening): same month last year as it was, no growth factor. Blended whenever
+    -- that month exists (was: only when the growth window was complete too).
+    IF(ly.quantity_cartons IS NOT NULL,
+       p.ly_weight * ly.quantity_cartons + (1 - p.ly_weight) * t.run_rate,
        t.run_rate) AS sell_out_base,
-    IF(t.growth IS NOT NULL AND ly.quantity_cartons IS NOT NULL,
-       'ly_x_growth+runrate', 'runrate') AS base_method
+    IF(ly.quantity_cartons IS NOT NULL, 'ly+runrate', 'runrate') AS base_method   -- was 'ly_x_growth+runrate'
   FROM kept_targets t
   CROSS JOIN params p
   LEFT JOIN known_history ly

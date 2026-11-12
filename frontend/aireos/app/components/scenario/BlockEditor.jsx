@@ -5,9 +5,13 @@ import { Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { primaryButtonClass, secondaryButtonClass } from '@/components/ui/formStyles';
+import MultiSelectDropdown from '@/components/ui/MultiSelectDropdown';
+import SelectDropdown from '@/components/ui/SelectDropdown';
+import ScenarioDateFields from '@/components/scenario/ScenarioDateFields';
+import SkuRangePicker from '@/components/scenario/SkuRangePicker';
 import UpliftField from '@/components/scenario/UpliftField';
 import { formatMonthLabel } from '@/app/utils/forecastView';
-import { customerLabel } from '@/app/utils/retailerLabel';
+import { customerLabel, customersLabel } from '@/app/utils/retailerLabel';
 import {
   BLOCK_NAME_SUGGESTIONS,
   MAX_UPLIFT_PCT,
@@ -18,8 +22,6 @@ import {
 } from '@/app/utils/scenarioBlocks';
 import { monthSpanLabel } from '@/app/utils/scenarioPitch';
 
-const fieldClass =
-  'h-8 w-full rounded-md border border-violet bg-white px-2 text-xs text-deep-violet-blue disabled:opacity-50';
 const labelClass = 'mb-0.5 block text-[11px] text-deep-violet-blue/70';
 const errorClass = 'mt-0.5 text-[11px] text-red-700';
 
@@ -39,7 +41,7 @@ function ImpactNote({ block, impact }) {
     return 'Inactive: this block is not on the Simulated line. Make it active in the list to see its impact.';
   }
   if (!impact) {
-    return 'Not in current chart view: show this block\'s customer, SKU and months on the chart to see its impact.';
+    return 'Not in current chart view: show this block\'s customer, SKU range and months on the chart to see its impact.';
   }
   const pctOfCurrent = impact.baseUnits ? Math.round((impact.deltaUnits / impact.baseUnits) * 100) : null;
   const removes = impact.deltaUnits < 0;
@@ -52,7 +54,7 @@ function ImpactNote({ block, impact }) {
         {formatUnits(impact.deltaUnits)} units
       </b>
       {pctOfCurrent == null ? '' : `, or ${sign}${Math.abs(pctOfCurrent)}% on Current,`} {removes ? 'from' : 'to'}{' '}
-      {customerLabel(block.customer)} sell-out across {monthSpanLabel(impact.months)}.
+      {customersLabel(block.customers)} sell-out across {monthSpanLabel(impact.months)}.
     </>
   );
 }
@@ -85,8 +87,9 @@ function unitsWarning(block, impact) {
  *   saving: boolean,
  *   saveError: string | null,
  *   customerOptions: string[],
- *   productOptions: string[],
+ *   skuRangeOptions: string[],
  *   months: string[],
+ *   pastMonths?: string[],            months on the chart with actuals (milestones)
  *   impact: { baseUnits: number, deltaUnits: number, months: string[] } | undefined,
  * }} props
  */
@@ -100,13 +103,14 @@ export default function BlockEditor({
   saving,
   saveError,
   customerOptions,
-  productOptions,
+  skuRangeOptions,
   months,
+  pastMonths = [],
   impact,
 }) {
   const unsaved = hasUnsavedChanges(block);
   const warning = unitsWarning(block, impact);
-  const monthOptions = blockMonthOptions(block, months);
+  const monthOptions = blockMonthOptions(block, months, pastMonths);
 
   return (
     <div className="space-y-2.5 border-t border-lavander pt-3">
@@ -116,53 +120,56 @@ export default function BlockEditor({
 
       <div>
         <label className={labelClass} htmlFor="block-name">Building block</label>
-        <input
+        <SelectDropdown
           id="block-name"
-          list="block-name-suggestions"
-          autoComplete="off"
+          ariaLabel="Building block"
           value={block.name}
           placeholder="Name it, or pick a common one"
-          onChange={(event) => onChange({ name: event.target.value })}
-          onFocus={(event) => event.target.select()}
-          className={fieldClass}
+          onChange={(name) => onChange({ name })}
+          options={[...new Set([block.name, ...BLOCK_NAME_SUGGESTIONS].filter(Boolean))]
+            .map((name) => ({ value: name, label: name }))}
+          searchable
+          searchPlaceholder="Find or enter a building block…"
+          invalid={Boolean(errors.name)}
+          action={{
+            label: (query) => query ? `Use “${query}”` : 'Enter a building block name above',
+            onSelect: (name) => { if (name) onChange({ name }); },
+          }}
         />
-        <datalist id="block-name-suggestions">
-          {BLOCK_NAME_SUGGESTIONS.map((name) => (
-            <option key={name} value={name} />
-          ))}
-        </datalist>
         <FieldError message={errors.name} />
       </div>
 
       <div className="grid grid-cols-2 gap-2">
-        <div>
-          <label className={labelClass} htmlFor="block-customer">Customer</label>
-          <select
-            id="block-customer"
-            value={block.customer}
-            onChange={(event) => onChange({ customer: event.target.value })}
-            className={fieldClass}
-          >
-            {customerOptions.map((name) => (
-              <option key={name} value={name}>{customerLabel(name)}</option>
-            ))}
-          </select>
+        {/* Any number of customers, or none for every customer (migration 022),
+            like the SKU ranges beside it. */}
+        <div className="min-w-0">
+          <span id="block-customers-label" className={labelClass}>Customers</span>
+          <MultiSelectDropdown
+            ariaLabel="Customers"
+            options={customerOptions.map((name) => ({ value: name, label: customerLabel(name) }))}
+            values={block.customers ?? []}
+            onChange={(customers) => onChange({ customers })}
+            allLabel="All customers"
+            noneMeansAll
+            placeholder="All customers"
+            look="field"
+            searchable
+            searchPlaceholder="Search customers…"
+            invalid={Boolean(errors.customer)}
+            className="w-full"
+          />
           <FieldError message={errors.customer} />
         </div>
-        <div>
-          <label className={labelClass} htmlFor="block-sku">SKU</label>
-          <select
-            id="block-sku"
-            value={block.sku}
-            onChange={(event) => onChange({ sku: event.target.value })}
-            className={fieldClass}
-          >
-            <option value="">All SKUs</option>
-            {productOptions.map((name) => (
-              <option key={name} value={name}>{name}</option>
-            ))}
-          </select>
-        </div>
+        <SkuRangePicker
+          id="block-sku-ranges"
+          label="SKU ranges"
+          values={block.skuRanges ?? []}
+          options={skuRangeOptions}
+          legacySku={block.sku}
+          legacyNoun="block"
+          // Ticking ranges moves an older one-SKU block onto them.
+          onChange={(skuRanges) => onChange({ skuRanges, sku: skuRanges.length ? '' : block.sku })}
+        />
       </div>
 
       <UpliftField
@@ -174,41 +181,22 @@ export default function BlockEditor({
       />
 
       <div>
-        <div className="grid grid-cols-2 gap-2">
-          <div>
-            <label className={labelClass} htmlFor="block-start">From</label>
-            <select
-              id="block-start"
-              value={block.startMonth}
-              onChange={(event) => onChange({ startMonth: event.target.value })}
-              className={fieldClass}
-            >
-              {monthOptions.map(({ month, locked }) => (
-                <option key={month} value={month} disabled={locked}>
-                  {formatMonthLabel(month)}{locked ? ' (has actuals)' : ''}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className={labelClass} htmlFor="block-end">Until</label>
-            <select
-              id="block-end"
-              value={block.endMonth}
-              onChange={(event) => onChange({ endMonth: event.target.value })}
-              className={fieldClass}
-            >
-              {monthOptions.map(({ month, locked }) => (
-                <option key={month} value={month} disabled={locked}>
-                  {formatMonthLabel(month)}{locked ? ' (has actuals)' : ''}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
+        <ScenarioDateFields
+          id="block"
+          start={block.startMonth}
+          end={block.endMonth}
+          onStartChange={(startMonth) => onChange({ startMonth })}
+          onEndChange={(endMonth) => onChange({ endMonth })}
+          options={monthOptions.map(({ month, past, locked }) => ({
+            value: month,
+            label: `${formatMonthLabel(month)}${past ? ' (milestone)' : locked ? ' (off the chart)' : ''}`,
+            disabled: locked,
+          }))}
+          invalid={Boolean(errors.months)}
+        />
         <FieldError message={errors.months} />
         <p className="mt-1 text-[11px] text-deep-violet-blue/50">
-          Only forecast months can carry building blocks; months with actuals are locked.
+          In months with actual sales a block is a milestone: it marks an event behind the actuals and never moves a line.
         </p>
       </div>
 
@@ -262,7 +250,6 @@ export default function BlockEditor({
           disabled={saving}
           aria-label={`Delete ${block.name}`}
           title="Delete block"
-          className="border-deep-violet-blue/30 bg-white text-deep-violet-blue hover:bg-cream"
         >
           <Trash2 />
         </Button>

@@ -5,8 +5,10 @@
 // Scenario builder's Simulated line.
 
 /**
- * The saved blocks of one customer, by name: the ones the overlay offers.
- * Blocks are in scenarioBlockFromApi's shape (customer = customer_name).
+ * The saved blocks that cover one customer (they name it, or cover every
+ * customer), by name: the ones the overlay offers. Blocks are in
+ * scenarioBlockFromApi's shape (customers = customer_names, [] = every
+ * customer); the backend picks the same ones (fetch_blocks_for_customer).
  *
  * @param {object[]} blocks
  * @param {string | undefined} customerName
@@ -14,7 +16,9 @@
  */
 export function customerBlocks(blocks, customerName) {
   return blocks
-    .filter((block) => block.blockId != null && block.customer === customerName)
+    .filter(
+      (block) => block.blockId != null && (!block.customers?.length || block.customers.includes(customerName))
+    )
     .sort((a, b) => a.name.localeCompare(b.name) || a.blockId - b.blockId);
 }
 

@@ -6,6 +6,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 from app.schemas.promotions import PromoType
 from app.services import forecast_refresh_events, sql
+from app.services.settings import promo_recalc_events
 from app.services.catalog_service import (
     get_or_create_retailers,
     get_or_create_stores,
@@ -602,8 +603,10 @@ def create_promotion(
         refresh_request_id = forecast_refresh_events.record_change(
             conn, "promotion_change", f"promotion:{promotion_id}"
         )
+        recalc_recorded = promo_recalc_events.record_promotion(conn, promotion_id)
 
     forecast_refresh_events.enqueue_best_effort(refresh_request_id)
+    promo_recalc_events.enqueue_best_effort(recalc_recorded)
     return created
 
 
@@ -654,12 +657,14 @@ def list_forecast_promotions(
     customer_name: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
+    sku_range: str | None = None,
 ) -> list[dict]:
     """Promos that apply to the Forecast page for one customer x SKU window.
 
     A promo is included when its dates overlap the requested range, it is
-    linked to the chosen product_name (or any product when that filter is
-    empty), and it has at least one store on {customer}_offline or
+    linked to the chosen product_name and/or a SKU of the chosen sku_range
+    (or any product when those filters are empty), and it has at least one
+    store on {customer}_offline or
     {customer}_online. Forecast customer is the family name (fairprice),
     not the channel.
     """
@@ -687,6 +692,21 @@ def list_forecast_promotions(
             """
         )
         params["product_name"] = product_name
+    if sku_range:
+        where_clauses.append(
+            """
+            EXISTS (
+                SELECT 1
+                FROM promotion_skus ps
+                JOIN skus sk
+                    ON sk.sku = ps.sku
+                WHERE
+                    ps.promotion_id = p.promotion_id
+                    AND sk.sku_range = :sku_range
+            )
+            """
+        )
+        params["sku_range"] = sku_range
     if customer_name:
         where_clauses.append(
             """
@@ -1278,6 +1298,9 @@ def update_promotion(
             },
         )
 
+        # Its customers before the change also need their uplifts worked out again.
+        promo_recalc_events.record_promotion(conn, promotion_id)
+
         # Replace the store links with the set supplied by the
         # request. Rows in `stores` and `retailers` are master
         # data and are deliberately left in place.
@@ -1331,8 +1354,10 @@ def update_promotion(
         refresh_request_id = forecast_refresh_events.record_change(
             conn, "promotion_change", f"promotion:{promotion_id}"
         )
+        recalc_recorded = promo_recalc_events.record_promotion(conn, promotion_id)
 
     forecast_refresh_events.enqueue_best_effort(refresh_request_id)
+    promo_recalc_events.enqueue_best_effort(recalc_recorded)
     return updated
 
 
@@ -1363,6 +1388,8 @@ def delete_promotion(
 
         if existing is None:
             return False
+
+        recalc_recorded = promo_recalc_events.record_promotion(conn, promotion_id)
 
         # promotion_skus has ON DELETE CASCADE, but the link
         # deletes are kept explicit so the behaviour does not
@@ -1414,4 +1441,5 @@ def delete_promotion(
         )
 
     forecast_refresh_events.enqueue_best_effort(refresh_request_id)
+    promo_recalc_events.enqueue_best_effort(recalc_recorded)
     return True

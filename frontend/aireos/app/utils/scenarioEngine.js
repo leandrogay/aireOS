@@ -15,6 +15,9 @@
 //     customer, sku, month_year,   // customer_name / product_name / 'YYYY-MM-01', as on forecast rows
 //     baseUnits,                   // the Current forecast for this cell
 //     deltaUnits,                  // what the item adds on top of it
+//     addedUnits, replacedUnits,   // promotions only: what they add, and the part of
+//                                  // what Tier 0 carries they replace (deltaUnits =
+//                                  // added - replaced; scenarioTier0Split.js)
 //   }
 //
 // Volume only: the Scenario builder predicts units, never revenue. A
@@ -52,20 +55,121 @@ export const SIMULATED_SERIES = {
 
 const CURRENT_UNITS = 'forecast_current';
 
-// The forecast rows an item applies to: its customer, its SKU (or every SKU
-// when sku === ''), its months, and only rows with a Current value (months
-// with actuals have none, so they are never changed).
-function itemRows(rows, item) {
-  if (!item.customer || !item.startMonth || !item.endMonth) return [];
+/**
+ * The customers an item covers, [] meaning every customer: a building
+ * block names a list (`customers`, migration 022); a promotion still names
+ * one (`customer`). null when it names none yet (a draft being set up).
+ *
+ * @param {{ customers?: string[], customer?: string }} item
+ * @returns {string[] | null}
+ */
+export function itemCustomers(item) {
+  if (Array.isArray(item.customers)) return item.customers;
+  return item.customer ? [item.customer] : null;
+}
+
+/**
+ * Whether an item covers a customer (it names it, or covers every customer).
+ *
+ * @param {object} item
+ * @param {string} customerName
+ */
+export function coversCustomer(item, customerName) {
+  const customers = itemCustomers(item);
+  return Boolean(customers) && (!customers.length || customers.includes(customerName));
+}
+
+// One customer x SKU range of an item; skuRange null = the SKUs with no range.
+function pairKey(customer, skuRange) {
+  return `${customer}|${skuRange ?? ''}`;
+}
+
+/**
+ * Whether a customer x SKU range is switched off on an item (its
+ * `excludedPairs`, backend migration 023). The item stays one entry.
+ *
+ * @param {{ excludedPairs?: Array<{ customer: string, skuRange: string | null }> }} item
+ * @param {string} customer
+ * @param {string | null} skuRange
+ */
+export function pairExcluded(item, customer, skuRange) {
+  const key = pairKey(customer, skuRange);
+  return (item.excludedPairs ?? []).some((pair) => pairKey(pair.customer, pair.skuRange) === key);
+}
+
+// The forecast rows an item covers, its switched-off pairs included.
+function coveredRows(rows, item) {
+  if (!itemCustomers(item) || !item.startMonth || !item.endMonth) return [];
   return rows.filter(
     (row) =>
       row[CURRENT_UNITS] != null &&
-      row.customer_name === item.customer &&
+      coversCustomer(item, row.customer_name) &&
+      (!item.skuRanges?.length || item.skuRanges.includes(row.sku_range)) &&
       (!item.sku || row.product_name === item.sku) &&
       row.month_year >= item.startMonth &&
       row.month_year <= item.endMonth
   );
 }
+
+// The forecast rows an item applies to: its customers, its SKU ranges (every
+// SKU of them, by the rows' sku_range) or its one SKU (items saved before
+// ranges; every SKU when neither is set), its months, and only rows with a
+// Current value (months with actuals have none, so they are never changed),
+// less its switched-off customer x ranges.
+export function itemRows(rows, item) {
+  return coveredRows(rows, item).filter((row) => !pairExcluded(item, row.customer_name, row.sku_range ?? null));
+}
+
+/**
+ * An item's customer x SKU ranges, for its opened row: each pair the rows
+ * hold, with what the item adds there (`cells` from simulate(), its own
+ * only) and whether it is switched off; switched-off pairs the rows don't
+ * hold are listed too, so they can be switched back on. By customer, then range.
+ *
+ * @param {object[]} rows forecast rows
+ * @param {object} item
+ * @param {object[]} cells simulate().cells
+ * @returns {Array<{ customer: string, skuRange: string | null, deltaUnits: number, excluded: boolean }>}
+ */
+export function itemPairs(rows, item, cells) {
+  const pairs = new Map();
+  const rangeOf = new Map();
+  for (const row of coveredRows(rows, item)) {
+    const skuRange = row.sku_range ?? null;
+    rangeOf.set(`${row.customer_name}|${row.product_name}`, skuRange);
+    const key = pairKey(row.customer_name, skuRange);
+    if (!pairs.has(key)) {
+      pairs.set(key, { customer: row.customer_name, skuRange, deltaUnits: 0, excluded: pairExcluded(item, row.customer_name, skuRange) });
+    }
+  }
+  for (const pair of item.excludedPairs ?? []) {
+    const key = pairKey(pair.customer, pair.skuRange);
+    if (!pairs.has(key)) pairs.set(key, { customer: pair.customer, skuRange: pair.skuRange ?? null, deltaUnits: 0, excluded: true });
+  }
+  for (const cell of cells) {
+    if (cell.itemId !== item.id) continue;
+    const pair = pairs.get(pairKey(cell.customer, rangeOf.get(`${cell.customer}|${cell.sku}`) ?? null));
+    if (pair) pair.deltaUnits += cell.deltaUnits;
+  }
+  return [...pairs.values()].sort(
+    (a, b) => a.customer.localeCompare(b.customer) || (a.skuRange ?? '').localeCompare(b.skuRange ?? '')
+  );
+}
+
+/**
+ * The item's switched-off pairs with one pair switched on or off.
+ *
+ * @param {object} item
+ * @param {string} customer
+ * @param {string | null} skuRange
+ * @param {boolean} on
+ */
+export function withPairSwitched(item, customer, skuRange, on) {
+  const key = pairKey(customer, skuRange);
+  const others = (item.excludedPairs ?? []).filter((pair) => pairKey(pair.customer, pair.skuRange) !== key);
+  return on ? others : [...others, { customer, skuRange }];
+}
+
 
 function deltaCell(row, item, source, deltaUnits) {
   return {
@@ -87,16 +191,27 @@ function deltaCell(row, item, source, deltaUnits) {
  * Map customer_name → { startMonth, endMonth, rows } with every SKU of that
  * customer over those months (see useUnitsSplitBasis).
  *
- * @param {{ productName: string, customerName: string, startDate: string, endDate: string }} filters
+ * `tier0Split` (optional) is Tier 0 split into its baseline and the
+ * promotions it carries (scenarioTier0Split.tier0SplitIndex), which the
+ * official and scenario promotions are worked out on.
+ *
+ * @param {{ productName?: string, skuRange?: string, customerName: string, startDate: string, endDate: string }} filters
  * @param {Map<string, { startMonth: string, endMonth: string, rows: object[] }>} [splitBasis]
+ * @param {Map<string, object>} [tier0Split]
  */
-export function chartView({ productName = '', customerName = '', startDate = '', endDate = '' }, splitBasis = null) {
+export function chartView(
+  { productName = '', skuRange = '', customerName = '', startDate = '', endDate = '' },
+  splitBasis = null,
+  tier0Split = null
+) {
   return {
     productName,
+    skuRange,
     customerName,
     startMonth: startDate ? `${startDate.slice(0, 7)}-01` : '',
     endMonth: endDate ? `${endDate.slice(0, 7)}-01` : '',
     splitBasis,
+    tier0Split,
   };
 }
 
@@ -109,8 +224,13 @@ export function chartView({ productName = '', customerName = '', startDate = '',
  * @param {ReturnType<typeof chartView>} view
  */
 export function viewCoversItem(item, view) {
-  if (view.customerName && view.customerName !== item.customer) return false;
+  // One customer in view covers only an item for exactly that customer.
+  const customers = itemCustomers(item) ?? [];
+  if (view.customerName && !(customers.length === 1 && customers[0] === view.customerName)) return false;
   if (view.productName && view.productName !== item.sku) return false;
+  // A range in view covers only an item for exactly that range; an item on
+  // more ranges, all of them, or one SKU reaches beyond what the view fetched.
+  if (view.skuRange && !(item.skuRanges?.length === 1 && item.skuRanges[0] === view.skuRange)) return false;
   if (view.startMonth && item.startMonth < view.startMonth) return false;
   if (view.endMonth && item.endMonth > view.endMonth) return false;
   return true;
@@ -138,9 +258,19 @@ export function upliftDeltaCells(rows, item, upliftPct, source) {
 // the part that happens to be on screen.
 function splitRowsFor(rows, item, view) {
   if (viewCoversItem(item, view)) return rows;
-  const basis = view.splitBasis?.get(item.customer);
+  const basis = view.splitBasis?.get(itemCustomers(item)?.[0]);
   if (basis && basis.startMonth <= item.startMonth && basis.endMonth >= item.endMonth) return basis.rows;
   return null;
+}
+
+// A units item for each customer it covers that the page's rows hold: each
+// customer gets the full number of units, split over its own SKUs and months.
+// An item for every customer covers the customers in the rows.
+function perCustomer(rows, item) {
+  const customers = itemCustomers(item);
+  if (!customers) return [];
+  const names = customers.length ? customers : [...new Set(rows.map((row) => row.customer_name))];
+  return names.map((customer) => ({ ...item, customers: [customer] }));
 }
 
 /**
@@ -150,26 +280,33 @@ function splitRowsFor(rows, item, view) {
  *
  * @param {object[]} items switched-on items
  * @param {ReturnType<typeof chartView>} view
+ * @param {object[]} [rows] the page's forecast rows: the customers an item for every customer covers
  */
-export function splitBasisNeeds(items, view) {
+export function splitBasisNeeds(items, view, rows = []) {
   const needs = {};
   for (const item of items) {
-    if (item.upliftMode !== 'units' || !item.customer || !item.startMonth || !item.endMonth) continue;
-    if (viewCoversItem(item, view)) continue;
-    const need = needs[item.customer];
-    needs[item.customer] = {
-      startMonth: need && need.startMonth < item.startMonth ? need.startMonth : item.startMonth,
-      endMonth: need && need.endMonth > item.endMonth ? need.endMonth : item.endMonth,
-    };
+    if (item.upliftMode !== 'units' || !item.startMonth || !item.endMonth) continue;
+    for (const one of perCustomer(rows, item)) {
+      const [customer] = one.customers;
+      // Another customer than the one in view adds no cells to the page.
+      if (view.customerName && customer !== view.customerName) continue;
+      if (viewCoversItem(one, view)) continue;
+      const need = needs[customer];
+      needs[customer] = {
+        startMonth: need && need.startMonth < item.startMonth ? need.startMonth : item.startMonth,
+        endMonth: need && need.endMonth > item.endMonth ? need.endMonth : item.endMonth,
+      };
+    }
   }
   return needs;
 }
 
 /**
  * Delta cells for one item that adds a fixed number of units over its whole
- * date range. The units are split across its months and SKUs in proportion
- * to their Current forecast, so the seasonality and SKU mix stay as they
- * are; if Current is 0 everywhere, they are split evenly.
+ * date range, to each customer it covers (each gets the full number). The
+ * units are split across that customer's months and SKUs in proportion to
+ * their Current forecast, so the seasonality and SKU mix stay as they are;
+ * if Current is 0 everywhere, they are split evenly.
  *
  * The split is always over the item's whole scope (splitRowsFor), and cells
  * are returned only for the page's rows, so an All SKUs block shows its
@@ -183,14 +320,17 @@ export function splitBasisNeeds(items, view) {
  * @param {ReturnType<typeof chartView>} view
  */
 export function unitsDeltaCells(rows, item, units, source, view) {
-  const splitRows = splitRowsFor(rows, item, view);
-  if (!splitRows) return [];
-  const scope = itemRows(splitRows, item);
   const total = Number(units) || 0;
-  const baseTotal = scope.reduce((sum, row) => sum + row[CURRENT_UNITS], 0);
-  return itemRows(rows, item).map((row) => {
-    const share = baseTotal > 0 ? row[CURRENT_UNITS] / baseTotal : 1 / scope.length;
-    return deltaCell(row, item, source, total * share);
+  return perCustomer(itemRows(rows, item), item).flatMap((one) => {
+    const splitRows = splitRowsFor(rows, one, view);
+    if (!splitRows) return [];
+    const scope = itemRows(splitRows, one);
+    const baseTotal = scope.reduce((sum, row) => sum + row[CURRENT_UNITS], 0);
+    // Cells keep the item's own id (`one` differs only in its customers).
+    return itemRows(rows, one).map((row) => {
+      const share = baseTotal > 0 ? row[CURRENT_UNITS] / baseTotal : 1 / scope.length;
+      return deltaCell(row, item, source, total * share);
+    });
   });
 }
 
@@ -207,7 +347,7 @@ function addTo(totals, key, cell) {
 
 /**
  * The cells regrouped by month, then by item: Map month_year → Map itemId →
- * { source, baseUnits, deltaUnits }. For the chart
+ * { source, baseUnits, deltaUnits, addedUnits, replacedUnits }. For the chart
  * tooltip (which blocks add to a month), the comparison table (how many
  * blocks are active in a period) and the blocks table's by-month detail.
  *
@@ -219,11 +359,13 @@ export function cellsByMonth(cells) {
     if (!months.has(cell.month_year)) months.set(cell.month_year, new Map());
     const items = months.get(cell.month_year);
     if (!items.has(cell.itemId)) {
-      items.set(cell.itemId, { source: cell.source, baseUnits: 0, deltaUnits: 0 });
+      items.set(cell.itemId, { source: cell.source, baseUnits: 0, deltaUnits: 0, addedUnits: 0, replacedUnits: 0 });
     }
     const entry = items.get(cell.itemId);
     entry.baseUnits += cell.baseUnits;
     entry.deltaUnits += cell.deltaUnits;
+    entry.addedUnits += cell.addedUnits ?? cell.deltaUnits;
+    entry.replacedUnits += cell.replacedUnits ?? 0;
   }
   return months;
 }
@@ -237,7 +379,16 @@ function floorAtZero(cells) {
   const removed = cells.reduce((sum, cell) => sum + Math.min(0, cell.deltaUnits), 0);
   if (base + added + removed >= 0) return cells;
   const share = -(base + added) / removed;
-  return cells.map((cell) => (cell.deltaUnits < 0 ? { ...cell, deltaUnits: cell.deltaUnits * share, capped: true } : cell));
+  return cells.map((cell) =>
+    cell.deltaUnits < 0
+      ? {
+          ...cell,
+          deltaUnits: cell.deltaUnits * share,
+          ...(cell.addedUnits != null ? { addedUnits: cell.addedUnits * share, replacedUnits: cell.replacedUnits * share } : {}),
+          capped: true,
+        }
+      : cell
+  );
 }
 
 function withFloor(cells) {

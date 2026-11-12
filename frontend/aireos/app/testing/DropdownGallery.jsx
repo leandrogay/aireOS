@@ -36,7 +36,6 @@ const NOT_MIGRATED = [
   ['Inventory', 'inventory/CustomerDropdown.jsx', 'Raw <select>', 'SelectDropdown look="compact"'],
   ['Promotions', 'promotions/PromotionForm.jsx', 'Raw <select>', 'SelectDropdown look="field"'],
   ['Scenario', 'scenario/BlockEditor.jsx (4), PromotionEditor.jsx (6)', 'Raw <select>', 'SelectDropdown look="field"'],
-  ['Settings', 'settings/PromoOverrideForm.jsx', 'Raw <select> (4)', 'SelectDropdown look="field"'],
   ['Customers', 'customers/LinkRetailerDialog.jsx', 'Raw <select>', 'SelectDropdown look="field"'],
 ];
 

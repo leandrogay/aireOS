@@ -235,6 +235,7 @@ def get_forecast_view(
     customer_name: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
+    sku_range: str | None = None,
 ) -> dict:
     """One Forecast-page payload: forecast rows, monthly actuals, and overlapping promos.
 
@@ -248,17 +249,20 @@ def get_forecast_view(
     actual_status says why a month in the forecast window has no actual
     (missing file / not yet / before the first sale), and the page lines
     actuals up with it by customer x SKU. Promos come from Postgres.
+    `sku_range` (the Scenario builder's filter) reads every SKU of that range.
     """
     product_name = product_name or None
     customer_name = customer_name or None
     start_date = start_date or None
     end_date = end_date or None
+    sku_range = sku_range or None
 
     filters = {
         "product_name": product_name,
         "customer_name": customer_name,
         "start_date": start_date,
         "end_date": end_date,
+        "sku_range": sku_range,
     }
 
     # The reads are independent and each one mostly waits on BigQuery or
@@ -272,6 +276,7 @@ def get_forecast_view(
             bigquery_service.get_current_horizon,
             product_name=product_name,
             customer_name=customer_name,
+            sku_range=sku_range,
         )
         actuals_job = pool.submit(bigquery_service.get_forecast_actuals, **filters)
         promotions_job = pool.submit(promotion_service.list_forecast_promotions, **filters)

@@ -42,18 +42,19 @@ def _tasks_client() -> tasks_v2.CloudTasksClient:
     return tasks_v2.CloudTasksClient()
 
 
-def handler_audience() -> str:
-    parsed = urlsplit(config.FORECAST_REFRESH_HANDLER_URL)
+def handler_audience(url: str | None = None) -> str:
+    # The Cloud Run service a task calls; promo_recalc_events passes its own URL.
+    parsed = urlsplit(url or config.FORECAST_REFRESH_HANDLER_URL)
     if parsed.scheme != "https" or not parsed.netloc:
-        raise ValueError("FORECAST_REFRESH_HANDLER_URL must be an HTTPS Cloud Run URL")
+        raise ValueError("The task handler URL must be an HTTPS Cloud Run URL")
     return f"{parsed.scheme}://{parsed.netloc}"
 
 
-def enqueue_check(*, key: str, delay_seconds: int = QUIET_SECONDS) -> None:
+def enqueue_check(*, key: str, delay_seconds: int = QUIET_SECONDS, url: str | None = None) -> None:
     """Schedule an authenticated check; a stable key makes retries harmless."""
     project = config.require("GCP_PROJECT_ID")
     invoker = config.FORECAST_REFRESH_INVOKER
-    url = config.FORECAST_REFRESH_HANDLER_URL
+    url = url or config.FORECAST_REFRESH_HANDLER_URL
     if not invoker or not url:
         raise ValueError("Forecast refresh task URL and invoker must be configured")
 
@@ -67,7 +68,7 @@ def enqueue_check(*, key: str, delay_seconds: int = QUIET_SECONDS) -> None:
         "http_request": {
             "http_method": tasks_v2.HttpMethod.POST,
             "url": url,
-            "oidc_token": {"service_account_email": invoker, "audience": handler_audience()},
+            "oidc_token": {"service_account_email": invoker, "audience": handler_audience(url)},
         },
     }
     try:

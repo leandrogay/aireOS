@@ -346,10 +346,11 @@ def test_get_forecast_view_combines_rows_actuals_and_promos(monkeypatch):
         "customer_name": "fairprice",
         "start_date": "2026-01-01",
         "end_date": "2026-12-01",
+        "sku_range": None,
     }
     assert captured["rows"] == expected
     # The whole Current line: no date filter.
-    assert captured["horizon"] == {"product_name": None, "customer_name": "fairprice"}
+    assert captured["horizon"] == {"product_name": None, "customer_name": "fairprice", "sku_range": None}
     assert result["horizon"]["tier0"] == {"units": 1200.0, "series": 1}
     assert captured["actuals"] == expected
     assert captured["promotions"] == expected

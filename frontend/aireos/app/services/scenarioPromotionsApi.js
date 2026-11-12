@@ -2,42 +2,29 @@ import { request } from '@/app/services/promotionsApi';
 
 // ============================================================
 // Scenario builder promotions: /api/scenario/promotions
-// (backend app/routers/scenario/promotions.py)
+// (backend app/routers/scenario/promotions.py, table scenario_promotions,
+// migration 018_create_scenario_promotions.sql)
 //
 // Bodies come from buildScenarioPromotionPayload and rows are read back
 // with scenarioPromotionFromApi (app/utils/scenarioPromotions.js). Saving
-// a promotion never changes the Current forecast or the real promotions
-// table; only the Scenario builder reads them.
+// a promotion never changes the Current forecast, the real promotions
+// table or the promo anchors; only the Scenario builder reads them.
 // ============================================================
-
-// Go live once migration 007_create_scenario_promotions.sql has been run:
-// set this to false. Until then every call below is answered in memory
-// (same shapes as the backend), so Save works for the session but nothing
-// survives a reload.
-export const SCENARIO_PROMOTIONS_DEMO = true;
 
 const BASE_PATH = '/api/scenario/promotions';
 
-// ---- Demo store (only while SCENARIO_PROMOTIONS_DEMO is on) ----
-
-let demoRows = [];
-let demoNextId = 1;
-
-function demoRow(promotionId, payload) {
-  const now = new Date().toISOString();
-  return { ...payload, promotion_id: promotionId, sku: null, created_at: now, updated_at: now };
-}
-
 /**
- * GET /api/scenario/promotions
+ * GET /api/scenario/promotions?plan=&year=
  *
  * Every saved Scenario promotion, newest first.
  *
- * @returns {Promise<Array<{ promotion_id: number, customer_name: string, sku: string | null, product_name: string | null, promo_type: string, mechanic_key: string, mechanic_label: string, reference_uplift_pct: number, reference_source: string, reference_by_sku: Record<string, number>, override_uplift_pct: number | null, voucher: boolean, voucher_uplift_pct: number, voucher_by_sku: Record<string, number>, explanation: string | null, start_month: string, end_month: string, is_active: boolean, created_at: string, updated_at: string }>>}
+ * @returns {Promise<Array<{ promotion_id: number, customer_name: string, sku_ranges: string[] | null, sku: string | null, product_name: string | null, promo_type: string, mechanic_key: string, mechanic_label: string, reference_uplift_pct: number, reference_source: string, reference_by_sku: Record<string, number>, override_uplift_pct: number | null, voucher: boolean, voucher_uplift_pct: number, voucher_by_sku: Record<string, number>, explanation: string | null, start_month: string, end_month: string, start_date: string | null, end_date: string | null, is_active: boolean, created_at: string, updated_at: string }>>}
  */
-export async function getScenarioPromotions() {
-  if (SCENARIO_PROMOTIONS_DEMO) return [...demoRows].reverse();
-  return request(BASE_PATH);
+export async function getScenarioPromotions(plan = 'scenario', year = null) {
+  // Budget planning reads one year's entries at a time.
+  const params = new URLSearchParams({ plan });
+  if (year) params.set('year', year);
+  return request(`${BASE_PATH}?${params}`);
 }
 
 /**
@@ -47,11 +34,6 @@ export async function getScenarioPromotions() {
  * @returns {Promise<object>} the saved promotion, same shape as the list
  */
 export async function createScenarioPromotion(payload) {
-  if (SCENARIO_PROMOTIONS_DEMO) {
-    const row = demoRow(demoNextId++, payload);
-    demoRows = [...demoRows, row];
-    return row;
-  }
   return request(BASE_PATH, { method: 'POST', body: payload });
 }
 
@@ -65,11 +47,6 @@ export async function createScenarioPromotion(payload) {
  * @returns {Promise<object>} the saved promotion, same shape as the list
  */
 export async function updateScenarioPromotion(promotionId, payload) {
-  if (SCENARIO_PROMOTIONS_DEMO) {
-    const row = demoRow(promotionId, payload);
-    demoRows = demoRows.map((item) => (item.promotion_id === promotionId ? row : item));
-    return row;
-  }
   return request(`${BASE_PATH}/${encodeURIComponent(promotionId)}`, { method: 'PUT', body: payload });
 }
 
@@ -79,10 +56,6 @@ export async function updateScenarioPromotion(promotionId, payload) {
  * @param {number} promotionId
  * @returns {Promise<{ deleted: true }>}
  */
-export async function deleteScenarioPromotion(promotionId) {
-  if (SCENARIO_PROMOTIONS_DEMO) {
-    demoRows = demoRows.filter((item) => item.promotion_id !== promotionId);
-    return { deleted: true };
-  }
-  return request(`${BASE_PATH}/${encodeURIComponent(promotionId)}`, { method: 'DELETE' });
+export async function deleteScenarioPromotion(promotionId, plan = 'scenario') {
+  return request(`${BASE_PATH}/${encodeURIComponent(promotionId)}?${new URLSearchParams({ plan })}`, { method: 'DELETE' });
 }

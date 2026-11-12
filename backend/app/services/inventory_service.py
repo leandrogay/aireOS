@@ -15,6 +15,7 @@ from app.services.sell_in_upload import (
     quantity_problem,
     read_sell_in_lines,
 )
+from app.services.scenario import budgets as budget_service
 from app.services.scenario import block_effects
 from app.services.scenario import building_blocks as scenario_blocks
 from app.services.settings import doh as doh_settings
@@ -1049,6 +1050,7 @@ def get_sell_in_outlook(
             shipped = _fetch_shipped(conn, customer_id)
             snapshots = _fetch_plan_snapshots(conn, customer_id, current_month)
             blocks = scenario_blocks.fetch_blocks_for_customer(conn, customer_id, block_ids or [])
+            budget = budget_service.sellout_for_customer(conn, customer_id)
 
         lines = forecast_job.result()
 
@@ -1068,6 +1070,7 @@ def get_sell_in_outlook(
     details = _sku_details()
     forecast, source, initial = _plan_forecast(lines, details)
     previous = _known_skus(lines.get("previous", {}), details)
+    budget = _known_skus(budget, details)
     until = inventory_calc.add_months(current_month, months)
     last_actual, plan_rows, _ = _sku_plans(metrics, forecast, shipped, threshold, until, details, source)
     _, initial_rows, _ = _sku_plans(metrics, initial, shipped, threshold, until, details)
@@ -1077,6 +1080,10 @@ def get_sell_in_outlook(
     _, bridged_rows, _ = _sku_plans(metrics, bridged, shipped, threshold, until, details)
     previous_rows = [row for row in bridged_rows if row["month"] in previous.get(row["sku"], {})]
     with_blocks = _plan_with_blocks(metrics, lines, blocks, shipped, threshold, until, details)
+    budget_bridged = {sku: {**forecast.get(sku, {}), **months_} for sku, months_ in budget.items()}
+    _, budget_rows, _ = _sku_plans(metrics, budget_bridged, shipped, threshold, until, details)
+    budget_sell_in = _sell_in_by_month([row for row in budget_rows if row["month"] in budget.get(row["sku"], {})])
+
 
     actuals_through = max(month for month, _ in last_actual.values())
     start_years = _start_years(metrics, actuals_through, current_month)
@@ -1107,6 +1114,8 @@ def get_sell_in_outlook(
     actual_months = {month for month in window if month <= actuals_through}
     past_initial = _past_recommendations(metrics, initial, actual_months, versions, actuals_through)
     past_previous = _past_recommendations(metrics, previous, actual_months, versions, actuals_through)
+    for month, values in _past_recommendations(metrics, budget, actual_months, versions, actuals_through).items():
+        budget_sell_in.setdefault(month, []).extend(values.values())
     initial_sell_in = _sell_in_by_month(initial_rows)
     previous_worked_out = _sell_in_by_month(previous_rows)
     for past, by_month in ((past_initial, initial_sell_in), (past_previous, previous_worked_out)):
@@ -1139,6 +1148,8 @@ def get_sell_in_outlook(
                 "sell_in_actual": _sum_or_none([row["sell_in"] for row in actual]),
                 "sell_in_recommended": _sum_or_none(recommended.get(month, [])),
                 "sell_in_previous": _sum_or_none(previous_sell_in.get(month, [])),
+                "sell_in_budget": _sum_or_none(budget_sell_in.get(month, [])),
+                "sell_out_budget": _sum_or_none([budget[sku][month] for sku in in_view if month in budget.get(sku, {})]),
                 "sell_in_initial": _sum_or_none(initial_sell_in.get(month, [])),
                 "sell_out_actual": _sum_or_none([row["sell_out"] for row in actual]),
                 "sell_out_forecast": _sum_or_none(forecast_out.get(month, [])),

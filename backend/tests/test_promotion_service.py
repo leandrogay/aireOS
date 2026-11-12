@@ -284,6 +284,18 @@ def test_list_forecast_promotions_skips_optional_filters(monkeypatch):
     assert params == {}
 
 
+def test_forecast_promotions_for_a_sku_range_match_any_sku_of_it(monkeypatch):
+    conn = FakeConnection(lambda sql, params: [])
+    monkeypatch.setattr(promotion_service, "_get_engine", lambda: FakeEngine(conn))
+
+    promotion_service.list_forecast_promotions(sku_range="Ultra Tape")
+
+    [(sql, params)] = conn.calls
+    assert "sk.sku_range = :sku_range" in sql
+    assert ":product_name" not in sql
+    assert params == {"sku_range": "Ultra Tape"}
+
+
 def test_no_sku_items_skips_sku_queries(monkeypatch):
     conn = _install_fake_engine(monkeypatch)
 
@@ -291,6 +303,49 @@ def test_no_sku_items_skips_sku_queries(monkeypatch):
 
     assert conn.sql_containing("FROM skus") == []
     assert conn.sql_containing("INSERT INTO promotion_skus") == []
+
+
+# ---- promotion moments recalculation -------------------------------------------
+
+
+@pytest.fixture
+def recalc_enabled(monkeypatch):
+    woken = []
+    monkeypatch.setattr(promotion_service.promo_recalc_events.config, "PROMO_RECALC_ENABLED", "true")
+    monkeypatch.setattr(promotion_service.promo_recalc_events, "enqueue_best_effort", woken.append)
+    return woken
+
+
+def _call_index(conn, fragment):
+    return next(i for i, (sql, _) in enumerate(conn.calls) if fragment in sql)
+
+
+def test_creating_a_promotion_queues_its_customers_after_its_stores_are_linked(monkeypatch, recalc_enabled):
+    conn = _install_fake_engine(monkeypatch)
+
+    promotion_service.create_promotion(_payload())
+
+    assert _call_index(conn, "INSERT INTO promotion_stores") < _call_index(conn, "INSERT INTO promo_recalc_requests")
+    assert recalc_enabled == [True]
+
+
+def test_deleting_a_promotion_queues_its_customers_before_its_stores_are_unlinked(monkeypatch, recalc_enabled):
+    def respond(sql, params):
+        return [(1,)] if sql.startswith("SELECT 1 FROM promotions") else []
+
+    conn = _install_fake_engine(monkeypatch, respond)
+
+    assert promotion_service.delete_promotion(99) is True
+    assert _call_index(conn, "INSERT INTO promo_recalc_requests") < _call_index(conn, "DELETE FROM promotion_stores")
+    assert recalc_enabled == [True]
+
+
+def test_promotion_saves_record_no_recalculation_while_it_is_disabled(monkeypatch):
+    conn = _install_fake_engine(monkeypatch)
+
+    promotion_service.create_promotion(_payload())
+
+    assert conn.sql_containing("promo_recalc_requests") == []
 
 
 # ---- duplicate events ----------------------------------------------------------

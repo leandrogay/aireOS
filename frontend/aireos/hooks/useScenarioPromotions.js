@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import {
   createScenarioPromotion,
@@ -14,6 +14,7 @@ import {
   hasUnsavedPromotionChanges,
   scenarioPromotionFromApi,
 } from '@/app/utils/scenarioPromotions';
+import { mergeScenarioItems } from '@/app/utils/scenarioSavedItems';
 
 /**
  * The Scenario builder's promotions: the saved ones from
@@ -33,23 +34,36 @@ import {
  *   unsavedCount: number,
  *   loading: boolean,
  *   error: string | null,
+ *   refresh: () => void,
  * }}
  */
-export default function useScenarioPromotions() {
+export default function useScenarioPromotions({ plan = 'scenario', year = null } = {}) {
   const [promotions, setPromotions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  // A new plan or budget year starts a new list, so an older reply is dropped.
+  const requests = useRef({ plan, year, revision: 0 });
   const unsavedCount = promotions.filter(hasUnsavedPromotionChanges).length;
 
   useEffect(() => {
     let cancelled = false;
+    if (requests.current.plan !== plan || requests.current.year !== year) {
+      requests.current = { plan, year, revision: requests.current.revision + 1 };
+      setPromotions([]);
+    }
+    const revision = requests.current.revision;
 
     async function load() {
+      setLoading(true);
       try {
-        const rows = await getScenarioPromotions();
-        if (!cancelled) setPromotions(rows.map(scenarioPromotionFromApi));
+        const rows = await getScenarioPromotions(plan, year);
+        if (!cancelled && revision === requests.current.revision) {
+          setPromotions((current) => mergeScenarioItems(current, rows.map(scenarioPromotionFromApi), 'promotionId', hasUnsavedPromotionChanges));
+          setError(null);
+        }
       } catch (err) {
-        if (!cancelled) setError(`Couldn't load saved promotions: ${err.message}`);
+        if (!cancelled && revision === requests.current.revision) setError(`Couldn't load saved promotions: ${err.message}`);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -59,7 +73,7 @@ export default function useScenarioPromotions() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [plan, year, refreshKey]);
 
   // Warn before closing or reloading the tab while something is unsaved.
   useEffect(() => {
@@ -73,7 +87,8 @@ export default function useScenarioPromotions() {
   }, [unsavedCount]);
 
   async function savePromotion(promotion) {
-    const payload = buildScenarioPromotionPayload(promotion);
+    requests.current.revision += 1;
+    const payload = { ...buildScenarioPromotionPayload(promotion), plan };
     const row = promotion.promotionId == null
       ? await createScenarioPromotion(payload)
       : await updateScenarioPromotion(promotion.promotionId, payload);
@@ -85,9 +100,10 @@ export default function useScenarioPromotions() {
   }
 
   async function deletePromotion(promotion) {
-    if (promotion.promotionId != null) await deleteScenarioPromotion(promotion.promotionId);
+    requests.current.revision += 1;
+    if (promotion.promotionId != null) await deleteScenarioPromotion(promotion.promotionId, plan);
     setPromotions((current) => current.filter((item) => item.id !== promotion.id));
   }
 
-  return { promotions, setPromotions, savePromotion, deletePromotion, unsavedCount, loading, error };
+  return { promotions, setPromotions, savePromotion, deletePromotion, unsavedCount, loading, error, refresh: () => setRefreshKey((key) => key + 1) };
 }

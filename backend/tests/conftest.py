@@ -24,6 +24,13 @@ def disable_authentication_by_default(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def disable_promo_recalc_by_default(monkeypatch):
+    """Saves record no promo recalculation unless a test turns it on, whatever the local env file says."""
+    monkeypatch.setattr(config, "PROMO_RECALC_ENABLED", "false")
+    monkeypatch.setattr(config, "PROMO_RECALC_HANDLER_URL", "")
+
+
+@pytest.fixture(autouse=True)
 def fresh_forecast_cache(monkeypatch):
     """No test reuses another's cached BigQuery rows, and none spends a fake
     query on the output_built_at check (bigquery.get_output_built_at)."""
@@ -36,6 +43,15 @@ def fresh_forecast_cache(monkeypatch):
 
 
 SIGNED_IN_EMAIL = "staff@shop-aire.com"
+
+
+@pytest.fixture
+def migrated_budget_schema(monkeypatch):
+    """Modern-schema service fakes; compatibility tests exercise the real schema probes."""
+    from app.services.scenario import common
+
+    monkeypatch.setattr(common, "has_plan_column", lambda conn, table: True)
+    monkeypatch.setattr(common, "has_budget_tables", lambda conn: True)
 
 
 @pytest.fixture

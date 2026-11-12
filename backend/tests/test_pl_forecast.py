@@ -160,16 +160,29 @@ def test_sku_under_a_year_old_uses_run_rate_only():
     assert forecast["base_method"].iloc[0] == "runrate"
 
 
-def test_base_blends_last_year_times_growth_with_run_rate():
-    # Last year flat 100, recent quarter 120 => growth 1.2, run-rate 120.
+def test_base_blends_last_year_as_it_was_with_run_rate():
+    # Last year flat 100, recent quarter 120 => run-rate 120. No growth factor:
+    # last year is not scaled by the recent quarter's 1.2 year-on-year rise.
     history = _flat_history("2025-01", 15, 100) + _flat_history("2026-04", 3, 120)
     history = _rows(history).set_index("month_year")
 
     forecast = pl_forecast.forecast_sku(history, {}, [pd.Period("2026-07", "M")], {}, ForecastParams())
 
-    # 0.5 x (100 x 1.2) + 0.5 x 120
-    assert forecast["total_sell_out"].iloc[0] == pytest.approx(120)
-    assert forecast["base_method"].iloc[0] == "ly_x_growth+runrate"
+    # 0.5 x 100 + 0.5 x 120
+    assert forecast["total_sell_out"].iloc[0] == pytest.approx(110)
+    assert forecast["base_method"].iloc[0] == "ly+runrate"
+
+
+def test_base_blends_whenever_that_month_last_year_exists():
+    # Only July 2025 is known from last year, so the old growth window
+    # (Apr-Jun 2025) is missing -- the blend still applies, as in the live view.
+    history = [_actual("2025-07", 100)] + _flat_history("2026-04", 3, 120)
+    history = _rows(history).set_index("month_year")
+
+    forecast = pl_forecast.forecast_sku(history, {}, [pd.Period("2026-07", "M")], {}, ForecastParams())
+
+    assert forecast["total_sell_out"].iloc[0] == pytest.approx(110)
+    assert forecast["base_method"].iloc[0] == "ly+runrate"
 
 
 def test_promo_month_adds_building_blocks_on_top_of_base():

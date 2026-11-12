@@ -1,9 +1,12 @@
-from fastapi import APIRouter, HTTPException
+from typing import Literal
+
+from fastapi import APIRouter, HTTPException, Query
 from google.auth.exceptions import GoogleAuthError
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app import config
 from app.schemas.scenario.promotions import ScenarioPromotionCreate, ScenarioPromotionUpdate
+from app.services.scenario import common
 from app.services.scenario import promotions as promotions_service
 
 
@@ -35,9 +38,13 @@ def _database_error(e: Exception) -> HTTPException:
 
 
 @router.get("")
-def list_scenario_promotions():
+def list_scenario_promotions(plan: Literal["scenario", "budget"] = "scenario", year: int | None = Query(None, ge=2000, le=2100)):
     try:
-        return promotions_service.list_scenario_promotions()
+        # Budget planning lists one year's entries (year); Current forecast has no years.
+        return promotions_service.list_scenario_promotions() if plan == "scenario" else promotions_service.list_scenario_promotions(plan, year)
+
+    except common.BudgetSetupRequiredError as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
     except (SQLAlchemyError, config.ConfigError, GoogleAuthError) as e:
         raise _database_error(e)
@@ -64,6 +71,9 @@ def create_scenario_promotion(promotion: ScenarioPromotionCreate):
 
     except IntegrityError:
         raise HTTPException(status_code=409, detail=_CONFLICT_DETAIL)
+
+    except common.BudgetSetupRequiredError as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
     except (SQLAlchemyError, config.ConfigError, GoogleAuthError) as e:
         raise _database_error(e)
@@ -92,6 +102,9 @@ def update_scenario_promotion(promotion_id: int, promotion: ScenarioPromotionUpd
     except IntegrityError:
         raise HTTPException(status_code=409, detail=_CONFLICT_DETAIL)
 
+    except common.BudgetSetupRequiredError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
     except (SQLAlchemyError, config.ConfigError, GoogleAuthError) as e:
         raise _database_error(e)
 
@@ -103,14 +116,17 @@ def update_scenario_promotion(promotion_id: int, promotion: ScenarioPromotionUpd
 
 
 @router.delete("/{promotion_id}")
-def delete_scenario_promotion(promotion_id: int):
+def delete_scenario_promotion(promotion_id: int, plan: Literal["scenario", "budget"] = "scenario"):
     try:
-        if not promotions_service.delete_scenario_promotion(promotion_id):
+        if not (promotions_service.delete_scenario_promotion(promotion_id) if plan == "scenario" else promotions_service.delete_scenario_promotion(promotion_id, plan)):
             raise HTTPException(status_code=404, detail=_NOT_FOUND_DETAIL)
         return {"deleted": True}
 
     except HTTPException:
         raise
+
+    except common.BudgetSetupRequiredError as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
     except (SQLAlchemyError, config.ConfigError, GoogleAuthError) as e:
         raise _database_error(e)

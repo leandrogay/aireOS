@@ -1,7 +1,18 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Area, ComposedChart, Line, ReferenceArea, ReferenceDot, ReferenceLine, XAxis, YAxis } from 'recharts';
+import {
+  Area,
+  ComposedChart,
+  Line,
+  ReferenceArea,
+  ReferenceDot,
+  ReferenceLine,
+  XAxis,
+  YAxis,
+  useXAxisScale,
+  useYAxisScale,
+} from 'recharts';
 
 import { cn } from '@/lib/utils';
 import { glassInsetClass } from '@/components/ui/surfaceStyles';
@@ -19,6 +30,7 @@ import ForecastPromoToggle from '@/components/forecast/ForecastPromoToggle';
 import SeriesDot from '@/components/forecast/SeriesDot';
 import ForecastLegendFooter from '@/components/forecast/ForecastLegendFooter';
 import {
+  FORECAST_SERIES,
   forecastSeriesWithActualColor,
   buildPromoOverlayBands,
   forecastPointDetails,
@@ -31,6 +43,7 @@ import {
   promoPeriodDividerXs,
   promosOverlappingMonth,
 } from '@/app/utils/forecastView';
+import { PART_COLORS, bandLabels, compositionOpacity, isSpotlightLayer, MIN_LABEL_PX, MIN_LABEL_SLOT_PX, totalLabel } from '@/app/utils/scenarioComposition';
 import { NO_CUSTOMER_COLOR } from '@/app/utils/customerColors';
 import { withActualBridges } from '@/app/utils/forecastActuals';
 import { CONFIDENCE_DOT_FILL, forecastLineHints, initialMissingHint as noInitialHint } from '@/app/utils/forecastLineText';
@@ -163,32 +176,185 @@ function promoPanelLeft(originX, wrapWidth) {
 // The Scenario builder's switched-on items, one group per source, in the
 // order the panel's tabs show them.
 const SCENARIO_ITEM_GROUPS = [
+  { source: 'growth', title: 'Growth added' },
   { source: 'blocks', title: 'Building blocks added' },
   { source: 'promotions', title: 'Planned promotions added' },
 ];
 
+// Units a layer takes away: diagonal lines, so the band reads as taken
+// away rather than added. One pattern per hatched layer, in its colour.
+function compositionHatchId(key) {
+  return `scenario-hatch-${key}`;
+}
+
+function CompositionHatches({ layers }) {
+  return (
+    <defs>
+      {layers
+        .filter((layer) => layer.hatch)
+        .map((layer) => (
+          <pattern
+            key={layer.key}
+            id={compositionHatchId(layer.key)}
+            width="6"
+            height="6"
+            patternUnits="userSpaceOnUse"
+            patternTransform="rotate(45)"
+          >
+            <rect width="6" height="6" fill={layer.color} fillOpacity={0.08} />
+            <line x1="0" y1="0" x2="0" y2="6" stroke={layer.color} strokeWidth="2" strokeOpacity={0.55} />
+          </pattern>
+        ))}
+    </defs>
+  );
+}
+
+// The hover card's breakdown, in the order the chart stacks it; each row is
+// that source's change on Tier 0. The baseline and last year's promotions
+// are in the Breakdown tab, so the card stays short. Official promotions
+// show only in months they change.
+const SCENARIO_BREAKDOWN_ROWS = [
+  { key: 'tier0', label: 'Tier 0' },
+  { key: 'official', label: 'Official promotions', onlyWhenSet: true },
+  { key: 'growth', label: 'Growth' },
+  { key: 'blocks', label: 'Building blocks' },
+  { key: 'promotions', label: 'Scenario promotions' },
+];
+
+// A past month's milestones (Scenario builder blocks in months with actuals,
+// scenarioMilestones.js): what the actual would have been without them, and
+// each one's share of it, worked back from the actual.
+function MilestoneDetails({ milestones, formatValue, className }) {
+  if (!milestones) return null;
+  const signed = (value) => `${value < 0 ? '−' : '+'}${formatValue(Math.abs(value))}`;
+  return (
+    <div className={cn('space-y-0.5 text-[11px] tabular-nums', className)}>
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/50">Milestones</p>
+      <div className="flex justify-between gap-3">
+        <span>Without milestones</span>
+        <span className="font-semibold">{formatValue(milestones.without)}</span>
+      </div>
+      {milestones.milestones.map((item) => (
+        <div key={item.itemId} className="flex justify-between gap-3">
+          <span className="inline-flex min-w-0 items-center gap-1.5">
+            <span aria-hidden="true" className="size-2 shrink-0 rounded-full border-2" style={{ borderColor: PART_COLORS.milestones }} />
+            <span className="truncate">{item.name}</span>
+          </span>
+          <span className="font-semibold">{signed(item.units)}</span>
+        </div>
+      ))}
+      <div className="flex justify-between gap-3 border-t border-lavander pt-0.5">
+        <span className="font-semibold">Actual</span>
+        <span className="font-semibold">{formatValue(milestones.actual)}</span>
+      </div>
+    </div>
+  );
+}
+
+// Tiny numbers on the Scenario builder's shaded layers: each band's own
+// figure inside it when there is room (MIN_LABEL_PX tall, months
+// MIN_LABEL_SLOT_PX apart), and the Simulated total on top. Drawn inside the
+// chart's SVG with its scales, like dashboard/MonthAxis.
+function CompositionLabels({ rows, visible, spotlight }) {
+  const xScale = useXAxisScale();
+  const yScale = useYAxisScale();
+  if (!xScale || !yScale) return null;
+  const points = rows.filter((row) => row.breakdown);
+  if (points.length > 1 && Math.abs(xScale(points[1].x) - xScale(points[0].x)) < MIN_LABEL_SLOT_PX) return null;
+
+  return (
+    <g aria-hidden="true" className="pointer-events-none">
+      {points.flatMap((point) => {
+        const x = xScale(point.x);
+        const bands = bandLabels(point, visible)
+          .filter((band) => isSpotlightLayer(band.key, spotlight))
+          .map((band) => ({ ...band, top: yScale(band.high), bottom: yScale(band.low) }))
+          // A spotlit part is labelled even when its band is too thin to see
+          // (a few units on a chart of thousands), just above the band.
+          .filter((band) => spotlight || band.bottom - band.top >= MIN_LABEL_PX)
+          .map((band) => (
+            <text
+              key={`${point.x}-${band.key}`}
+              x={x}
+              y={band.bottom - band.top >= MIN_LABEL_PX ? (band.top + band.bottom) / 2 : band.top - 6}
+              textAnchor="middle"
+              dominantBaseline="middle"
+              className="fill-deep-violet-blue/80 text-[9px] tabular-nums"
+            >
+              {band.text}
+            </text>
+          ));
+        const total = spotlight ? null : totalLabel(point, visible);
+        if (!total) return bands;
+        return [
+          ...bands,
+          <text
+            key={`${point.x}-total`}
+            x={x}
+            y={yScale(total.value) - 6}
+            textAnchor="middle"
+            className="fill-scenario-ink text-[9px] font-semibold tabular-nums"
+          >
+            {total.text}
+          </text>,
+        ];
+      })}
+    </g>
+  );
+}
+
 // Scenario section of the hover card (and of the entered-promotions panel,
-// which replaces the card in months with an entered promotion): how far
-// Simulated sits from Current this month, and every switched-on building
-// block and planned promotion in it, even one that adds 0%. With
-// `hasEntered`, planned promotions are added on top of the month's entered
-// ones (scenarioPromotions.stackedModelCells), so the card says so.
-function ScenarioPointDetails({ point, items, formatValue, hasEntered = false, className }) {
+// which replaces the card in months with an entered promotion): what this
+// month's Simulated figure is made of (Tier 0, then what growth, blocks and
+// scenario promotions add, scenarioComposition.withComposition), the anchor
+// in effect when one customer and SKU range is in view, and every
+// switched-on building block and planned promotion in it, even one that
+// adds 0%.
+function ScenarioPointDetails({ point, items, anchor, baseLabel = 'Tier 0', formatValue, className }) {
   if (point?.simulated == null || point.current == null) return null;
   const delta = point.simulated - point.current;
   if (!delta && !items.length) return null;
   const pct = point.current ? ` (${delta < 0 ? '−' : '+'}${Math.abs((delta / point.current) * 100).toFixed(1)}%)` : '';
   // Sign written here, figure unsigned, so it reads "+2,555".
   const signed = (value) => `${value < 0 ? '−' : '+'}${formatValue(Math.abs(value))}`;
+  const breakdown = point.breakdown;
   return (
     <div className={cn('space-y-0.5 text-[11px] tabular-nums', className)}>
-      <div className="flex justify-between gap-3">
-        <span>Difference from Current</span>
-        <span className="font-semibold text-scenario-ink">
-          {signed(delta)}
-          {pct}
-        </span>
-      </div>
+      {breakdown ? (
+        <>
+          {SCENARIO_BREAKDOWN_ROWS.filter((row) => !row.onlyWhenSet || Math.round(breakdown[row.key] ?? 0)).map((row) => (
+            <div key={row.key} className="flex justify-between gap-3">
+              <span>{row.key === 'tier0' ? baseLabel : row.label}</span>
+              <span className={row.key === 'tier0' ? 'font-semibold' : 'font-semibold text-scenario-ink'}>
+                {row.key === 'tier0' ? formatValue(breakdown.tier0) : signed(breakdown[row.key])}
+              </span>
+            </div>
+          ))}
+          <div className="flex justify-between gap-3 border-t border-lavander pt-0.5">
+            <span className="font-semibold">Simulated</span>
+            <span className="font-semibold text-scenario-ink">
+              {formatValue(breakdown.simulated)}
+              {pct}
+            </span>
+          </div>
+        </>
+      ) : (
+        <div className="flex justify-between gap-3">
+          <span>Difference from Current</span>
+          <span className="font-semibold text-scenario-ink">
+            {signed(delta)}
+            {pct}
+          </span>
+        </div>
+      )}
+      {breakdown &&
+      Math.round(breakdown.tier0 + (breakdown.official ?? 0) + breakdown.growth + breakdown.blocks + breakdown.promotions) !==
+        Math.round(breakdown.simulated) ? (
+        <p className="pt-0.5 text-deep-violet-blue/60">
+          Some SKUs would fall below 0 and are kept at 0, so Simulated is more than the sum.
+        </p>
+      ) : null}
+      {anchor ? <p className="pt-0.5 text-deep-violet-blue/60">Anchor: {anchor}</p> : null}
       {SCENARIO_ITEM_GROUPS.map((group) => {
         const groupItems = items.filter((item) => item.source === group.source);
         if (!groupItems.length) return null;
@@ -203,9 +369,6 @@ function ScenarioPointDetails({ point, items, formatValue, hasEntered = false, c
                 <span className="font-semibold text-scenario-ink">{signed(item.deltaUnits)}</span>
               </div>
             ))}
-            {group.source === 'promotions' && hasEntered ? (
-              <p className="text-[10px] text-deep-violet-blue/60">On top of the entered promotions below.</p>
-            ) : null}
           </div>
         );
       })}
@@ -248,6 +411,8 @@ export default function ForecastChart({
   emptyMessage = 'No forecast data matches these filters.',
   loading = false,
   scenario = null,
+  baseSeries = FORECAST_SERIES,
+  extraSeries = [],
   // Scenario builder only (all default off): `toolbar` renders under the
   // card header, `summary` right under the chart, `yearTable` under that.
   // /forecast shows its year totals and monthly table as cards of their own
@@ -274,9 +439,13 @@ export default function ForecastChart({
   // bands, seasonal average) through `scenario`; /forecast passes nothing,
   // so it draws exactly the committed lines. All values arrive precomputed
   // (app/utils/scenarioEngine.js); this component only draws them.
-  const forecastSeries = forecastSeriesWithActualColor(actualColor);
-  const allSeries = scenario ? [...forecastSeries, ...scenario.series] : forecastSeries;
-  const config = Object.fromEntries(allSeries.map((series) => [series.key, { label: series.label, color: series.color }]));
+  // The Actual line in `actualColor`, whichever base lines the page passes
+  // (the Scenario builder renames Current, or shows Initial alone).
+  const withActual = (series) => (series.key === 'actual' ? { ...series, color: actualColor } : series);
+  const allSeries = [...baseSeries.map(withActual), ...extraSeries, ...(scenario?.series ?? [])];
+  // Every forecast line's config, then the lines drawn (their labels win).
+  const config = Object.fromEntries([...forecastSeriesWithActualColor(actualColor), ...allSeries]
+    .map((series) => [series.key, { label: series.label, color: series.color }]));
   // A line the selected model has for none of the SKUs in scope: its pill
   // is greyed out (its hover says why) and the line and table column stay off.
   const previousOff = previousMissing ?? !points.some((point) => point.previous != null);
@@ -338,9 +507,24 @@ export default function ForecastChart({
 
   // No 80% range is drawn: the tooltip's CONFIDENCE section gives it in
   // figures, so the axis only has to fit the lines.
-  const visibleValues = chartData
-    .flatMap((point) => visibleKeys.map((key) => point[key]))
-    .filter((value) => typeof value === 'number');
+  // The Scenario builder's shaded layers can reach above both lines (units a
+  // decrease took away sit above the Simulated line), so their tops count too.
+  const compositionTops = scenario?.composition?.length
+    ? chartData.map((point) => totalLabel(point, scenario.compositionVisible ?? {})?.value)
+    : [];
+  const numbers = (values) => values.filter((value) => typeof value === 'number');
+  // The axis fits the reference lines (Actual, Initial, Previous, Current),
+  // not what the scenario adds, so switching a block or promotion on or off
+  // doesn't rescale the chart and make the lines look as if they moved. It
+  // grows only when the Simulated line or its bands would leave the chart.
+  const referenceValues = numbers(
+    chartData.flatMap((point) => visibleKeys.filter((key) => key !== 'simulated').map((key) => point[key]))
+  );
+  const scenarioValues = numbers([
+    ...(visibleKeys.includes('simulated') ? chartData.map((point) => point.simulated) : []),
+    ...compositionTops,
+  ]);
+  const visibleValues = [...referenceValues, ...scenarioValues];
   // Hover text for the line pills, so the explanations don't crowd the chart.
   const lineHints = forecastLineHints({
     initialMissing: initialOffHint,
@@ -348,7 +532,13 @@ export default function ForecastChart({
     currentMonths,
     previousMonths,
   });
-  const yDomain = visibleValues.length ? niceYDomain(visibleValues) : [0, 1];
+  lineHints.budget = points.some((point) => point.budget != null)
+    ? 'Latest locked Tier 0 budget. Its units stay frozen when the forecast changes.'
+    : 'No locked budget in this scope yet.';
+  const referenceDomain = referenceValues.length ? niceYDomain(referenceValues) : null;
+  const scenarioFits =
+    referenceDomain && scenarioValues.every((value) => value >= referenceDomain[0] && value <= referenceDomain[1]);
+  const yDomain = scenarioFits ? referenceDomain : visibleValues.length ? niceYDomain(visibleValues) : [0, 1];
   const hoverPoint = chartPoints.find((point) => point.month_year === hoverMonth);
   const hoverPromos = promosOverlappingMonth(
     promotions,
@@ -369,6 +559,7 @@ export default function ForecastChart({
   // changes something in view, so its gap, markers and band wait for it too.
   const simulatedSeries = scenario?.series[0] ?? null;
   const showSimulated = Boolean(simulatedSeries) && Boolean(visibleSeries.simulated);
+  const showComposition = Boolean(scenario?.composition?.length);
   // A filter change moves the lines, the simulated gap and the axis together.
   // Same ticks as ever: the domain in 4 equal steps (none when it is flat).
   const transition = useChartTransition({
@@ -385,6 +576,10 @@ export default function ForecastChart({
         .map((marker) => ({ ...marker, x: monthX(marker.month_year) }))
         .filter((marker) => marker.x >= 0 && chartData[marker.x]?.simulated != null)
     : [];
+  // Milestones (blocks in months with actuals) sit on the Actual line.
+  const milestoneMarkers = (scenario?.milestoneMonths ?? [])
+    .map((month) => ({ month, x: monthX(month) }))
+    .filter((marker) => marker.x >= 0 && chartData[marker.x]?.actual != null);
   // The block selected in the panel or the blocks table: its months banded.
   const selectedBand =
     showSimulated && scenario.selectedBand
@@ -491,7 +686,7 @@ export default function ForecastChart({
             visible={shownSeries}
             onToggle={onToggleSeries}
             hints={lineHints}
-            disabled={{ previous: previousOff, initial: Boolean(initialOffHint) }}
+            disabled={{ previous: previousOff, initial: Boolean(initialOffHint), budget: !points.some((point) => point.budget != null) }}
           />
           <ForecastPromoToggle
             selectedTypes={selectedPromoTypes}
@@ -553,6 +748,7 @@ export default function ForecastChart({
                     margin={{ top: 8, right: 18, left: 0, bottom: 28 }}
                   >
                     <OverlayDefs bands={overlayBands} />
+                    {showComposition ? <CompositionHatches layers={scenario.composition} /> : null}
                     <XAxis
                       dataKey="x"
                       type="number"
@@ -594,10 +790,17 @@ export default function ForecastChart({
                                   <ScenarioPointDetails
                                     point={point}
                                     items={scenario.monthItems?.get(point.month_year) ?? []}
+                                    anchor={scenario.anchorForMonth?.(point.month_year) ?? null}
+                                    baseLabel={scenario.baseLabel}
                                     formatValue={formatValue}
                                     className="mt-1 border-t border-lavander pt-1.5"
                                   />
                                 ) : null}
+                                <MilestoneDetails
+                                  milestones={point?.milestones}
+                                  formatValue={formatValue}
+                                  className="mt-1 border-t border-lavander pt-1.5"
+                                />
                                 <ForecastConfidenceDetails
                                   entries={point.confidence}
                                   formatValue={formatValue}
@@ -644,21 +847,26 @@ export default function ForecastChart({
                         }}
                       />
                     ) : null}
+                    {/* Spotlighting scenario promotions in the Breakdown tab fills
+                        their boxes; another part's spotlight fades them. */}
                     {scenarioBands.map((band) => (
                       <ReferenceArea
                         key={band.key}
                         x1={band.x1}
                         x2={band.x2}
-                        fill="none"
+                        fill={scenario?.compositionSpotlight === 'promotions' ? band.color : 'none'}
+                        fillOpacity={0.12}
                         stroke={band.color}
+                        strokeOpacity={scenario?.compositionSpotlight && scenario.compositionSpotlight !== 'promotions' ? 0.25 : 1}
                         strokeDasharray="4 3"
-                        strokeWidth={1.5}
+                        strokeWidth={scenario?.compositionSpotlight === 'promotions' ? 2.5 : 1.5}
                         ifOverflow="visible"
                       />
                     ))}
                     {scenario?.seasonalAverage != null && visibleSeries.simulated ? (
                       <ReferenceLine
                         y={scenario.seasonalAverage}
+                        zIndex={450}
                         stroke="#A8741A"
                         strokeDasharray="4 4"
                         strokeWidth={1.4}
@@ -666,12 +874,39 @@ export default function ForecastChart({
                         label={{
                           value: `Seasonal avg ${formatAxisValue(Math.round(scenario.seasonalAverage), 'units')}`,
                           position: 'insideTopRight',
+                          dy: 18,
                           fontSize: 10,
                           fill: '#A8741A',
+                          stroke: 'var(--aire-cream)',
+                          strokeWidth: 3,
+                          paintOrder: 'stroke',
                         }}
                       />
                     ) : null}
-                    {showSimulated ? (
+                    {showComposition ? (
+                      scenario?.composition
+                        ?.filter((layer) => scenario.compositionVisible?.[layer.key])
+                        .map((layer) => (
+                          <Area
+                            key={layer.key}
+                            dataKey={(entry) => entry[layer.key] ?? 0}
+                            type="monotone"
+                            stackId="scenario-composition"
+                            stroke="none"
+                            fill={layer.hatch ? `url(#${compositionHatchId(layer.key)})` : layer.color}
+                            fillOpacity={compositionOpacity(layer, scenario.compositionSpotlight)}
+                            tooltipType="none"
+                            legendType="none"
+                            activeDot={false}
+                            isAnimationActive={false}
+                          />
+                        ))
+                    ) : null}
+                    {showComposition ? (
+                      <CompositionLabels rows={transition.rows} visible={scenario.compositionVisible ?? {}} spotlight={scenario.compositionSpotlight} />
+                    ) : null}
+                    {/* The layers already show what the gap is made of. */}
+                    {showSimulated && !showComposition ? (
                       <Area
                         dataKey="simulatedGap"
                         type="monotone"
@@ -744,6 +979,18 @@ export default function ForecastChart({
                         ifOverflow="visible"
                       />
                     ))}
+                    {milestoneMarkers.map((marker) => (
+                      <ReferenceDot
+                        key={`milestone-${marker.month}`}
+                        x={marker.x}
+                        y={transition.rows[marker.x].actual}
+                        r={6}
+                        fill="#fff"
+                        stroke={PART_COLORS.milestones}
+                        strokeWidth={2.5}
+                        ifOverflow="visible"
+                      />
+                    ))}
                   </ComposedChart>
                 </ChartContainer>
                 {loading && <ChartLoading overlay label="Updating forecast…" />}
@@ -776,13 +1023,19 @@ export default function ForecastChart({
                         />
                       }
                       scenarioDetails={
-                        showSimulated ? (
-                          <ScenarioPointDetails
-                            point={hoverPoint}
-                            items={scenario.monthItems?.get(hoverMonth) ?? []}
-                            formatValue={formatValue}
-                            hasEntered={scenario.stacksOnEntered}
-                          />
+                        showSimulated || hoverPoint?.milestones ? (
+                          <>
+                            {showSimulated ? (
+                              <ScenarioPointDetails
+                                point={hoverPoint}
+                                items={scenario.monthItems?.get(hoverMonth) ?? []}
+                                anchor={scenario.anchorForMonth?.(hoverMonth) ?? null}
+                                baseLabel={scenario.baseLabel}
+                                formatValue={formatValue}
+                              />
+                            ) : null}
+                            <MilestoneDetails milestones={hoverPoint?.milestones} formatValue={formatValue} />
+                          </>
                         ) : null
                       }
                       promos={hoverPromos}
