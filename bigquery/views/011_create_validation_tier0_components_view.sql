@@ -120,7 +120,7 @@ SELECT
   origin_month,
   customer_id,
   sku,
-  month_year,
+  target_month AS month_year,
   horizon,
   history_months,
   latest_month,

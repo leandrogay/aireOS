@@ -48,7 +48,8 @@ class FakePromoUpliftDatabase:
     # `key` and `scope` are what the service derives from the label and the
     # target; they are kept here so the tests read like the rows they mean.
     def add_uplift(self, key, label, discount, uplift, scope="all", customer_id=None,
-                   sku_range=None, sku=None, source="placeholder", updated_by="aireos", note=None):
+                   sku_range=None, sku=None, source="placeholder", updated_by="aireos", note=None,
+                   effective_from=None):
         row = {
             "uplift_id": len(self.uplifts) + 1,
             "customer_id": customer_id,
@@ -59,6 +60,7 @@ class FakePromoUpliftDatabase:
             "uplift_pct": Decimal(uplift) if uplift is not None else None,
             "source": source,
             "note": note,
+            "effective_from": effective_from,
             "updated_by": updated_by,
             "updated_at": self._stamp(),
         }
@@ -130,6 +132,7 @@ class FakePromoUpliftDatabase:
                 None, params["promotion_mechanic"], params["effective_discount_pct"], params["uplift_pct"],
                 customer_id=params["customer_id"], sku_range=params["sku_range"], sku=params["sku"],
                 source=params["source"], updated_by=params["updated_by"], note=params["note"],
+                effective_from=params["effective_from"],
             )
             return [(row["uplift_id"],)]
 
@@ -613,6 +616,40 @@ def test_a_discount_edit_is_a_new_version_of_the_mechanic_and_keeps_the_old_one(
     assert (result["setting"]["effective_discount_pct"], result["setting"]["scope"]) == (25.0, "all")
     assert [row["id"] for row in db.current_uplifts("pct_off_30")] == [result["setting"]["id"]]
     assert next(r for r in db.uplifts if r["uplift_id"] == old["id"])["effective_discount_pct"] == Decimal("30")
+
+
+def test_a_discount_edit_applies_from_the_month_it_is_made(monkeypatch):
+    db = FakePromoUpliftDatabase()
+    _install(monkeypatch, db)
+    monkeypatch.setattr(common, "this_month", lambda: date(2026, 11, 1))
+
+    result = service.set_mechanic_discount("pct_off_30", Decimal("25"))
+
+    assert result["setting"]["effective_from"] == "2026-11-01"
+
+
+def test_earlier_months_keep_the_discount_they_had(monkeypatch):
+    db = FakePromoUpliftDatabase()
+    _install(monkeypatch, db)
+    monkeypatch.setattr(common, "this_month", lambda: date(2026, 11, 1))
+    service.set_mechanic_discount("pct_off_30", Decimal("25"))
+
+    with common.read_connection() as conn:
+        discount_in = service.mechanic_discount_lookup(conn)
+
+    assert discount_in("pct_off_30", date(2026, 6, 1)) == Decimal("30")
+    assert discount_in("pct_off_30", date(2026, 11, 1)) == Decimal("25")
+    assert discount_in("pct_off_30", date(2027, 3, 1)) == Decimal("25")
+
+
+def test_a_mechanic_with_no_discount_has_none_in_any_month(monkeypatch):
+    _install(monkeypatch, FakePromoUpliftDatabase())
+
+    with common.read_connection() as conn:
+        discount_in = service.mechanic_discount_lookup(conn)
+
+    assert discount_in("voucher", date(2026, 6, 1)) is None
+    assert discount_in("pct_off_99", date(2026, 6, 1)) is None
 
 
 def test_saving_the_same_discount_writes_nothing(monkeypatch):

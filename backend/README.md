@@ -97,6 +97,11 @@ Apply `migrations/020_create_promo_calc.sql` after 019, then fill it once with
 `python scripts/rebuild_promo_calc.py`. Promotion Uplift Settings reads its
 moments and recommendations from these tables, not live sell-out, so the
 page errors until 020 exists and shows no moments until the first rebuild.
+Apply `migrations/021_promo_mechanic_discount_effective_from.sql` after 020
+(as the tables' owner). A mechanic discount change then applies from the month
+it is made in, so the Scenario builder's split of past months never moves;
+existing rows apply from the start.
+
 Then set `PROMO_RECALC_ENABLED=true` so promotion saves, sell-out loads and
 rollbacks, and anchor or uplift edits queue a recalculation of the customers
 they touch. Set `PROMO_RECALC_HANDLER_URL` to the API's

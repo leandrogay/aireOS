@@ -710,6 +710,7 @@ def _uplift_rows(conn: Connection) -> list[dict]:
                 u.uplift_pct,
                 u.source,
                 u.note,
+                u.effective_from,
                 u.updated_by,
                 u.updated_at
 
@@ -761,6 +762,28 @@ def mechanic_discounts(conn: Connection) -> dict[str, dict]:
     }
 
 
+def mechanic_discount_lookup(conn: Connection):
+    """
+    discount_in(mechanic_key, month): the mechanic's effective discount in
+    effect that month (migration 021: a change applies from the month it was
+    made, NULL = from the start), or None. For months in the past, so a
+    discount changed today never moves them.
+    """
+
+    rows = [row for row in _uplift_rows(conn) if row["scope"] == "all" and row["mechanic_key"]]
+    by_month: dict[date, dict[tuple, dict]] = {}
+
+    def discount_in(mechanic_key: str, month: date) -> Decimal | None:
+        if month not in by_month:
+            by_month[month] = common.in_effect(rows, lambda row: (row["mechanic_key"],), month)
+        row = by_month[month].get((mechanic_key,))
+        if row is None or row["source"] == "removed" or row["effective_discount_pct"] is None:
+            return None
+        return Decimal(row["effective_discount_pct"])
+
+    return discount_in
+
+
 def _uplift_view(row: dict) -> dict:
     return {
         "id": row["id"],
@@ -778,6 +801,7 @@ def _uplift_view(row: dict) -> dict:
         # customer's (and range's) anchor; every other value is used as stored.
         "follows_anchor": row["source"] == "placeholder" and row["effective_discount_pct"] is not None,
         "note": row["note"],
+        "effective_from": row["effective_from"].isoformat() if row.get("effective_from") else None,
         "changed_by": row["updated_by"],
         "changed_at": common.iso(row["updated_at"]),
     }
@@ -1036,6 +1060,7 @@ def _insert_uplift(conn: Connection, values: dict) -> int:
                 uplift_pct,
                 source,
                 note,
+                effective_from,
                 updated_by
             )
             VALUES (
@@ -1047,6 +1072,7 @@ def _insert_uplift(conn: Connection, values: dict) -> int:
                 CAST(:uplift_pct AS numeric(6, 2)),
                 :source,
                 :note,
+                CAST(:effective_from AS date),
                 :updated_by
             )
             RETURNING uplift_id
@@ -1080,7 +1106,7 @@ def set_mechanic_discount(
 ) -> dict:
     """
     Change a mechanic's effective discount, as a new version of its
-    all-customers row, from now on. Every customer is recalculated, since
+    all-customers row, from this month on (earlier months keep theirs). Every customer is recalculated, since
     the placeholder rule and the anchors that use the mechanic move with it.
     `changed` is False when it already has that discount.
     """
@@ -1110,6 +1136,7 @@ def set_mechanic_discount(
                 uplift_pct=uplift_pct,
                 note=note,
                 source=base["source"],
+                effective_from=common.this_month(),
                 updated_by=updated_by or DEFAULT_CHANGED_BY,
             ),
         )
