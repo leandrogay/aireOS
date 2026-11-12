@@ -16,7 +16,7 @@ import { cn } from '@/lib/utils';
 
 // The calendar panel, shared with ui/RangeDatePicker's typed variant.
 export const calendarPanelClass =
-  'w-auto max-w-[95vw] gap-0 overflow-hidden rounded-md border border-lavander bg-white p-1 text-deep-violet-blue ring-0';
+  'aire-glass-dropdown-panel w-auto max-w-[95vw] gap-0 overflow-hidden rounded-md border border-lavander p-1 text-deep-violet-blue ring-0';
 
 // The typed variants' box: the form input look around a dd/mm/yyyy text box
 // and the calendar icon, so it lines up with a Dropdown 'field' beside it.

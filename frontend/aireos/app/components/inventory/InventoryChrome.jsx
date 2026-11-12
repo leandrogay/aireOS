@@ -54,7 +54,7 @@ export function StatTag({ label, value }) {
 
 export function ScopeTag({ label, value }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-lavander bg-lavander/70 px-2.5 py-0.5 text-[11px] text-deep-violet-blue">
+    <span className="inline-flex items-center gap-1 rounded-full border border-lavander bg-lavander/60 px-2.5 py-0.5 text-[11px] text-deep-violet-blue">
       <span className="font-semibold uppercase tracking-wide text-deep-violet-blue/45">{label}</span>
       {value}
     </span>

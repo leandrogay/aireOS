@@ -148,6 +148,13 @@
   --aire-glass-edge: color-mix(in srgb, var(--aire-lavender) 65%, white);
   --aire-glass-sheen: rgb(255 255 255 / 65%);
   --aire-glass-shadow: rgb(58 67 105 / 13%);
+  /* How much glass tint each surface tier keeps (the rest shows the page
+     through): outer cards, floating popups, dropdown lists (near-solid so
+     long option lists stay readable), and outer cards in dark mode. */
+  --aire-glass-alpha-card: 60%;
+  --aire-glass-alpha-card-dark: 70%;
+  --aire-glass-alpha-float: 80%;
+  --aire-glass-alpha-dropdown: 80%;
   --aire-row-base: white;
   --aire-row-alt: color-mix(in srgb, var(--aire-cream) 17%, white);
   --aire-row-hover: color-mix(in srgb, var(--aire-lavender) 28%, white);
@@ -331,7 +338,7 @@ html.dark { background-color: var(--aire-canvas); }
 }
 @supports (backdrop-filter: blur(1px)) {
   .aire-glass-surface {
-    background-color: color-mix(in srgb, var(--aire-glass-tint) 62%, transparent);
+    background-color: color-mix(in srgb, var(--aire-glass-tint) var(--aire-glass-alpha-card), transparent);
     backdrop-filter: blur(24px) saturate(1.5);
   }
 }
@@ -384,18 +391,18 @@ html.dark { background-color: var(--aire-canvas); }
   background-color: var(--aire-soft);
 }
 .dark .aire-glass-surface[class~="bg-white"] {
-  background-color: color-mix(in srgb, var(--aire-glass-tint) 70%, transparent);
+  background-color: color-mix(in srgb, var(--aire-glass-tint) var(--aire-glass-alpha-card-dark), transparent);
 }
 .dark .aire-brand-mark { filter: brightness(0) invert(0.94); }
 .dark .recharts-cartesian-axis-tick-value { fill: var(--aire-ink); }
 
 @supports (backdrop-filter: blur(1px)) {
   .aire-glass-float {
-    background-color: color-mix(in srgb, var(--aire-glass-tint) 82%, transparent);
+    background-color: color-mix(in srgb, var(--aire-glass-tint) var(--aire-glass-alpha-float), transparent);
     backdrop-filter: blur(10px) saturate(1.12);
   }
   .aire-glass-float.aire-glass-dropdown-panel {
-    background-color: color-mix(in srgb, var(--aire-glass-tint) 96%, transparent);
+    background-color: color-mix(in srgb, var(--aire-glass-tint) var(--aire-glass-alpha-dropdown), transparent);
   }
 }
 

@@ -36,7 +36,7 @@ const TRACK_LOOK = {
 // not-data-disabled: a disabled option keeps its faded look under the pointer.
 const SEGMENT_HOVER = {
   tint: 'not-data-disabled:hover:bg-white/60',
-  outline: 'not-data-disabled:hover:bg-lavander/80',
+  outline: 'not-data-disabled:hover:bg-lavander/50',
   glass: 'not-data-disabled:hover:bg-lavander/40',
   soft: 'not-data-disabled:hover:bg-lavander/40',
 };

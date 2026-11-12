@@ -68,7 +68,7 @@ function LineRow({ label, labelClassName, series, visible, onToggle, hints, disa
                     ? 'cursor-not-allowed border-dashed border-deep-violet-blue/20 bg-transparent text-deep-violet-blue/40'
                     : isActive
                       ? 'border-transparent text-deep-violet-blue shadow-sm'
-                      : 'border-deep-violet-blue/15 bg-white/35 text-deep-violet-blue/60 hover:bg-white/65'
+                      : 'border-deep-violet-blue/15 bg-white/40 text-deep-violet-blue/60 hover:bg-white/70'
                 )}
                 style={
                   isActive

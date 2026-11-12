@@ -34,7 +34,7 @@ const buttonVariants = cva(
           "bg-lavander text-deep-violet-blue hover:bg-[color-mix(in_oklch,var(--color-lavander),var(--color-deep-violet-blue)_8%)] aria-expanded:bg-lavander",
         // Toolbar and table actions that need no outline.
         ghost:
-          "text-deep-violet-blue hover:bg-lavander/60 aria-expanded:bg-lavander/60",
+          "text-deep-violet-blue hover:bg-lavander/50 aria-expanded:bg-lavander/50",
         // The confirming click of a delete or discard, not its trigger.
         destructive:
           "bg-red-700 text-white hover:bg-red-800 focus-visible:border-red-700 focus-visible:ring-red-700/30",

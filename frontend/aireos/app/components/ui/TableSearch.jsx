@@ -35,7 +35,7 @@ export default function TableSearch({ value, onChange, label, placeholder = 'Sea
           type="button"
           aria-label="Clear search"
           onClick={() => onChange('')}
-          className="absolute right-1.5 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-deep-violet-blue/50 hover:bg-lavander/40 hover:text-deep-violet-blue focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+          className="absolute right-1.5 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-deep-violet-blue/50 hover:bg-lavander/50 hover:text-deep-violet-blue focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
         >
           <X aria-hidden="true" className="size-4" />
         </button>
