@@ -1,10 +1,22 @@
-import { HEADING_FIELDS, MEASURE_FIELDS, STORE_FIELDS, fieldLabel, groupKind, headingFields, without } from '@/app/utils/mappingReview';
+import {
+  HEADING_FIELDS,
+  MEASURE_FIELDS,
+  STORE_FIELDS,
+  fieldLabel,
+  groupKind,
+  headingFields,
+  labelPosition,
+  positionPhrase,
+  without,
+} from '@/app/utils/mappingReview';
+import { cleanCellReference } from '@/app/utils/sheetCells';
 
 // How one field of the sell-out data is filled, as the field editor offers
 // it: one method and its settings. Every way the contract can fill a field
 // (backend mapping_contract: mapped from a column or a melt group, a melt
 // group's headings or labels, derived, constant, not_available) is one of
-// these, in a reviewer's words. Pure: no React.
+// these, in a reviewer's words, as is one cell of the sheet written on every
+// row (from_cell). Pure: no React.
 
 // ============================================================
 // The methods
@@ -23,13 +35,21 @@ export const METHOD_INFO = {
     label: 'In the column headings',
     help: 'The heading of each period or outlet column the figures are read from.',
   },
-  above: {
-    label: 'In a row above the column headings',
-    help: 'The cell above each outlet heading — where some files write the outlet code over its name.',
+  headingRow: {
+    label: 'In a row above or below the column headings',
+    help: 'The cell above or below each outlet heading — where some files write the outlet code over or under its name.',
   },
   title: {
-    label: "In the file's title",
-    help: 'The month the title or the lines above the table state, e.g. “DATE : 01 Aug 2026 TO 31 Aug 2026”. Every row gets that month.',
+    label: "In the file's title or a month heading",
+    help: 'The month the title or the lines above the table state, e.g. “DATE : 01 Aug 2026 TO 31 Aug 2026”, or a heading that is only a month, e.g. “Aug-26”. Every row gets that month, and next month’s file gets its own.',
+  },
+  filename: {
+    label: "In the file's name",
+    help: 'The month the file is named for, e.g. “Prime - Jan 2026 - Sales report”, for a file with no date inside it. Every row gets that month, and next month’s file gets its own.',
+  },
+  cell: {
+    label: 'In one cell, the same on every row',
+    help: 'One cell at the top of the sheet, e.g. A1, written on every row. Each file is read at that cell, so next month’s file gives its own value.',
   },
   price: {
     label: 'Units sold × a price column',
@@ -50,7 +70,10 @@ export const METHOD_INFO = {
 };
 
 const TITLE_FIELDS = ['period_start'];
-const ENTRY_METHODS = ['title', 'price', 'constant', 'derived', 'not_available'];
+// What one cell may fill on every row (backend mapping_contract.CELL_TARGETS):
+// never a figure.
+const CELL_FIELDS = ['period_start', ...HEADING_FIELDS];
+const ENTRY_METHODS = ['title', 'filename', 'cell', 'price', 'constant', 'derived', 'not_available'];
 
 function asList(transforms) {
   if (Array.isArray(transforms)) return transforms;
@@ -71,12 +94,13 @@ export function fieldMethods(field, groups) {
   if (MEASURE_FIELDS.includes(field)) methods.push({ method: 'group', reason: '' });
   if (HEADING_FIELDS.includes(field)) {
     const reason = kind === 'store' ? '' : 'Read Units sold from a group of outlet (or product) columns first.';
-    methods.push({ method: 'headings', reason }, { method: 'above', reason });
+    methods.push({ method: 'headings', reason }, { method: 'headingRow', reason });
   }
   if (field === 'period_start' || field === 'period_type') {
     methods.push({ method: 'headings', reason: kind === 'period' ? '' : 'Read Units sold from a group of period columns first.' });
   }
-  if (TITLE_FIELDS.includes(field)) methods.push({ method: 'title', reason: '' });
+  if (TITLE_FIELDS.includes(field)) methods.push({ method: 'title', reason: '' }, { method: 'filename', reason: '' });
+  if (CELL_FIELDS.includes(field)) methods.push({ method: 'cell', reason: '' });
   if (field === 'revenue') methods.push({ method: 'price', reason: '' });
   methods.push({ method: 'constant', reason: '' }, { method: 'derived', reason: '' }, { method: 'not_available', reason: '' });
 
@@ -131,6 +155,9 @@ export function entryDecision(field, entry) {
       return { method: 'system' };
     case 'derived':
       if (entry.from_layout === 'stated_period') return { method: 'title' };
+      // backend mapping_contract LAYOUT_SOURCES
+      if (entry.from_layout === 'filename_period') return { method: 'filename' };
+      if (entry.from_cell) return { method: 'cell', cell: entry.from_cell, transforms };
       if (
         field === 'revenue' &&
         entry.from_field === 'quantity_units' &&
@@ -149,8 +176,8 @@ export function entryDecision(field, entry) {
 /**
  * How a field is filled in these edits, with the precedence the review sends
  * them in (mappingReview.toRules): a column, a measure's group, a decision the
- * reviewer made without a column, the groups' headings or the cells above
- * them, then the proposal's own decision.
+ * reviewer made without a column, the groups' headings or the cells above or
+ * below them, then the proposal's own decision.
  *
  * @param {object} mapping
  * @param {{ rows: object[], groups: object[], fieldEdits?: object }} state
@@ -172,7 +199,8 @@ export function currentDecision(mapping, state, field) {
   if (headingFields(mapping, state).some((item) => item.field === field)) {
     // A label of no rows above reads the headings again: the headings, as for the key.
     const label = groups.flatMap((item) => item.settings.labels || []).find((item) => item.target === field);
-    if (label && label.rows_above > 0) return { method: 'above', rowsAbove: label.rows_above };
+    const position = labelPosition(label);
+    if (position) return { method: 'headingRow', ...position };
     return { method: 'headings' };
   }
 
@@ -191,6 +219,14 @@ export function decisionEntry(field, decision) {
   switch (decision.method) {
     case 'title':
       return { status: 'derived', from_layout: 'stated_period' };
+    case 'filename':
+      return { status: 'derived', from_layout: 'filename_period' };
+    case 'cell':
+      return {
+        status: 'derived',
+        from_cell: cleanCellReference(decision.cell),
+        ...(decision.transforms?.length ? { transforms: decision.transforms } : {}),
+      };
     case 'price':
       return { status: 'derived', from_field: 'quantity_units', transforms: [{ type: 'multiply', column: decision.column }] };
     case 'constant':
@@ -222,13 +258,15 @@ export function decisionProblem(field, decision, { stated } = {}) {
       return decision.entryId ? '' : 'Choose a group of columns.';
     case 'price':
       return decision.column ? '' : 'Choose the price column.';
+    case 'cell':
+      return cleanCellReference(decision.cell) ? '' : 'Choose a cell, or type one such as A1.';
     case 'constant':
       return String(decision.value ?? '').trim() ? '' : 'Type the value.';
     case 'derived':
       if (!decision.fromField) return 'Choose the field it is worked out from.';
       return decision.fromField === field ? 'A field cannot be worked out from itself.' : '';
     case 'title':
-      return stated ? '' : "This file's title states no period, so the test will fail on it.";
+      return stated ? '' : 'This file states no period in its title or as a month heading, so the test will fail on it.';
     default:
       return '';
   }
@@ -255,10 +293,14 @@ export function decisionSummary(decision) {
       return 'A group of columns';
     case 'headings':
       return 'The column headings';
-    case 'above':
-      return `${decision.rowsAbove === 1 ? 'The row' : `${decision.rowsAbove} rows`} above the headings`;
+    case 'headingRow':
+      return `In ${positionPhrase(decision)} the headings`;
     case 'title':
-      return "The month the file's title states";
+      return 'The month the file states';
+    case 'filename':
+      return "The month in the file's name";
+    case 'cell':
+      return `Cell ${cleanCellReference(decision.cell) || decision.cell}, on every row`;
     case 'price':
       return `Units sold × ${decision.column}`;
     case 'constant':
@@ -350,12 +392,22 @@ export function withGroupChosen(state, field, entry, transforms = []) {
 }
 
 /**
+ * The contract label for a field read from a row above or below the headings
+ * (backend mapping_contract _validate_labels: rows_above or rows_below).
+ */
+function headingRowLabel(decision, field) {
+  return decision.side === 'below'
+    ? { rows_below: decision.rows, target: field }
+    : { rows_above: decision.rows, target: field };
+}
+
+/**
  * One melt group after a store field's source was decided. The headings fill
  * the group's key, and a label of no rows above fills a second store field
- * from them too, so both can read the headings; a label with rows above reads
- * the cells over them. A label is read by the first group only: the groups
- * are joined on their headings, so it reaches every row, and two groups
- * filling one field would clash.
+ * from them too, so both can read the headings; a label with rows above or
+ * below reads the cells over or under them. A label is read by the first
+ * group only: the groups are joined on their headings, so it reaches every
+ * row, and two groups filling one field would clash.
  */
 function withStoreSource(group, field, decision, first) {
   let labels = (group.settings.labels || []).filter((label) => label.target !== field);
@@ -363,15 +415,15 @@ function withStoreSource(group, field, decision, first) {
 
   if (groupKind(group.settings) === 'store' && HEADING_FIELDS.includes(field)) {
     if (decision.method === 'headings' && key.target !== field && first) labels.push({ rows_above: 0, target: field });
-    if (decision.method === 'above') {
+    if (decision.method === 'headingRow') {
       // The headings give the field up: to a field already reading them,
       // else to a store field, which a label cannot also be.
       if (key.target === field) {
-        const reading = labels.find((label) => label.rows_above === 0);
+        const reading = labels.find((label) => !labelPosition(label));
         key = { ...key, target: reading?.target || STORE_FIELDS.find((item) => item !== field) || STORE_FIELDS[0] };
       }
       labels = labels.filter((label) => label.target !== key.target);
-      if (first) labels.push({ rows_above: decision.rowsAbove, target: field });
+      if (first) labels.push(headingRowLabel(decision, field));
     }
   } else if (decision.method === 'headings' && HEADING_FIELDS.includes(field)) {
     key = { ...key, target: field };
@@ -385,7 +437,7 @@ function withStoreSource(group, field, decision, first) {
  * The edits with a field filled the way the field editor decided (the
  * currentDecision shape): the field is taken off whatever filled it, then
  * given its new source -- a column with its steps, a group of columns, the
- * groups' headings or the cells above them, or a decision made without a
+ * groups' headings or the cells above or below them, or a decision made without a
  * column. Reading the period from the title also makes the period type a
  * month, since a stated period is read as one (backend validate_contract).
  *
@@ -410,9 +462,10 @@ export function withFieldDecision(mapping, state, field, decision) {
     return columnGroup ? withGroupChosen(state, field, columnGroup, decision.transforms || []) : state;
   }
 
-  // The title's period is a month: the period type follows, unless it
-  // already is the constant 'month'.
-  const periodType = decision.method === 'title' ? currentDecision(mapping, state, 'period_type') : null;
+  // The title's period (or the file name's) is a month: the period type
+  // follows, unless it already is the constant 'month'.
+  const statesMonth = decision.method === 'title' || decision.method === 'filename';
+  const periodType = statesMonth ? currentDecision(mapping, state, 'period_type') : null;
   const monthly = !periodType || (periodType.method === 'constant' && periodType.value === 'month');
 
   const rows = state.rows.map((row) => {
@@ -439,21 +492,27 @@ export function withFieldDecision(mapping, state, field, decision) {
 }
 
 // ============================================================
-// The cells above the headings
+// The cells above and below the headings
 // ============================================================
 
 /**
- * The rows above the header that hold something above at least one of these
- * columns, nearest first, each with the cell over every column (backend
- * layout_detection rows_above_header). An outlet's code written over its
- * name is the row a label reads.
+ * The rows above the header, then the rows of headings under it, that hold a
+ * cell at one of these columns at least, each side nearest first, with the
+ * cell at every column (backend layout_detection rows_above_header and
+ * rows_below_header). An outlet's code written over or under its name is the
+ * row a label reads.
  *
- * @returns {{ rowsAbove: number, row: number, cells: Record<string, string> }[]}
+ * @returns {{ side: 'above' | 'below', rows: number, row: number, cells: Record<string, string> }[]}
  */
-export function rowsAboveChoices(layout, columns) {
+export function headingRowChoices(layout, columns) {
   const headerRow = Number(layout?.header_row) || 1;
-  return (layout?.rows_above_header || [])
-    .map((item) => ({ rowsAbove: headerRow - item.row, row: item.row, cells: item.cells || {} }))
-    .filter((item) => item.rowsAbove >= 1 && columns.some((column) => column in item.cells))
-    .sort((a, b) => a.rowsAbove - b.rowsAbove);
+  const choices = (side, items, distance) =>
+    (items || [])
+      .map((item) => ({ side, rows: distance(item.row), row: item.row, cells: item.cells || {} }))
+      .filter((item) => item.rows >= 1 && columns.some((column) => column in item.cells))
+      .sort((a, b) => a.rows - b.rows);
+  return [
+    ...choices('above', layout?.rows_above_header, (row) => headerRow - row),
+    ...choices('below', layout?.rows_below_header, (row) => row - headerRow),
+  ];
 }

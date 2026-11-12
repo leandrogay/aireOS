@@ -6,7 +6,8 @@
 // transformation on the whole file -- and steps that need the rest of the row
 // (multiply, unit conversion, fill from above) are left to it.
 
-import { MEASURE_FIELDS } from '@/app/utils/mappingReview';
+// A relative path so Node's test runner can load this file (tests/transformSteps.test.mjs).
+import { MEASURE_FIELDS } from './mappingReview.js';
 
 // ============================================================
 // The vocabulary
@@ -41,7 +42,84 @@ export const STEP_TYPES = [
     help: 'A 0 is left out instead of loaded as a row that sold nothing.',
     kinds: ['number'],
   },
-  { type: 'month_start', label: 'Use the month of a date', help: 'A date becomes the month it falls in.', kinds: ['date'] },
+  {
+    type: 'month_start',
+    label: 'Use the month of a date',
+    help: 'A date becomes the month it falls in. Dates not written like 2026-08-31 need their format.',
+    kinds: ['date'],
+  },
+  {
+    type: 'parse_date',
+    label: 'Read a date',
+    help: 'Reads a date written another way, e.g. 31/12/2025, and keeps its day (for weekly rows).',
+    kinds: ['date'],
+  },
+  {
+    type: 'parse_number',
+    label: 'Read a formatted number',
+    help: 'Reads figures written like $1,250.50, (120), 120- or 15%. Anything else on a row rejects that row.',
+    kinds: ['number'],
+  },
+  {
+    type: 'scale',
+    label: 'Multiply by a fixed number',
+    help: 'For another unit: 0.01 turns a percentage into a fraction or cents into dollars, 12 turns dozens into units.',
+    kinds: ['number'],
+  },
+  {
+    type: 'divide',
+    label: 'Divide by a column',
+    help: "Divided by the same row's value in another column, e.g. pieces ÷ pieces per pack.",
+    kinds: ['number'],
+  },
+  {
+    type: 'add',
+    label: 'Add a column',
+    help: "Plus the same row's value in another column, e.g. net sales + discount.",
+    kinds: ['number'],
+  },
+  {
+    type: 'subtract',
+    label: 'Subtract a column',
+    help: "Minus the same row's value in another column, e.g. units sold − units returned.",
+    kinds: ['number'],
+  },
+  {
+    type: 'blank_if',
+    label: 'Treat placeholders as empty',
+    help: 'Values such as N/A or - count as an empty cell.',
+    kinds: ['text', 'number', 'date'],
+  },
+  {
+    type: 'fill_empty',
+    label: 'Fill empty cells',
+    help: "An empty cell takes a fixed value, or the same row's value in another column.",
+    kinds: ['text', 'number'],
+  },
+  {
+    type: 'split_part',
+    label: 'Take one part of a split value',
+    help: 'Splits a value such as “BB17 - BEDOK” at a separator and keeps one part.',
+    kinds: ['text'],
+  },
+  {
+    type: 'replace',
+    label: 'Replace or remove text',
+    help: 'Every match of a pattern becomes other text, or nothing.',
+    kinds: ['text'],
+  },
+  {
+    type: 'normalize_text',
+    label: 'Tidy spacing and capitals',
+    help: 'Runs of spaces become one; optionally all capitals, lower case or Title Case.',
+    kinds: ['text'],
+  },
+  {
+    type: 'concat',
+    label: 'Join with other columns',
+    help: 'Joins this value with other columns of the same row, e.g. range and size, so a table can translate them together.',
+    kinds: ['text'],
+  },
   {
     type: 'forward_fill',
     label: 'Fill blanks from above',
@@ -130,13 +208,40 @@ export function newStep(type) {
     case 'rules':
       return { type, rules: [{ op: 'equals', value: '', output: '' }], case_sensitive: false };
     case 'multiply':
+    case 'divide':
+    case 'add':
+    case 'subtract':
       return { type, column: '' };
     case 'uom_factor':
       return { type, column: '', factors: { '': 1 }, default: 1 };
+    case 'parse_number':
+      return { type, decimal: '.' };
+    case 'scale':
+      return { type, factor: 1 };
+    case 'blank_if':
+      return { type, tokens: ['N/A'] };
+    case 'fill_empty':
+      return { type, default: '' };
+    case 'split_part':
+      return { type, separator: '-', index: 1 };
+    case 'replace':
+      return { type, pattern: '', replacement: '' };
+    case 'normalize_text':
+      return { type, case: 'keep' };
+    case 'concat':
+      return { type, columns: [], separator: ' ' };
     default:
       return { type };
   }
 }
+
+// backend mapping_contract.TEXT_CASES, as the tidy step words them.
+export const TEXT_CASES = [
+  { value: 'keep', label: 'Leave capitals as they are' },
+  { value: 'upper', label: 'ALL CAPITALS' },
+  { value: 'lower', label: 'all lower case' },
+  { value: 'title', label: 'Title Case' },
+];
 
 // ============================================================
 // What is wrong with a step, before the server says so
@@ -189,10 +294,38 @@ export function stepProblem(step, columns = []) {
       return '';
     }
     case 'multiply':
+    case 'divide':
+    case 'add':
+    case 'subtract':
     case 'uom_factor':
       if (!step.column) return 'Choose a column.';
       if (columns.length && !columns.includes(step.column)) return `“${step.column}” is not a column of this file.`;
       return '';
+    case 'scale':
+      return Number(step.factor) ? '' : 'Type a number other than 0.';
+    case 'parse_date':
+    case 'month_start':
+      if (!step.format || step.format === 'excel_serial' || step.format.includes('%')) return '';
+      return 'A date format uses % codes, e.g. %d/%m/%Y.';
+    case 'blank_if':
+      return (step.tokens || []).some((token) => String(token).trim()) ? '' : 'Type at least one placeholder.';
+    case 'fill_empty':
+      if (step.column) {
+        return columns.length && !columns.includes(step.column) ? `“${step.column}” is not a column of this file.` : '';
+      }
+      return String(step.default ?? '').trim() ? '' : 'Type the value, or choose a column.';
+    case 'split_part':
+      if (!step.separator) return 'Type the separator.';
+      return Number.isInteger(step.index) && step.index !== 0 ? '' : 'Parts count from 1, or from the end with -1.';
+    case 'replace':
+      if (!step.pattern) return 'Type a pattern.';
+      return compile(step.pattern) ? '' : 'This is not a valid pattern.';
+    case 'concat': {
+      const chosen = step.columns || [];
+      if (!chosen.length) return 'Choose at least one column.';
+      const missing = columns.length ? chosen.find((column) => !columns.includes(column)) : null;
+      return missing ? `“${missing}” is not a column of this file.` : '';
+    }
     default:
       return '';
   }
@@ -203,6 +336,8 @@ export function stepProblem(step, columns = []) {
 // ============================================================
 
 const PER_ROW = 'Worked out row by row when you test the nomenclature.';
+// Steps that need the rest of the row, or the row above; an empty cell matters to them too.
+const ROW_STEPS = ['forward_fill', 'multiply', 'divide', 'add', 'subtract', 'uom_factor', 'fill_empty', 'concat'];
 
 function blank(value) {
   return value === null || value === undefined || String(value).trim() === '';
@@ -232,9 +367,7 @@ function monthOf(text) {
 }
 
 function runStep(value, step) {
-  if (step.type === 'forward_fill' || step.type === 'multiply' || step.type === 'uom_factor') {
-    return { value, note: PER_ROW, stop: true };
-  }
+  if (ROW_STEPS.includes(step.type)) return { value, note: PER_ROW, stop: true };
   if (blank(value)) return { value: null };
   const text = String(value).trim();
 
@@ -262,6 +395,31 @@ function runStep(value, step) {
     case 'month_start': {
       const month = monthOf(text);
       return month ? { value: month } : { value: text, note: PER_ROW, stop: true };
+    }
+    case 'scale': {
+      const number = Number(text);
+      return Number.isNaN(number) ? { value: null, note: 'Not a number' } : { value: String(number * step.factor) };
+    }
+    case 'blank_if': {
+      const tokens = (step.tokens || []).map((token) => String(token).trim().toLowerCase());
+      return tokens.includes(text.toLowerCase()) ? { value: null, note: 'Left empty' } : { value: text };
+    }
+    case 'split_part': {
+      const parts = text.split(step.separator);
+      const part = (step.index > 0 ? parts[step.index - 1] : parts[parts.length + step.index]) ?? '';
+      return part.trim() ? { value: part.trim() } : { value: null, note: 'No such part' };
+    }
+    case 'replace': {
+      // Python writes a kept group \1; a browser regex writes $1.
+      const replacement = String(step.replacement ?? '').replace(/\\(\d)/g, '$$$1');
+      return { value: text.replace(compile(step.pattern, 'g'), replacement) || null };
+    }
+    case 'normalize_text': {
+      const tidy = text.split(/\s+/).join(' ');
+      if (step.case === 'upper') return { value: tidy.toUpperCase() };
+      if (step.case === 'lower') return { value: tidy.toLowerCase() };
+      if (step.case === 'title') return { value: tidy.toLowerCase().replace(/(^|[^a-z0-9'])([a-z])/g, (m, a, b) => a + b.toUpperCase()) };
+      return { value: tidy };
     }
     default:
       return { value: text, note: PER_ROW, stop: true };

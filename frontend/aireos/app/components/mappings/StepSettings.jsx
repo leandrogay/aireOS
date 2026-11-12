@@ -8,6 +8,8 @@ import { without } from '@/app/utils/mappingReview';
 import { REGEX_PRESETS, RULE_OPS } from '@/app/utils/transformSteps';
 import { cn } from '@/lib/utils';
 
+import ReadingStepSettings from './ReadingStepSettings';
+
 const smallInput = cn(inputClass, 'py-1 text-xs');
 const codeInput = cn(smallInput, 'font-mono text-[11px]');
 const linkButton =
@@ -276,7 +278,6 @@ function UnitStep({ step, columns, onChange, disabled }) {
               ) : (
                 <input
                   type="number"
-                  min={0}
                   step="any"
                   value={factor}
                   aria-label={`Factor for unit ${index + 1}`}
@@ -322,8 +323,8 @@ function UnitStep({ step, columns, onChange, disabled }) {
 /**
  * The settings of one step, by its type: a pattern to take part of the text,
  * a table or rules to translate values, a column to multiply by, units to
- * convert. Steps with nothing to set (flip the sign, 0 means no sale…) show
- * nothing here.
+ * convert; the reading and text steps are in ReadingStepSettings. Steps with
+ * nothing to set (flip the sign, 0 means no sale…) show nothing here.
  *
  * @param {{
  *   step: object,
@@ -342,13 +343,16 @@ export default function StepSettings({ step, columns, onChange, disabled = false
     case 'rules':
       return <RulesStep step={step} onChange={onChange} disabled={disabled} />;
     case 'multiply':
+    case 'divide':
+    case 'add':
+    case 'subtract':
       return (
         <ColumnChoice
           value={step.column}
           columns={columns}
           onChange={(column) => onChange({ ...step, column })}
           disabled={disabled}
-          ariaLabel="Column to multiply by"
+          ariaLabel="The other column"
         />
       );
     case 'uom_factor':
@@ -356,7 +360,7 @@ export default function StepSettings({ step, columns, onChange, disabled = false
     case 'month_start':
       return (
         <label className="block text-[11px] text-deep-violet-blue/70">
-          How the dates are written (advanced, e.g. %d/%m/%Y) — leave empty to read them automatically
+          How the dates are written (advanced, e.g. %d/%m/%Y) — leave empty for dates like 2026-08-31
           <input
             type="text"
             value={step.format || ''}
@@ -369,6 +373,6 @@ export default function StepSettings({ step, columns, onChange, disabled = false
         </label>
       );
     default:
-      return null;
+      return <ReadingStepSettings step={step} columns={columns} onChange={onChange} disabled={disabled} />;
   }
 }

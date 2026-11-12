@@ -11,17 +11,18 @@ import {
   decisionSummary,
   dependentFields,
   fieldMethods,
+  headingRowChoices,
   methodSections,
-  rowsAboveChoices,
 } from '@/app/utils/fieldDecision';
 import { fieldLabel } from '@/app/utils/mappingReview';
+import { cellGuess } from '@/app/utils/sheetCells';
 import { cn } from '@/lib/utils';
 
 import FieldMethodSettings from './FieldMethodSettings';
 
 // Problems that leave nothing to apply. Anything else (a step the server
 // will refuse, a title with no period in this file) is said, not enforced.
-const BLOCKING = new Set(['column', 'group', 'price', 'constant', 'derived']);
+const BLOCKING = new Set(['column', 'group', 'cell', 'price', 'constant', 'derived']);
 
 /**
  * A starting draft for every method, so switching between them keeps what
@@ -29,14 +30,16 @@ const BLOCKING = new Set(['column', 'group', 'price', 'constant', 'derived']);
  * sensible empty one for the rest.
  */
 function startingDrafts(field, current, { groups, layout, columns }) {
-  const firstRow = rowsAboveChoices(layout, groups[0]?.columns || [])[0];
+  const firstRow = headingRowChoices(layout, groups[0]?.columns || [])[0];
   const priceGuess = columns.find((column) => /promo.*(cost|price)/i.test(column)) || columns.find((column) => /price|cost/i.test(column));
   const drafts = {
     column: { method: 'column', column: '', transforms: [] },
     group: { method: 'group', entryId: '', transforms: [] },
     headings: { method: 'headings' },
-    above: { method: 'above', rowsAbove: firstRow?.rowsAbove || 1 },
+    headingRow: { method: 'headingRow', side: firstRow?.side || 'above', rows: firstRow?.rows || 1 },
     title: { method: 'title' },
+    filename: { method: 'filename' },
+    cell: { method: 'cell', cell: cellGuess(layout, field), transforms: [] },
     price: { method: 'price', column: priceGuess || '' },
     constant: { method: 'constant', value: field === 'period_type' ? 'month' : '' },
     derived: { method: 'derived', fromField: '', transforms: [] },
@@ -212,8 +215,8 @@ function EditorForm({ entry, mapping, state, layout, onApply, onClose }) {
 /**
  * Every way the backend can fill one field, for the reviewer to choose from:
  * a column (with steps applied to its value), a group of period or outlet
- * columns, the groups' headings or a row above them, the period the title
- * states, units × a price column, a fixed value, worked out from another
+ * columns, the groups' headings or a row above or below them, the period the title
+ * states, one cell written on every row, units × a price column, a fixed value, worked out from another
  * field, or not in this file with a reason. Applying it is the reviewer
  * deciding the field; Test then shows what it does to the whole file.
  *

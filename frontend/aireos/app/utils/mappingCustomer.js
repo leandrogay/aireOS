@@ -1,5 +1,5 @@
 import { normaliseName } from '@/app/utils/customerForm';
-import { headingFields } from '@/app/utils/mappingReview';
+import { headingFields, labelPosition } from '@/app/utils/mappingReview';
 
 // The customer a mapping belongs to, and the retailers its file's sales are
 // written to. Pure helpers for the review screen, no React.
@@ -74,8 +74,8 @@ export function retailerDecision(mapping, rows, fieldEdits = {}, groups = []) {
   }
 
   // Read off the headings: the headings themselves are what it writes,
-  // unless its steps translate them. The cells above them are only known to
-  // the server, which checks them on approval.
+  // unless its steps translate them. The cells above or below them are only
+  // known to the server, which checks them on approval.
   const heading = fieldEdits.retailer
     ? null
     : headingFields(mapping, { rows, groups, fieldEdits }).find((item) => item.field === 'retailer');
@@ -86,7 +86,7 @@ export function retailerDecision(mapping, rows, fieldEdits = {}, groups = []) {
       kind: 'headings',
       status: 'mapped',
       transforms: asList(heading.entry.transforms),
-      samples: !label || label.rows_above === 0 ? group?.columns || [] : null,
+      samples: !labelPosition(label) ? group?.columns || [] : null,
     };
   }
 

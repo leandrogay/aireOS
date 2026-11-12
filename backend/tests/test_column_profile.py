@@ -47,6 +47,24 @@ def test_weekly_and_monthly_layouts_fingerprint_differently():
     assert cp.fingerprint(FAIRPRICE) != cp.fingerprint(weekly)
 
 
+def test_a_month_heading_over_a_product_column_fingerprints_the_same_each_month():
+    august = ["Aug-26", "YISHUN", "TAMPINES", "Unnamed: 3"]
+
+    assert cp.fingerprint(august) == cp.fingerprint(["Jul-26", *august[1:]])
+
+
+# ---- Months named in a heading ----------------------------------------------------
+
+def test_a_heading_that_is_only_a_month_and_year_names_that_month():
+    assert cp.month_year("Aug-26") == pd.Timestamp("2026-08-01")
+    assert cp.month_year("July 2026") == pd.Timestamp("2026-07-01")
+
+
+def test_a_heading_that_names_a_month_among_other_words_is_not_a_month():
+    assert cp.month_year("Sales Aug 2026") is None
+    assert cp.month_year("YISHUN") is None
+
+
 # ---- Groups ------------------------------------------------------------------------
 
 def test_period_columns_are_grouped_with_a_pattern_that_matches_other_months():
@@ -150,3 +168,32 @@ def test_a_column_already_in_a_dated_group_is_not_offered_twice():
 
     assert len(groups) == 1
     assert groups[0]["template"] == cp.header_template(columns[0])
+
+
+# ---- How a text column's values are written ------------------------------------------------------
+
+def test_a_text_column_of_currency_figures_says_it_is_written_as_numbers():
+    frame = pd.DataFrame({"Sales": ["$1,250.50", "$30.00", "($20.00)"]}, dtype=object)
+
+    entry = cp.profile_columns(frame)["Sales"]
+
+    assert entry["type"] == "text"
+    assert entry["written_as"] == {
+        "kind": "number", "decimal": ".",
+        "written_with": ["currency", "thousands separators", "negatives in brackets"], "unreadable": [],
+    }
+
+
+def test_a_text_column_of_day_first_dates_offers_its_format():
+    frame = pd.DataFrame({"Date": ["31/12/2025", "01/02/2026"]}, dtype=object)
+
+    assert cp.profile_columns(frame)["Date"]["written_as"] == {"kind": "date", "date_formats": ["%d/%m/%Y"]}
+
+
+def test_plain_numbers_iso_dates_and_words_are_not_written_as_anything_else():
+    frame = pd.DataFrame({"Qty": ["1", "2"], "Date": ["2026-08-01", "2026-08-02"], "Format": ["HYPER", "SUPER"]}, dtype=object)
+
+    profile = cp.profile_columns(frame)
+
+    assert [profile[column]["type"] for column in frame] == ["number", "date", "text"]
+    assert not any("written_as" in entry for entry in profile.values())

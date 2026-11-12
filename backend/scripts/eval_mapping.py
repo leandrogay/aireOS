@@ -13,12 +13,17 @@ field with the reference (app/services/reference_contracts.py):
   - the sku field's product-code table must give every code the same master SKU
   - the monthly roll-up instruction must match
 
-It also reports the checks the proposal failed and how many attempts it took.
+It also reports the checks the proposal failed, how many attempts it took,
+anything validation dropped (a step or parameter the transformation does not
+have), what the model flagged as unsupported, and -- by running both contracts
+through the transformation -- whether the proposal loads the same units as
+the reference does.
 Rerun it whenever the prompt (mapping_prompt.py) or a model changes.
 Not part of pytest: it calls Vertex AI and costs money.
 
 Run from backend/ with the venv active -- GCP_PROJECT_ID plus Google
-credentials; the samples live in tests/fixtures/retailer_samples/ (git-ignored).
+credentials; the samples live in tests/test_fixtures/ or
+tests/fixtures/retailer_samples/ (both git-ignored).
 To compare models, run it once per MAPPING_MODEL:
 
     python scripts/eval_mapping.py
@@ -35,17 +40,43 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app import config
-from app.services import generate_mapping, layout_detection, mapping_checks, reference_contracts
+from app.services import (
+    apply_contract,
+    generate_mapping,
+    layout_detection,
+    mapping_checks,
+    reference_contracts,
+    validation_service,
+)
 from app.services.mapping_contract import DECIDABLE_FIELDS, group_columns, layout_instructions, validate_contract
 
-SAMPLES = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "retailer_samples"
+TESTS = Path(__file__).resolve().parents[1] / "tests"
+SAMPLE_FOLDERS = [TESTS / "test_fixtures", TESTS / "fixtures" / "retailer_samples"]
 PATTERNS = {
     "fairprice_monthly": "XEL_VENDORS_BRANDS_MONTH_*",
     "nhg_sap": "Aire*Sell*Out*",
     "sheng_siong_claim": "Claim_Sales_Summary_Report_*",
     "singhealth_er130": "XEL Jul26*",
     "prime_jkdc": "XEL Lifecare JKDC*Jul*",
+    "pharmex_grid": "Inventory_Aug_2[0-9].xlsx",
+    "prime_sales": "Prime - * - Sales report.xlsx",
 }
+
+
+def _sample_paths(pattern: str) -> list[Path]:
+    return sorted(
+        path for folder in SAMPLE_FOLDERS if folder.exists() for path in folder.rglob(pattern) if path.is_file()
+    )
+
+
+def _units_loaded(frame, layout, contract: dict, filename: str) -> float | str:
+    """The units a contract loads from the file, or why the transformation could not run it."""
+    try:
+        rows = apply_contract.apply_contract(frame, contract, source_file=filename, layout=layout)
+    except apply_contract.ContractApplicationError as error:
+        return f"cannot run: {error}"
+    validated = validation_service.validate_mapped_dataframe(rows)
+    return round(float(validated["valid_df"]["quantity_units"].sum()), 2)
 
 
 def _decision(contract: dict, columns: dict[str, list[str]], target: str) -> dict:
@@ -90,6 +121,12 @@ def propose_unseen(path: Path) -> None:
     print(f"    aggregate: {json.dumps(contract.get('aggregate'))}")
     for check in failed:
         print(f"    FAILED {check['id']}: {check['message']}")
+    for warning in contract.get("warnings") or []:
+        print(f"    DROPPED BY VALIDATION: {warning}")
+    for item in contract.get("unsupported") or []:
+        print(f"    FLAGGED UNSUPPORTED ({item.get('field') or 'file'}): {item['issue']}")
+    print(f"    filters: {json.dumps(contract.get('filters'))}")
+    print(f"    units loaded: {_units_loaded(frame, layout, contract, path.name)}")
 
 
 def evaluate(key: str, path: Path, show_diff: bool, no_examples: bool) -> dict:
@@ -120,12 +157,22 @@ def evaluate(key: str, path: Path, show_diff: bool, no_examples: bool) -> dict:
         disagreements["aggregate"] = {"reference": reference.get("aggregate"), "proposed": proposed.get("aggregate")}
     failed = [check["id"] for check in mapping_checks.failures(proposal["checks"])]
     agreed = len(DECIDABLE_FIELDS) + 1 - len(disagreements)
+    wanted = _units_loaded(frame, layout, reference, path.name)
+    loaded = _units_loaded(frame, layout, proposed, path.name)
     print(f"{key:<20} {agreed:>2}/{len(DECIDABLE_FIELDS)} fields agree   "
-          f"attempts {proposal['attempts']}   failed checks: {', '.join(failed) or 'none'}")
+          f"attempts {proposal['attempts']}   failed checks: {', '.join(failed) or 'none'}   "
+          f"units loaded: {loaded} (reference {wanted})")
+    for warning in proposed.get("warnings") or []:
+        print(f"    DROPPED BY VALIDATION: {warning}")
+    for item in proposed.get("unsupported") or []:
+        print(f"    FLAGGED UNSUPPORTED ({item.get('field') or 'file'}): {item['issue']}")
     if show_diff:
         for target, diff in disagreements.items():
             print(f"    {target}: {json.dumps(diff)}")
-    return {"key": key, "agreed": agreed, "total": len(DECIDABLE_FIELDS) + 1, "failed_checks": failed}
+    return {
+        "key": key, "agreed": agreed, "total": len(DECIDABLE_FIELDS) + 1, "failed_checks": failed,
+        "same_units": loaded == wanted,
+    }
 
 
 def main() -> int:
@@ -146,16 +193,17 @@ def main() -> int:
     for key, pattern in PATTERNS.items():
         if args.only and key != args.only:
             continue
-        matches = sorted(SAMPLES.rglob(pattern))
+        matches = _sample_paths(pattern)
         if not matches:
-            print(f"{key:<20} skipped: no file matching {pattern} in {SAMPLES}")
+            print(f"{key:<20} skipped: no file matching {pattern} in tests/test_fixtures")
             continue
         results.append(evaluate(key, matches[0], args.show_diff, args.no_examples))
 
     if results:
         agreed = sum(r["agreed"] for r in results)
         total = sum(r["total"] for r in results)
-        print(f"overall: {agreed}/{total} fields agree ({agreed / total:.0%})")
+        print(f"overall: {agreed}/{total} fields agree ({agreed / total:.0%}); "
+              f"{sum(r['same_units'] for r in results)}/{len(results)} proposals load the reference's units")
     return 0
 
 

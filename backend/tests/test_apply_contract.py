@@ -4,7 +4,7 @@ import copy
 
 import pandas as pd
 import pytest
-from conftest import prime_xlsx, singhealth_xlsx
+from conftest import LEDGER_ROWS, ledger_csv, outlet_codes_below_xlsx, prime_sales_xlsx, prime_xlsx, singhealth_xlsx
 
 from app.services import (
     apply_contract,
@@ -19,6 +19,7 @@ from app.services.reference_contracts import (
     FAIRPRICE_WEEKLY,
     NHG_SAP,
     PRIME_JKDC,
+    PRIME_SALES,
     SHENG_SIONG_CLAIM,
     SINGHEALTH_ER130,
 )
@@ -287,6 +288,123 @@ def test_one_outlet_heading_can_fill_both_the_store_code_and_the_store_name():
     assert set(result.loc[result["store_code"] == "ONLINE", "retailer"]) == {"singhealth_online"}
 
 
+# ---- Outlet codes under the headings ----------------------------------------------
+
+CODES_BELOW = {
+    "fields": {
+        "period_start": {"status": "constant", "value": "2026-08-01"},
+        "period_type": {"status": "constant", "value": "month"},
+        "retailer": {"status": "constant", "value": "acme_offline"},
+        "sku": {"status": "mapped", "source": "Aug-26", "transforms": [{"type": "value_map", "values": {
+            "AIRE PULL UP PANTS SIZE S/M": "13255044", "AIRE PULL UP PANTS SIZE L": "13255045",
+        }}]},
+        "store_name": {"status": "mapped", "melt_group": "outlets"},
+        "store_code": {"status": "mapped", "melt_group": "outlets"},
+        "quantity_units": {"status": "mapped", "melt_group": "outlets", "transforms": [{"type": "zero_as_empty"}]},
+    },
+    "melt_groups": [{
+        "id": "outlets",
+        "select": {"kind": "columns", "columns": ["YISHUN", "TAMPINES"]},
+        "key": {"target": "store_name"},
+        "labels": [{"rows_below": 1, "target": "store_code"}],
+        "value_target": "quantity_units",
+    }],
+    "aggregate": {"period": "month"},
+}
+
+
+@pytest.mark.parametrize("total_column", [True, False])
+def test_outlet_codes_are_read_from_the_row_under_the_outlet_names(total_column):
+    result = _transformed(CODES_BELOW, "codes.xlsx", outlet_codes_below_xlsx(total_column))
+
+    totals = result.set_index(["store_code", "store_name", "sku"])["quantity_units"].to_dict()
+    # The codes row is a heading whether or not a TOTAL cell set it aside: no
+    # "SKUs" product or "HQ" quantity is loaded from it.
+    assert totals == {
+        ("HQ", "YISHUN", "13255044"): 34,
+        ("HQ", "YISHUN", "13255045"): 38,
+        ("OTH", "TAMPINES", "13255044"): 29,
+    }
+    assert validation_service.validate_mapped_dataframe(result)["total_rejected"] == 0
+
+
+def _read_through(contract: dict, made_from: bytes, data: bytes) -> pd.DataFrame:
+    """A file transformed through a contract validated and approved on another month's file."""
+    frame, layout = layout_detection.read_table("made_from.xlsx", made_from)
+    proposed = copy.deepcopy(contract)
+    proposed["layout"] = mapping_contract.layout_instructions(layout)
+    return sellout_ingestion.transform_confirmed_upload("next.xlsx", data, _validated(proposed, frame))
+
+
+def test_julys_file_reads_through_the_contract_made_from_augusts_and_is_dated_july():
+    contract = copy.deepcopy(CODES_BELOW)
+    contract["fields"]["period_start"] = {"status": "derived", "from_layout": "stated_period"}
+
+    result = _read_through(contract, outlet_codes_below_xlsx(), outlet_codes_below_xlsx(month="Jul-26"))
+
+    assert set(result["period_start"]) == {pd.Timestamp("2026-07-01")}
+    assert set(result["sku"]) == {"13255044", "13255045"}
+    assert set(result["store_code"]) == {"HQ", "OTH"}
+
+
+def test_a_fixed_august_date_fails_julys_file_rather_than_loading_it_as_august():
+    with pytest.raises(apply_contract.ContractApplicationError, match="dates every row Aug 2026"):
+        _read_through(CODES_BELOW, outlet_codes_below_xlsx(), outlet_codes_below_xlsx(month="Jul-26"))
+
+
+def test_an_outlet_with_no_code_under_it_fails_rather_than_loading_as_all_stores():
+    dataframe = pd.DataFrame([{"Aug-26": "AIRE PULL UP PANTS SIZE L", "YISHUN": "3", "TAMPINES": "4"}])
+    layout = {"header_row": 1, "rows_below_header": [{"row": 2, "cells": {"YISHUN": "HQ"}, "in_table": False}]}
+
+    with pytest.raises(apply_contract.ContractApplicationError, match="nothing below"):
+        apply_contract.apply_contract(dataframe, _validated(CODES_BELOW, dataframe), layout=layout)
+
+
+# ---- One cell written on every row --------------------------------------------------------
+
+def test_julys_file_is_dated_by_the_month_in_cell_a1_through_augusts_contract():
+    contract = copy.deepcopy(CODES_BELOW)
+    contract["fields"]["period_start"] = {"status": "derived", "from_cell": "A1"}
+
+    result = _read_through(contract, outlet_codes_below_xlsx(), outlet_codes_below_xlsx(month="Jul-26"))
+
+    assert set(result["period_start"]) == {pd.Timestamp("2026-07-01")}
+    assert set(result["period_end"]) == {pd.Timestamp("2026-07-31")}
+
+
+def test_a_value_in_one_cell_is_written_on_every_row_after_its_steps():
+    dataframe = pd.DataFrame([{"Product": "13255043", "Qty": "3"}, {"Product": "13255044", "Qty": "5"}])
+    contract = {
+        "fields": {
+            "period_start": {"status": "derived", "from_cell": "B1"},
+            "period_type": {"status": "constant", "value": "month"},
+            "retailer": {"status": "derived", "from_cell": "A1", "transforms": [
+                {"type": "value_map", "values": {"ACME STORES": "acme_offline"}},
+            ]},
+            "sku": {"status": "mapped", "source": "Product"},
+            "quantity_units": {"status": "mapped", "source": "Qty"},
+        },
+    }
+    layout = {"header_row": 2, "cells": {"A1": "ACME STORES", "B1": "01/08/2026", "A2": "Product", "B2": "Qty"}}
+
+    result = apply_contract.apply_contract(dataframe, _validated(contract, dataframe), layout=layout)
+
+    assert list(result["retailer"]) == ["acme_offline", "acme_offline"]
+    assert list(result["period_start"]) == [pd.Timestamp("2026-08-01")] * 2
+
+
+def test_an_empty_cell_fails_the_file_rather_than_loading_rows_without_a_value():
+    dataframe = pd.DataFrame([{"Aug-26": "AIRE PULL UP PANTS SIZE L", "YISHUN": "3", "TAMPINES": "4"}])
+    contract = copy.deepcopy(CODES_BELOW)
+    contract["fields"]["period_start"] = {"status": "derived", "from_cell": "A1"}
+    layout = {"header_row": 1, "cells": {}, "rows_below_header": [
+        {"row": 2, "cells": {"YISHUN": "HQ", "TAMPINES": "OTH"}, "in_table": False},
+    ]}
+
+    with pytest.raises(apply_contract.ContractApplicationError, match="cell A1, which is empty"):
+        apply_contract.apply_contract(dataframe, _validated(contract, dataframe), layout=layout)
+
+
 # ---- Headings read for any descriptive field -----------------------------------------
 
 PRODUCTS_PER_COLUMN = {
@@ -425,3 +543,400 @@ def test_preview_rows_keep_the_whole_sample_for_the_spread_when_it_is_tiny():
     rows = apply_contract.preview_rows(frame, 2)
 
     assert {r["retailer"] for r in rows} == {"x_offline", "x_online"}
+
+
+# ---- Reading how values are written ------------------------------------------------------
+#
+# A small table of text cells and a contract over it: one step at a time, then
+# a whole file (conftest ledger_csv) that needs most of them at once.
+
+def _not_in_file() -> dict:
+    return {"status": "not_available", "reason": "Not in this table."}
+
+
+def _rows(table: dict, **fields) -> pd.DataFrame:
+    """The table run through a contract that dates every row August and reads the fields given."""
+    frame = pd.DataFrame(table, dtype=object)
+    contract = {
+        "fields": {
+            "period_start": {"status": "constant", "value": "2026-08-01"},
+            "period_type": {"status": "constant", "value": "month"},
+            "retailer": {"status": "constant", "value": "acme_offline"},
+            "sku": {"status": "mapped", "source": "Item"},
+            **fields,
+        },
+        "melt_groups": [],
+    }
+    validated = _validated(contract, frame)
+    assert validated["warnings"] == []
+    return apply_contract.apply_contract(frame, validated, source_file="table.csv")
+
+
+def _read(column: str, *steps: dict) -> dict:
+    return {"status": "mapped", "source": column, "transforms": list(steps)}
+
+
+def test_parse_number_reads_currency_thousands_and_bracketed_negatives():
+    rows = _rows(
+        {"Item": ["a", "b", "c"], "Qty": ["1", "1", "1"], "Sales": ["$1,250.50", "(120.00)", "SGD 3"]},
+        quantity_units=_read("Qty"), revenue=_read("Sales", {"type": "parse_number"}),
+    )
+
+    assert rows["revenue"].tolist() == [1250.5, -120.0, 3.0]
+
+
+def test_parse_number_reads_a_decimal_comma_when_told_to():
+    rows = _rows(
+        {"Item": ["a"], "Qty": ["1.250,5"]},
+        quantity_units=_read("Qty", {"type": "parse_number", "decimal": ","}),
+    )
+
+    assert rows["quantity_units"].tolist() == [1250.5]
+
+
+def test_a_percentage_becomes_a_fraction_with_parse_number_then_scale():
+    rows = _rows(
+        {"Item": ["a"], "Qty": ["15%"]},
+        quantity_units=_read("Qty", {"type": "parse_number"}, {"type": "scale", "factor": 0.01}),
+    )
+
+    assert rows["quantity_units"].tolist() == pytest.approx([0.15])
+
+
+def test_a_figure_no_step_can_read_is_rejected_and_counted_not_dropped():
+    rows = _rows({"Item": ["a", "b"], "Qty": ["5", "five"]}, quantity_units=_read("Qty", {"type": "negate"}))
+
+    validated = validation_service.validate_mapped_dataframe(rows)
+    assert len(rows) == 2
+    assert validated["valid_df"]["quantity_units"].tolist() == [-5.0]
+    assert validated["rejection_summary"] == "1 rows rejected: 1 rows with invalid numeric quantity_units"
+
+
+def test_a_figure_that_cannot_be_read_is_left_out_of_a_monthly_total_and_rejected():
+    frame = pd.DataFrame({"Item": ["a", "a", "a"], "Qty": ["5", "$7", "6"]}, dtype=object)
+    contract = _validated({
+        "fields": {
+            "period_start": {"status": "constant", "value": "2026-08-01"},
+            "period_type": {"status": "constant", "value": "month"},
+            "retailer": {"status": "constant", "value": "acme_offline"},
+            "sku": {"status": "mapped", "source": "Item"},
+            "quantity_units": {"status": "mapped", "source": "Qty"},
+        },
+        "melt_groups": [],
+        "aggregate": {"period": "month"},
+    }, frame)
+
+    validated = validation_service.validate_mapped_dataframe(apply_contract.apply_contract(frame, contract))
+
+    # Unread, "$7" used to vanish from the sum without a word.
+    assert validated["valid_df"]["quantity_units"].tolist() == [11.0]
+    assert validated["total_rejected"] == 1
+
+
+def test_blank_if_turns_placeholders_into_empty_cells_before_they_are_read():
+    rows = _rows(
+        {"Item": ["a", "b", "c"], "Qty": ["5", "N/A", "-"]},
+        quantity_units=_read("Qty", {"type": "blank_if", "tokens": ["n/a", "-"]}, {"type": "parse_number"}),
+    )
+
+    assert rows["quantity_units"].tolist() == [5.0]
+
+
+def test_fill_empty_takes_a_default_or_the_same_rows_value_in_another_column():
+    rows = _rows(
+        {"Item": ["a", "b"], "Qty": ["1", "1"], "Store": ["BB17", None], "Branch": ["x", "CC08"], "Format": [None, "HYPER"]},
+        quantity_units=_read("Qty"),
+        store_code=_read("Store", {"type": "fill_empty", "column": "Branch"}),
+        store_format=_read("Format", {"type": "fill_empty", "default": "UNKNOWN"}),
+    )
+
+    assert rows["store_code"].tolist() == ["BB17", "CC08"]
+    assert rows["store_format"].tolist() == ["UNKNOWN", "HYPER"]
+
+
+def test_split_part_takes_one_part_of_a_compound_value():
+    rows = _rows(
+        {"Item": ["a", "b"], "Qty": ["1", "1"], "Outlet": ["BB17 - BEDOK", "CC08"]},
+        quantity_units=_read("Qty"),
+        store_code=_read("Outlet", {"type": "split_part", "separator": "-", "index": 1}),
+        store_name=_read("Outlet", {"type": "split_part", "separator": "-", "index": 2}),
+    )
+
+    assert rows["store_code"].tolist() == ["BB17", "CC08"]
+    assert rows["store_name"].tolist()[0] == "BEDOK" and pd.isna(rows["store_name"].tolist()[1])
+
+
+def test_replace_and_normalize_text_tidy_a_description():
+    rows = _rows(
+        {"Item": ["a"], "Qty": ["1"], "Name": ["  aire   adult pants xl^ "]},
+        quantity_units=_read("Qty"),
+        product_name=_read(
+            "Name", {"type": "replace", "pattern": r"\^$", "replacement": ""}, {"type": "normalize_text", "case": "upper"},
+        ),
+    )
+
+    assert rows["product_name"].tolist() == ["AIRE ADULT PANTS XL"]
+
+
+def test_concat_joins_two_columns_so_a_code_table_can_read_them_together():
+    table = {"Range": ["PANTS", "PANTS"], "Size": ["XL", "L"], "Item": ["x", "y"], "Qty": ["1", "2"]}
+    frame = pd.DataFrame(table, dtype=object)
+    contract = _validated({
+        "fields": {
+            "period_start": {"status": "constant", "value": "2026-08-01"},
+            "period_type": {"status": "constant", "value": "month"},
+            "retailer": {"status": "constant", "value": "acme_offline"},
+            "sku": _read(
+                "Range", {"type": "concat", "columns": ["Size"], "separator": "|"},
+                {"type": "value_map", "values": {"PANTS|XL": "13255043", "PANTS|L": "13255045"}},
+            ),
+            "quantity_units": _read("Qty"),
+        },
+        "melt_groups": [],
+    }, frame)
+
+    assert apply_contract.apply_contract(frame, contract)["sku"].tolist() == ["13255043", "13255045"]
+
+
+def test_a_type_column_marks_returns_with_a_negative_factor():
+    rows = _rows(
+        {"Item": ["a", "a"], "Qty": ["5", "2"], "Type": ["SALE", "RETURN"]},
+        quantity_units=_read("Qty", {"type": "uom_factor", "column": "Type", "factors": {"RETURN": -1}, "default": 1}),
+    )
+
+    assert rows["quantity_units"].tolist() == [5.0, -2.0]
+
+
+def test_pieces_divided_by_the_pack_size_are_packs():
+    rows = _rows(
+        {"Item": ["a"], "Pieces": ["120"], "Per pack": ["10"]},
+        quantity_units=_read("Pieces", {"type": "divide", "column": "Per pack"}),
+    )
+
+    assert rows["quantity_units"].tolist() == [12.0]
+
+
+def test_dividing_by_an_empty_or_zero_cell_fails_the_file():
+    with pytest.raises(apply_contract.ContractApplicationError, match="empty or 0 on 1 rows"):
+        _rows(
+            {"Item": ["a", "b"], "Pieces": ["120", "50"], "Per pack": ["10", "0"]},
+            quantity_units=_read("Pieces", {"type": "divide", "column": "Per pack"}),
+        )
+
+
+def test_add_and_subtract_use_another_column_and_an_empty_cell_changes_nothing():
+    rows = _rows(
+        {"Item": ["a", "b"], "Sold": ["10", "4"], "Returned": ["3", None], "Net": ["90", "40"], "Discount": ["$10.00", None]},
+        quantity_units=_read("Sold", {"type": "subtract", "column": "Returned"}),
+        revenue=_read("Net", {"type": "add", "column": "Discount"}),
+    )
+
+    assert rows["quantity_units"].tolist() == [7.0, 4.0]
+    assert rows["revenue"].tolist() == [100.0, 40.0]
+
+
+# ---- Dates ---------------------------------------------------------------------------------
+
+def _dated(dates: list[str], *steps: dict, period_type: str = "month") -> pd.DataFrame:
+    frame = pd.DataFrame({"Item": ["a"] * len(dates), "Qty": ["1"] * len(dates), "Date": dates}, dtype=object)
+    contract = _validated({
+        "fields": {
+            "period_start": _read("Date", *steps),
+            "period_type": {"status": "constant", "value": period_type},
+            "retailer": {"status": "constant", "value": "acme_offline"},
+            "sku": {"status": "mapped", "source": "Item"},
+            "quantity_units": {"status": "mapped", "source": "Qty"},
+        },
+        "melt_groups": [],
+    }, frame)
+    return validation_service.validate_mapped_dataframe(apply_contract.apply_contract(frame, contract))
+
+
+def test_a_day_first_date_is_read_by_its_format_into_its_month():
+    validated = _dated(["01/02/2026", "31/12/2025"], {"type": "month_start", "format": "%d/%m/%Y"})
+
+    assert validated["valid_df"]["period_start"].tolist() == ["2026-02-01", "2025-12-01"]
+
+
+def test_a_date_with_no_format_given_is_rejected_rather_than_guessed():
+    # Read month first, 01/02/2026 would have loaded as January without a word.
+    validated = _dated(["01/02/2026"], {"type": "month_start"})
+
+    assert validated["rows_ingested"] == 0
+    assert "invalid period_start format" in validated["rejection_summary"]
+
+
+def test_parse_date_keeps_the_day_for_weekly_rows():
+    validated = _dated(["03-Aug-26"], {"type": "parse_date", "format": "%d-%b-%y"}, period_type="week")
+
+    assert validated["valid_df"][["period_start", "period_end"]].values.tolist() == [["2026-08-03", "2026-08-09"]]
+
+
+def test_an_excel_day_count_is_read_as_its_date():
+    validated = _dated(["46235"], {"type": "month_start", "format": "excel_serial"})
+
+    assert validated["valid_df"]["period_start"].tolist() == ["2026-08-01"]
+
+
+def test_a_typed_month_is_read_as_the_first_of_that_month():
+    frame = pd.DataFrame({"Item": ["a"], "Qty": ["1"]}, dtype=object)
+    contract = _validated({
+        "fields": {
+            "period_start": {"status": "constant", "value": "Aug 2026"},
+            "period_type": {"status": "constant", "value": "month"},
+            "retailer": {"status": "constant", "value": "acme_offline"},
+            "sku": {"status": "mapped", "source": "Item"},
+            "quantity_units": {"status": "mapped", "source": "Qty"},
+        },
+        "melt_groups": [],
+    }, frame)
+
+    assert apply_contract.apply_contract(frame, contract)["period_start"].tolist() == [pd.Timestamp("2026-08-01")]
+
+
+# ---- Row filters ------------------------------------------------------------------------------
+
+def _filtered(filters: list[dict]) -> pd.DataFrame:
+    frame = pd.DataFrame(
+        {"Item": ["a", "b", None, "c"], "Qty": ["1", "2", "3", "4"], "Type": ["SALE", "TRANSFER", "SALE", "sale"]},
+        dtype=object,
+    )
+    contract = _validated({
+        "fields": {
+            "period_start": {"status": "constant", "value": "2026-08-01"},
+            "period_type": {"status": "constant", "value": "month"},
+            "retailer": {"status": "constant", "value": "acme_offline"},
+            "sku": {"status": "mapped", "source": "Item"},
+            "quantity_units": {"status": "mapped", "source": "Qty"},
+        },
+        "melt_groups": [],
+        "filters": filters,
+    }, frame)
+    return apply_contract.apply_contract(frame, contract)
+
+
+def test_a_drop_filter_leaves_the_matching_rows_out():
+    rows = _filtered([{"column": "Type", "op": "equals", "value": "transfer", "action": "drop"}])
+
+    assert rows["quantity_units"].tolist() == ["1", "3", "4"]
+
+
+def test_a_keep_filter_loads_only_the_matching_rows():
+    rows = _filtered([{"column": "Type", "op": "equals", "value": "SALE", "action": "keep", "case_sensitive": True}])
+
+    assert rows["quantity_units"].tolist() == ["1", "3"]
+
+
+def test_filters_apply_in_order_and_an_empty_cell_can_be_filtered_on():
+    rows = _filtered([
+        {"column": "Item", "op": "empty", "action": "drop"},
+        {"column": "Type", "op": "equals", "value": "TRANSFER", "action": "drop"},
+    ])
+
+    assert rows["sku"].tolist() == ["a", "c"]
+
+
+def test_a_filter_on_a_column_the_file_lacks_fails_the_file():
+    with pytest.raises(apply_contract.ContractApplicationError, match="'Status' is not in the file"):
+        _filtered([{"column": "Status", "op": "equals", "value": "VOID", "action": "drop"}])
+
+
+# ---- A whole file that needs the steps together ---------------------------------------------
+
+LEDGER = {
+    "fields": {
+        "period_start": _read("Txn Date", {"type": "month_start", "format": "%d/%m/%Y"}),
+        "period_type": {"status": "constant", "value": "month"},
+        "retailer": {"status": "constant", "value": "acme_offline"},
+        "store_code": _read("Outlet", {"type": "split_part", "separator": " - ", "index": 1}),
+        "store_name": _read(
+            "Outlet", {"type": "split_part", "separator": " - ", "index": 2}, {"type": "normalize_text", "case": "title"},
+        ),
+        "sku": _read("Item", {"type": "value_map", "values": {"A-1": "13255043", "A-2": "13255044"}}),
+        "quantity_units": _read(
+            "Qty", {"type": "parse_number"},
+            {"type": "uom_factor", "column": "Type", "factors": {"RETURN": -1}, "default": 1},
+        ),
+        # Gross sales: what was taken plus what was given away.
+        "revenue": _read("Net Sales", {"type": "parse_number"}, {"type": "add", "column": "Discount"}),
+    },
+    "melt_groups": [],
+    "filters": [
+        {"column": "Supplier", "op": "equals", "value": "XEL", "action": "keep"},
+        {"column": "Type", "op": "equals", "value": "TRANSFER", "action": "drop"},
+    ],
+    "aggregate": {"period": "month"},
+}
+
+
+def test_a_text_export_is_read_into_the_standard_rows():
+    rows = _transformed(LEDGER, "ledger.csv", ledger_csv())
+    validated = validation_service.validate_mapped_dataframe(rows)
+
+    assert validated["rejection_summary"] == ""
+    assert validated["valid_df"][
+        ["period_start", "period_end", "store_code", "store_name", "sku", "quantity_units", "revenue"]
+    ].values.tolist() == [
+        ["2026-08-01", "2026-08-31", "BB17", "Bedok North", "13255043", 1203.0, 1330.5],
+        ["2026-08-01", "2026-08-31", "CC08", "Clementi", "13255044", -2.0, -20.0],
+    ]
+
+
+def test_the_same_figures_written_plainly_give_the_same_rows():
+    def plain(row):
+        date, kind, outlet, item, supplier, quantity, net, discount = row
+        day, month, year = date.split("/")
+        figures = {"1,200": "1200", "$1,250.50": "1250.5", "($20.00)": "-20", "N/A": ""}
+        return [
+            f"{year}-{month}-{day}", kind, outlet, item, supplier, figures.get(quantity, quantity),
+            figures.get(net, net.lstrip("$")), figures.get(discount, discount.lstrip("$")),
+        ]
+
+    contract = copy.deepcopy(LEDGER)
+    contract["fields"]["period_start"]["transforms"] = [{"type": "month_start"}]
+
+    written_plainly = _transformed(contract, "ledger.csv", ledger_csv([plain(row) for row in LEDGER_ROWS]))
+    written_awkwardly = _transformed(LEDGER, "ledger.csv", ledger_csv())
+
+    pd.testing.assert_frame_equal(written_plainly, written_awkwardly)
+
+
+# ---- Sheets stacked, and the period in the file's name ---------------------------------------
+
+def test_every_sheet_of_a_one_sheet_per_product_workbook_is_loaded():
+    rows = _transformed(PRIME_SALES, "Prime - Jan 2026 - Sales report.xlsx", prime_sales_xlsx())
+
+    assert rows[["period_start", "store_code", "sku", "quantity_units"]].values.tolist() == [
+        [pd.Timestamp("2026-01-01"), "BB17", "13255045", 3.0],
+        [pd.Timestamp("2026-01-01"), "CC08", "13255045", 3.0],
+        [pd.Timestamp("2026-01-01"), "BB17", "13255044", 4.0],
+    ]
+
+
+def test_next_months_file_is_dated_by_its_own_name():
+    rows = _transformed(PRIME_SALES, "Prime - Feb 2026 - Sales report.xlsx", prime_sales_xlsx())
+
+    assert set(rows["period_start"]) == {pd.Timestamp("2026-02-01")}
+
+
+def test_a_file_whose_name_states_no_month_fails_a_filename_period_contract():
+    with pytest.raises(apply_contract.ContractApplicationError, match="states no month"):
+        _transformed(PRIME_SALES, "Prime sales report.xlsx", prime_sales_xlsx())
+
+
+# ---- The same file and contract always give the same rows -------------------------------------
+
+@pytest.mark.parametrize("name", [
+    "fairprice_monthly", "nhg_sap", "sheng_siong_claim", "singhealth_er130", "prime_jkdc", "pharmex_grid", "prime_sales",
+])
+def test_transforming_a_file_twice_gives_identical_rows(name, retailer_files):
+    from app.services import reference_contracts
+
+    filename, data = retailer_files[name]
+    contract = reference_contracts.reference_contract(name)
+
+    first = _transformed(contract, filename, data)
+    second = _transformed(contract, filename, data)
+
+    assert len(first) > 0
+    pd.testing.assert_frame_equal(first, second)

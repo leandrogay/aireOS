@@ -131,6 +131,24 @@ export function groupKind(settings) {
 }
 
 /**
+ * The row a melt group's label reads, counted from the headings, or null
+ * when it reads the headings themselves (rows_above 0). Mirrors backend
+ * mapping_contract label_row: rows_above counts up, rows_below down.
+ *
+ * @returns {{ side: 'above' | 'below', rows: number } | null}
+ */
+export function labelPosition(label) {
+  if (label?.rows_below != null) return { side: 'below', rows: label.rows_below };
+  if (label?.rows_above > 0) return { side: 'above', rows: label.rows_above };
+  return null;
+}
+
+/** A label's row in words: "the row above", "2 rows below". */
+export function positionPhrase({ side, rows }) {
+  return `${rows === 1 ? 'the row' : `${rows} rows`} ${side}`;
+}
+
+/**
  * One row per source column, in file order, with the fields it fills.
  *
  * A column no rule reads still gets a row, with no fields on it: a column
@@ -262,13 +280,11 @@ export function headingFields(mapping, state) {
   groups.forEach((group) => {
     (group.settings.labels || []).forEach((label) => {
       if (elsewhere.has(label.target) || filled.some((item) => item.field === label.target)) return;
-      const rows = label.rows_above === 1 ? 'the row' : `${label.rows_above} rows`;
+      const position = labelPosition(label);
       fill(
         label.target,
         group.id,
-        label.rows_above === 0
-          ? 'Read from the column headings'
-          : `Read from ${rows} above the column headings`,
+        position ? `Read from ${positionPhrase(position)} the column headings` : 'Read from the column headings',
       );
     });
   });
@@ -400,7 +416,9 @@ function describeDecision(field, entry, fallback) {
     case 'not_available':
       return 'Not in this file';
     case 'derived': {
-      if (entry.from_layout === 'stated_period') return "The month the file's title states";
+      if (entry.from_layout === 'stated_period') return 'The month the file states';
+      if (entry.from_layout === 'filename_period') return "The month in the file's name";
+      if (entry.from_cell) return `Cell ${entry.from_cell}, on every row`;
       const multiply = (entry.transforms || []).find((transform) => transform.type === 'multiply');
       if (entry.from_field && multiply) return `${fieldLabel(entry.from_field)} × ${multiply.column}`;
       if (entry.from_field) return `Worked out from ${fieldLabel(entry.from_field)}`;

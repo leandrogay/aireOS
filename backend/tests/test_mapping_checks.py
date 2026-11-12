@@ -8,7 +8,16 @@ reference contracts must pass them all.
 """
 
 import pytest
-from conftest import fairprice_txt, nhg_xlsx, sheng_siong_xlsx, singhealth_xlsx
+from conftest import (
+    LEDGER_ROWS,
+    fairprice_txt,
+    ledger_csv,
+    nhg_xlsx,
+    outlet_codes_below_xlsx,
+    prime_sales_xlsx,
+    sheng_siong_xlsx,
+    singhealth_xlsx,
+)
 
 from app.services import layout_detection, mapping_checks as mk, mapping_contract, reference_contracts
 
@@ -27,7 +36,9 @@ def _by_id(checks):
     return {check["id"]: check for check in checks}
 
 
-@pytest.mark.parametrize("name", ["fairprice_monthly", "nhg_sap", "sheng_siong_claim", "singhealth_er130", "prime_jkdc"])
+@pytest.mark.parametrize("name", [
+    "fairprice_monthly", "nhg_sap", "sheng_siong_claim", "singhealth_er130", "prime_jkdc", "pharmex_grid", "prime_sales",
+])
 def test_the_reference_contracts_pass_every_check(name, retailer_files):
     filename, data = retailer_files[name]
 
@@ -302,6 +313,87 @@ def test_headings_read_for_both_store_fields_need_no_row_above_and_feed_a_rule_o
     assert _by_id(checks)["rules_retailer"]["evidence"]["matched"] == ["ONLINE"]
 
 
+# ---- Outlet codes written under the column headings -----------------------------------
+
+def _codes_below_contract():
+    return {
+        "fields": {
+            "period_start": {"status": "constant", "value": "2026-08-01"},
+            "period_type": {"status": "constant", "value": "month"},
+            "retailer": {"status": "constant", "value": "acme_offline"},
+            "sku": {"status": "mapped", "source": "Aug-26", "transforms": [{"type": "value_map", "values": {
+                "AIRE PULL UP PANTS SIZE S/M": "13255044", "AIRE PULL UP PANTS SIZE L": "13255045",
+            }}]},
+            "store_name": {"status": "mapped", "melt_group": "outlets"},
+            "store_code": {"status": "mapped", "melt_group": "outlets"},
+            "quantity_units": {"status": "mapped", "melt_group": "outlets"},
+        },
+        "melt_groups": [{
+            "id": "outlets", "select": {"kind": "columns", "columns": ["YISHUN", "TAMPINES"]},
+            "key": {"target": "store_name"}, "labels": [{"rows_below": 1, "target": "store_code"}],
+            "value_target": "quantity_units",
+        }],
+    }
+
+
+@pytest.mark.parametrize("total_column", [True, False])
+def test_store_codes_read_from_the_row_under_the_headings_pass_the_checks(total_column):
+    checks, _, _ = _run(None, "codes.xlsx", outlet_codes_below_xlsx(total_column), _codes_below_contract())
+
+    assert mk.failures(checks) == []
+    labels = _by_id(checks)["labels_store_code"]
+    assert labels["message"] == "store_code: read from row 2 below all 2 columns."
+    assert labels["evidence"]["read"] == {"YISHUN": "HQ", "TAMPINES": "OTH"}
+
+
+def test_a_fixed_period_outside_the_month_the_heading_states_fails_the_period_check():
+    checks, _, _ = _run(None, "codes.xlsx", outlet_codes_below_xlsx(month="Jul-26"), _codes_below_contract())
+
+    period = _by_id(checks)["period"]
+    assert (period["passed"], period["evidence"]["outside"]) == (False, ["2026-08"])
+    assert "(heading)" in period["message"]
+
+
+def test_the_heading_row_under_the_header_is_not_counted_as_a_product_code():
+    frame, layout = layout_detection.read_table("codes.xlsx", outlet_codes_below_xlsx(total_column=False))
+    contract = mapping_contract.validate_contract(_codes_below_contract(), list(frame.columns), trust_review=True)
+
+    codes = mk.sku_codes(frame, contract, layout)
+
+    assert [item["code"] for item in codes] == ["AIRE PULL UP PANTS SIZE S/M", "AIRE PULL UP PANTS SIZE L"]
+
+
+# ---- One cell written on every row ------------------------------------------------------
+
+def _period_in_cell(reference):
+    contract = _codes_below_contract()
+    contract["fields"]["period_start"] = {"status": "derived", "from_cell": reference}
+    return contract
+
+
+def test_a_period_read_from_a_cell_is_checked_against_the_month_the_file_states():
+    checks, _, _ = _run(None, "codes.xlsx", outlet_codes_below_xlsx(month="Jul-26"), _period_in_cell("A1"))
+
+    assert mk.failures(checks) == []
+    cell = _by_id(checks)["cell_period_start"]
+    assert cell["message"] == "period_start: 'Jul-26' from cell A1, on every row."
+    assert _by_id(checks)["period"]["passed"] is True
+
+
+def test_an_empty_cell_fails_the_check_with_the_cell_named():
+    checks, _, _ = _run(None, "codes.xlsx", outlet_codes_below_xlsx(), _period_in_cell("Z1"))
+
+    cell = _by_id(checks)["cell_period_start"]
+    assert (cell["passed"], cell["fields"]) == (False, ["period_start"])
+    assert "Z1 is empty" in cell["message"]
+
+
+def test_a_period_cell_that_names_no_date_fails_the_check():
+    checks, _, _ = _run(None, "codes.xlsx", outlet_codes_below_xlsx(), _period_in_cell("A2"))
+
+    assert "'SKUs', which is not a month or a date" in _by_id(checks)["cell_period_start"]["message"]
+
+
 # ---- Product codes written over the column headings -----------------------------------
 
 def _products_per_column():
@@ -377,3 +469,201 @@ def test_the_store_channel_check_passes_when_each_store_keeps_to_one_retailer():
     check = mk.check_store_channels(_rows(("AJ", "sheng_siong_offline"), ("WEB", "sheng_siong_online")))
 
     assert check["passed"] is True
+
+
+# ---- How the values are written ----------------------------------------------------------
+
+def _ledger_contract(**changes) -> dict:
+    """A contract for conftest's ledger_csv that reads its awkwardly written values properly."""
+    def read(column, *steps):
+        return {"status": "mapped", "source": column, "transforms": list(steps)}
+
+    return {
+        "fields": {
+            "period_start": read("Txn Date", {"type": "month_start", "format": "%d/%m/%Y"}),
+            "period_type": {"status": "constant", "value": "month"},
+            "retailer": {"status": "constant", "value": "acme_offline"},
+            "sku": read("Item", {"type": "value_map", "values": {"A-1": "13255043", "A-2": "13255044"}}),
+            "quantity_units": read("Qty", {"type": "parse_number"}),
+            "revenue": read("Net Sales", {"type": "parse_number"}),
+            **changes,
+        },
+        "melt_groups": [],
+        "filters": [{"column": "Supplier", "op": "equals", "value": "XEL", "action": "keep"}],
+    }
+
+
+def _ledger(contract: dict, rows=LEDGER_ROWS):
+    checks, validated, _ = _run(None, "ledger.csv", ledger_csv(rows), contract)
+    return _by_id(checks), validated
+
+
+def test_a_contract_that_reads_each_value_as_it_is_written_passes():
+    checks, validated = _ledger(_ledger_contract())
+
+    assert validated["warnings"] == []
+    assert mk.failures(list(checks.values())) == []
+    assert checks["values_revenue"]["passed"] and checks["values_quantity_units"]["passed"]
+    assert checks["values_period_start"]["passed"]
+
+
+def test_currency_figures_with_no_parse_number_fail_and_say_what_to_add():
+    checks, _ = _ledger(_ledger_contract(revenue={"status": "mapped", "source": "Net Sales"}))
+
+    revenue = checks["values_revenue"]
+    assert (revenue["passed"], revenue["level"]) == (False, "error")
+    assert "'$1,250.50'" in revenue["message"]
+    assert "add parse_number (decimal '.')" in revenue["message"]
+    assert revenue["evidence"]["unreadable"] == 4
+
+
+def test_day_first_dates_with_no_format_fail_and_offer_the_format():
+    checks, _ = _ledger(_ledger_contract(
+        period_start={"status": "mapped", "source": "Txn Date", "transforms": [{"type": "month_start"}]},
+    ))
+
+    period = checks["values_period_start"]
+    assert (period["passed"], period["level"]) == (False, "error")
+    assert "'%d/%m/%Y'" in period["message"]
+
+
+def test_a_stray_placeholder_among_readable_figures_is_a_warning_not_a_failure():
+    rows = [[*row[:5], "N/A" if index == 0 else str(index), row[6], row[7]] for index, row in enumerate(LEDGER_ROWS * 3)]
+
+    checks, _ = _ledger(_ledger_contract(), rows)
+
+    quantity = checks["values_quantity_units"]
+    assert (quantity["passed"], quantity["level"]) == (False, "warning")
+    assert quantity["evidence"]["examples"] == ["N/A"]
+
+
+def test_a_placeholder_the_contract_blanks_is_not_held_against_it():
+    rows = [[*row[:5], "N/A" if index == 0 else str(index), row[6], row[7]] for index, row in enumerate(LEDGER_ROWS * 3)]
+    quantity = {
+        "status": "mapped", "source": "Qty",
+        "transforms": [{"type": "blank_if", "tokens": ["n/a"]}, {"type": "parse_number"}],
+    }
+
+    checks, _ = _ledger(_ledger_contract(quantity_units=quantity), rows)
+
+    assert checks["values_quantity_units"]["passed"] is True
+
+
+def test_a_field_that_reworks_its_text_first_is_left_to_the_transformation():
+    quantity = {
+        "status": "mapped", "source": "Outlet",
+        "transforms": [{"type": "regex_extract", "pattern": r"(\d+)", "group": 1}],
+    }
+
+    checks, _ = _ledger(_ledger_contract(quantity_units=quantity))
+
+    assert "values_quantity_units" not in checks
+
+
+# ---- Row filters ------------------------------------------------------------------------------
+
+def test_a_filter_says_how_many_rows_it_leaves_out():
+    checks, _ = _ledger(_ledger_contract())
+
+    assert checks["filter_1"]["passed"] is True
+    assert checks["filter_1"]["message"] == "Row filter (keep rows where 'Supplier' equals 'XEL') leaves out 1 of 5 rows."
+
+
+def test_rows_a_filter_leaves_out_are_not_checked_for_product_codes():
+    checks, _ = _ledger(_ledger_contract())
+
+    # B-9 is the other supplier's product: filtered out, so not an unknown code.
+    assert checks["sku_codes"]["passed"] is True
+
+    unfiltered = _ledger_contract()
+    unfiltered["filters"] = []
+    checks, _ = _ledger(unfiltered)
+    assert [item["code"] for item in checks["sku_codes"]["evidence"]["unknown"]] == ["B-9"]
+
+
+def test_a_filter_that_removes_every_row_fails():
+    contract = _ledger_contract()
+    contract["filters"] = [{"column": "Supplier", "op": "equals", "value": "NOBODY", "action": "keep"}]
+
+    checks, _ = _ledger(contract)
+
+    assert (checks["filter_1"]["passed"], checks["filter_1"]["level"]) == (False, "error")
+    assert "leaves no rows" in checks["filter_1"]["message"]
+
+
+def test_a_filter_that_matches_nothing_is_a_warning():
+    contract = _ledger_contract()
+    contract["filters"] = [{"column": "Type", "op": "equals", "value": "VOID", "action": "drop"}]
+
+    checks, _ = _ledger(contract)
+
+    assert (checks["filter_1"]["passed"], checks["filter_1"]["level"]) == (False, "warning")
+
+
+def test_a_filter_on_a_missing_column_fails():
+    contract = _ledger_contract()
+    contract["filters"] = [{"column": "Status", "op": "equals", "value": "VOID", "action": "drop"}]
+
+    checks, _ = _ledger(contract)
+
+    assert (checks["filter_1"]["passed"], checks["filter_1"]["level"]) == (False, "error")
+    assert "'Status' is not in the file" in checks["filter_1"]["message"]
+
+
+# ---- Totals melted in, and flagged gaps ----------------------------------------------------------
+
+def test_melting_an_unheaded_total_column_in_with_the_outlets_fails():
+    contract = reference_contracts.reference_contract("pharmex_grid")
+    contract["melt_groups"][0]["select"] = {"kind": "between", "after": "Aug-26"}
+
+    checks, _, _ = _run(None, "Inventory_Aug_26.xlsx", outlet_codes_below_xlsx(), contract)
+
+    melted = _by_id(checks)["melted_totals_quantity_units"]
+    assert (melted["passed"], melted["level"]) == (False, "error")
+    assert melted["evidence"]["columns"] == ["Unnamed: 3"]
+
+
+def test_an_outlet_column_with_no_sales_is_not_a_total():
+    checks, _, _ = _run("sheng_siong_claim", "ss.xlsx", sheng_siong_xlsx())
+
+    assert not [check_id for check_id in _by_id(checks) if check_id.startswith("melted_totals")]
+
+
+def test_what_the_proposal_flagged_as_unsupported_is_a_warning_on_its_field():
+    contract = reference_contracts.reference_contract("nhg_sap")
+    contract["unsupported"] = [{"field": "revenue", "issue": "Prices are in a separate price list file."}]
+
+    checks, validated, _ = _run("nhg_sap", "nhg.xlsx", nhg_xlsx(), contract)
+
+    flagged = _by_id(checks)["unsupported_1"]
+    assert (flagged["passed"], flagged["level"], flagged["fields"]) == (False, "warning", ["revenue"])
+    assert "separate price list" in flagged["message"]
+    assert mk.failures(checks) == []
+    assert mk.field_confidence(validated, checks)["fields"]["revenue"]["confidence"] == "medium"
+
+
+# ---- The period a file's name states ------------------------------------------------------------
+
+def test_a_period_read_from_the_files_name_passes_when_the_name_states_one_month():
+    checks, _, _ = _run("prime_sales", "Prime - Jan 2026 - Sales report.xlsx", prime_sales_xlsx())
+
+    period = _by_id(checks)["period"]
+    assert period["passed"] is True
+    assert "2026-01-01 to 2026-01-31" in period["message"]
+
+
+def test_a_period_read_from_a_name_that_states_no_month_fails():
+    checks, _, _ = _run("prime_sales", "sales report.xlsx", prime_sales_xlsx())
+
+    assert _by_id(checks)["period"]["passed"] is False
+
+
+def test_the_instructions_say_sheets_are_stacked_and_rows_filtered():
+    contract = reference_contracts.reference_contract("prime_sales")
+    contract["filters"] = [{"column": "Store No_", "op": "equals", "value": "HQ", "action": "drop"}]
+
+    checks, _, _ = _run(None, "Prime - Jan 2026 - Sales report.xlsx", prime_sales_xlsx(), contract)
+
+    message = _by_id(checks)["instructions"]["message"]
+    assert "every sheet with these headers, stacked" in message
+    assert "1 row filter applied first" in message

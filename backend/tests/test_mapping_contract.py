@@ -7,6 +7,9 @@ says so, with a reason), nothing unsafe is applied silently, and product
 attributes always come from the SKU master.
 """
 
+import pandas as pd
+import pytest
+
 from app.schemas.sellout import BUSINESS_COLUMNS
 from app.services import mapping_contract as mc
 
@@ -348,6 +351,52 @@ def test_only_the_period_can_be_read_from_the_stated_period():
     assert contract["fields"]["store_code"]["status"] == "not_available"
 
 
+# ---- One cell written on every row ------------------------------------------------------
+
+def test_a_field_can_be_read_from_one_cell_named_as_a_spreadsheet_names_it():
+    contract = _validate_outlets(_outlet_contract(period_start={"status": "derived", "from_cell": "$a$1"}))
+
+    assert contract["fields"]["period_start"]["from_cell"] == "A1"
+    assert mc.required_missing_fields(contract) == []
+
+
+def test_a_figure_is_never_one_cell_repeated():
+    contract = _validate_outlets(_outlet_contract(quantity_units={"status": "derived", "from_cell": "B2"}))
+
+    assert contract["fields"]["quantity_units"]["status"] == "not_available"
+    assert any("cannot be read from one cell" in w for w in contract["warnings"])
+
+
+def test_a_cell_must_be_named_like_a1():
+    contract = _validate_outlets(_outlet_contract(store_name={"status": "derived", "from_cell": "row 1"}))
+
+    assert contract["fields"]["store_name"]["status"] == "not_available"
+
+
+def test_a_field_can_be_worked_out_from_one_read_from_a_cell():
+    contract = _validate_outlets(_outlet_contract(
+        store_format={"status": "derived", "from_cell": "A1"},
+        brand={"status": "derived", "from_field": "store_format"},
+    ))
+
+    assert contract["fields"]["brand"]["from_field"] == "store_format"
+
+
+@pytest.mark.parametrize("text, expected", [
+    ("Jul-26", "2026-07-01"),
+    ("August 2026", "2026-08-01"),
+    ("2026-07-15", "2026-07-15"),
+    ("15/07/2026", "2026-07-15"),
+])
+def test_a_cell_names_a_month_or_a_date(text, expected):
+    assert mc.cell_period(text) == pd.Timestamp(expected)
+
+
+@pytest.mark.parametrize("text", ["SKUs", "", None])
+def test_a_cell_naming_no_date_is_no_period(text):
+    assert mc.cell_period(text) is None
+
+
 # ---- Confidence and review ----------------------------------------------------------
 
 def test_missing_or_unrecognised_confidence_becomes_low():
@@ -493,6 +542,26 @@ def test_a_label_cannot_read_a_negative_number_of_rows_above():
     assert _validate_outlets(_outlet_contract(group))["melt_groups"] == []
 
 
+def test_a_label_can_read_the_row_under_the_headings():
+    group = {**OUTLETS, "labels": [{"rows_below": 1, "target": "store_code"}]}
+
+    contract = _validate_outlets(_outlet_contract(group))
+
+    assert contract["warnings"] == []
+    assert contract["melt_groups"][0]["labels"] == [{"rows_below": 1, "target": "store_code"}]
+
+
+@pytest.mark.parametrize("label", [
+    {"rows_below": 0, "target": "store_code"},
+    {"rows_below": "1", "target": "store_code"},
+    {"rows_above": 1, "rows_below": 1, "target": "store_code"},
+])
+def test_a_label_reads_one_row_at_least_one_under_the_headings_or_one_above(label):
+    group = {**OUTLETS, "labels": [label]}
+
+    assert _validate_outlets(_outlet_contract(group))["melt_groups"] == []
+
+
 def test_a_retailer_read_from_the_headings_writes_the_headings():
     group = {**OUTLETS, "key": {"target": "retailer"}, "labels": []}
     contract = _validate_outlets(_outlet_contract(group, retailer={"status": "mapped", "melt_group": "outlets"}))
@@ -508,3 +577,254 @@ def test_a_retailer_read_from_the_cells_above_the_headings_writes_those_cells():
     layout = {"header_row": 2, "rows_above_header": [{"row": 1, "cells": {"BEDOK": "81001", "ONLINE": "88001"}}]}
 
     assert mc.retailer_outputs(contract, columns=OUTLET_COLUMNS, layout=layout) == ["81001", "88001"]
+
+
+def test_a_retailer_read_from_the_cells_under_the_headings_writes_those_cells():
+    group = {**OUTLETS, "labels": [{"rows_below": 1, "target": "retailer"}]}
+    contract = _validate_outlets(_outlet_contract(group, retailer={"status": "mapped", "melt_group": "outlets"}))
+    layout = {"header_row": 1, "rows_below_header": [{"row": 2, "cells": {"BEDOK": "a_offline", "ONLINE": "a_online"}}]}
+
+    assert mc.retailer_outputs(contract, columns=OUTLET_COLUMNS, layout=layout) == ["a_offline", "a_online"]
+
+
+# ---- Next month's file names its month heading differently ---------------------------
+
+PHARMEX = {
+    "fields": {
+        "sku": {"status": "mapped", "source": "Aug-26"},
+        "quantity_units": {"status": "mapped", "melt_group": "outlets"},
+    },
+    "melt_groups": [{**OUTLETS, "select": {"kind": "between", "after": "Aug-26", "before": "Unnamed: 3"}}],
+}
+
+
+def test_a_column_named_for_last_month_reads_this_months_column():
+    contract = mc.with_file_columns(PHARMEX, ["Jul-26", "YISHUN", "TAMPINES", "Unnamed: 3"])
+
+    assert contract["fields"]["sku"]["source"] == "Jul-26"
+    assert contract["melt_groups"][0]["select"] == {"kind": "between", "after": "Jul-26", "before": "Unnamed: 3"}
+    # The caller's contract is left as it was.
+    assert PHARMEX["fields"]["sku"]["source"] == "Aug-26"
+
+
+def test_a_column_name_two_of_the_files_columns_could_be_is_left_to_fail():
+    contract = mc.with_file_columns(PHARMEX, ["Jul-26", "Jun-26", "YISHUN", "Unnamed: 3"])
+
+    assert contract["fields"]["sku"]["source"] == "Aug-26"
+
+
+def test_next_months_file_validates_against_last_months_contract():
+    contract = mc.validate_contract(PHARMEX, ["Jul-26", "YISHUN", "TAMPINES", "Unnamed: 3"])
+
+    assert contract["fields"]["sku"] == {**contract["fields"]["sku"], "status": "mapped", "source": "Jul-26"}
+    assert [group["id"] for group in contract["melt_groups"]] == ["outlets"]
+
+
+# ---- Heading rows under the header are not data -------------------------------------
+
+def _codes_below_layout(in_table: bool) -> dict:
+    return {
+        "header_row": 1,
+        "rows_below_header": [{"row": 2, "cells": {"Product Code": "SKUs", "BEDOK": "HQ"}, "in_table": in_table}],
+    }
+
+
+def test_the_row_a_label_reads_under_the_headings_is_taken_out_of_the_data():
+    frame = pd.DataFrame([["SKUs", "HQ"], ["A1", "5"]], columns=["Product Code", "BEDOK"], dtype=object)
+    contract = {"melt_groups": [{**OUTLETS, "labels": [{"rows_below": 1, "target": "store_code"}]}]}
+
+    rows = mc.table_rows(frame, contract, _codes_below_layout(in_table=True))
+
+    assert rows.values.tolist() == [["A1", "5"]]
+    # Taken out once only: the table it was taken from comes back as it is.
+    assert mc.table_rows(rows, contract, _codes_below_layout(in_table=True)).values.tolist() == [["A1", "5"]]
+
+
+def test_a_row_under_the_headings_stays_data_when_no_label_reads_it():
+    frame = pd.DataFrame([["SKUs", "HQ"], ["A1", "5"]], columns=["Product Code", "BEDOK"], dtype=object)
+
+    rows = mc.table_rows(frame, {"melt_groups": [OUTLETS]}, _codes_below_layout(in_table=True))
+
+    assert len(rows) == 2
+
+
+# ---- The transform vocabulary ------------------------------------------------------------
+
+def _steps(*steps, target="store_code", source="Store Code"):
+    contract = _validate(_contract(**{target: {"status": "mapped", "source": source, "transforms": list(steps)}}))
+    return contract["fields"][target], contract["warnings"]
+
+
+@pytest.mark.parametrize("step, stored", [
+    ({"type": "parse_number"}, {"type": "parse_number", "decimal": "."}),
+    ({"type": "parse_number", "decimal": ","}, {"type": "parse_number", "decimal": ","}),
+    ({"type": "scale", "factor": 0.01}, {"type": "scale", "factor": 0.01}),
+    ({"type": "parse_date", "format": "%d/%m/%Y"}, {"type": "parse_date", "format": "%d/%m/%Y"}),
+    ({"type": "month_start", "format": "excel_serial"}, {"type": "month_start", "format": "excel_serial"}),
+    ({"type": "month_start"}, {"type": "month_start"}),
+    ({"type": "divide", "column": "Brand"}, {"type": "divide", "column": "Brand"}),
+    ({"type": "add", "column": "Brand"}, {"type": "add", "column": "Brand"}),
+    ({"type": "subtract", "column": "Brand"}, {"type": "subtract", "column": "Brand"}),
+    ({"type": "normalize_text"}, {"type": "normalize_text", "case": "keep"}),
+    ({"type": "normalize_text", "case": "UPPER"}, {"type": "normalize_text", "case": "upper"}),
+    ({"type": "replace", "pattern": "^0+"}, {"type": "replace", "pattern": "^0+", "replacement": ""}),
+    ({"type": "blank_if", "tokens": ["N/A", " - ", "N/A"]}, {"type": "blank_if", "tokens": ["N/A", "-"]}),
+    ({"type": "fill_empty", "default": "HQ"}, {"type": "fill_empty", "default": "HQ"}),
+    ({"type": "fill_empty", "column": "Brand"}, {"type": "fill_empty", "column": "Brand"}),
+    ({"type": "concat", "columns": ["Brand"], "separator": "|"}, {"type": "concat", "columns": ["Brand"], "separator": "|"}),
+    ({"type": "split_part", "separator": "-", "index": -1}, {"type": "split_part", "separator": "-", "index": -1}),
+])
+def test_each_new_step_is_stored_with_its_settings_and_defaults(step, stored):
+    entry, warnings = _steps(step)
+
+    assert entry["transforms"] == [stored]
+    assert warnings == []
+
+
+@pytest.mark.parametrize("step, reason", [
+    ({"type": "parse_number", "decimal": ";"}, "decimal must be"),
+    ({"type": "scale", "factor": 0}, "factor other than 0"),
+    ({"type": "scale"}, "factor other than 0"),
+    ({"type": "parse_date", "format": "dd/mm/yyyy"}, "not a strptime format"),
+    ({"type": "divide", "column": "Nope"}, "divide column 'Nope' is not in the file"),
+    ({"type": "normalize_text", "case": "camel"}, "case must be one of"),
+    ({"type": "replace", "pattern": "("}, "invalid regex"),
+    ({"type": "replace", "pattern": "a", "replacement": r"\2"}, "invalid replacement"),
+    ({"type": "blank_if", "tokens": []}, "at least one token"),
+    ({"type": "fill_empty"}, "needs a default or a column"),
+    ({"type": "concat", "columns": ["Nope"]}, "concat columns not in the file"),
+    ({"type": "split_part", "separator": "-", "index": 0}, "never 0"),
+    ({"type": "split_part", "separator": "", "index": 1}, "needs a separator"),
+    ({"type": "round", "digits": 2}, "unsupported type: 'round'"),
+])
+def test_a_step_the_transformation_cannot_run_drops_the_field_and_says_why(step, reason):
+    entry, warnings = _steps(step)
+
+    # Never passed through without the step: that would be a different mapping.
+    assert entry["status"] == "not_available"
+    assert any(reason in warning for warning in warnings)
+
+
+def test_every_transform_type_has_a_validator():
+    for kind in mc.TRANSFORM_TYPES:
+        warnings: list[str] = []
+        mc.validate_transforms("size", [{"type": kind}], COLUMNS, [], None, warnings)
+
+        assert not any("unsupported type" in warning for warning in warnings), kind
+
+
+def test_a_factor_may_be_negative_for_rows_marked_as_returns():
+    entry, warnings = _steps({"type": "uom_factor", "column": "Sales UOM", "factors": {"RETURN": -1}})
+
+    assert entry["transforms"][0]["factors"] == {"RETURN": -1}
+    assert warnings == []
+
+
+def test_a_code_table_after_a_step_is_not_held_to_the_columns_raw_values():
+    entry, warnings = _steps(
+        {"type": "concat", "columns": ["Brand"], "separator": "|"},
+        {"type": "value_map", "values": {"HYPER|AIRE": "hyper_aire"}},
+        target="store_format", source="Store Format",
+    )
+
+    assert [step["type"] for step in entry["transforms"]] == ["concat", "value_map"]
+    assert warnings == []
+
+
+# ---- Row filters and flagged gaps -----------------------------------------------------------
+
+def test_row_filters_are_cleaned_and_kept_in_order():
+    contract = _validate({**_contract(), "filters": [
+        {"column": "Brand", "op": "EQUALS", "value": " OTHER ", "action": "drop"},
+        {"column": "SKU No.", "op": "empty", "action": "drop", "value": "ignored"},
+    ]})
+
+    assert contract["filters"] == [
+        {"column": "Brand", "op": "equals", "action": "drop", "case_sensitive": False, "value": "OTHER"},
+        {"column": "SKU No.", "op": "empty", "action": "drop", "case_sensitive": False},
+    ]
+
+
+@pytest.mark.parametrize("row_filter", [
+    {"column": "Brand", "op": "like", "value": "x", "action": "drop"},
+    {"column": "Brand", "op": "equals", "value": "x", "action": "hide"},
+    {"column": "Brand", "op": "equals", "value": "", "action": "drop"},
+    {"column": "Brand", "op": "regex", "value": "(", "action": "drop"},
+    {"op": "equals", "value": "x", "action": "drop"},
+])
+def test_a_filter_that_is_not_one_is_dropped_with_a_warning(row_filter):
+    contract = _validate({**_contract(), "filters": [row_filter]})
+
+    assert contract["filters"] == []
+    assert any("Dropped row filter" in warning for warning in contract["warnings"])
+
+
+def test_a_filter_on_a_column_this_file_lacks_is_kept_to_fail_loudly():
+    row_filter = {"column": "Status", "op": "equals", "value": "VOID", "action": "drop"}
+
+    contract = _validate({**_contract(), "filters": [row_filter]})
+
+    assert [item["column"] for item in contract["filters"]] == ["Status"]
+
+
+def test_rows_matching_reads_a_filter_the_way_a_rule_reads_a_value():
+    frame = pd.DataFrame({"Type": ["SALE", "sale ", None, "TRANSFER"]}, dtype=object)
+
+    equals = mc.rows_matching(frame, {"column": "Type", "op": "equals", "value": "sale"})
+    empty = mc.rows_matching(frame, {"column": "Type", "op": "empty"})
+
+    assert equals.tolist() == [True, True, False, False]
+    assert empty.tolist() == [False, False, True, False]
+
+
+def test_what_a_proposal_flags_as_unsupported_is_kept_with_its_field():
+    contract = _validate({**_contract(), "unsupported": [
+        {"field": "revenue", "issue": " Sales are in two currencies. "},
+        {"field": "made_up", "issue": "Weeks are numbered, not dated."},
+        {"field": "size", "issue": ""},
+    ]})
+
+    assert contract["unsupported"] == [
+        {"field": "revenue", "issue": "Sales are in two currencies."},
+        {"field": None, "issue": "Weeks are numbered, not dated."},
+    ]
+
+
+def test_a_contract_with_no_filters_or_flags_has_empty_lists():
+    contract = _validate(_contract())
+
+    assert contract["filters"] == [] and contract["unsupported"] == []
+
+
+# ---- The period a file's name states ----------------------------------------------------------
+
+def test_the_period_may_be_read_from_the_files_name_when_rows_are_monthly():
+    contract = _validate(_contract(
+        period_start={"status": "derived", "from_layout": "filename_period"},
+        period_type={"status": "constant", "value": "month"},
+    ))
+
+    assert contract["fields"]["period_start"] == {
+        "status": "derived", "from_layout": "filename_period", "confidence": "low", "rationale": "", "reviewed": False,
+    }
+
+
+def test_a_period_from_the_files_name_needs_monthly_rows():
+    contract = _validate(_contract(
+        period_start={"status": "derived", "from_layout": "filename_period"},
+        period_type={"status": "constant", "value": "week"},
+    ))
+
+    assert contract["fields"]["period_start"]["status"] == "not_available"
+
+
+def test_next_months_file_renames_the_columns_filters_and_concat_name():
+    contract = {
+        "fields": {"sku": {"status": "mapped", "source": "Aug-26", "transforms": [{"type": "concat", "columns": ["Aug-26"]}]}},
+        "filters": [{"column": "Aug-26", "op": "empty", "action": "drop"}],
+    }
+
+    renamed = mc.with_file_columns(contract, ["Sep-26", "YISHUN"])
+
+    assert renamed["fields"]["sku"]["transforms"][0]["columns"] == ["Sep-26"]
+    assert renamed["filters"][0]["column"] == "Sep-26"

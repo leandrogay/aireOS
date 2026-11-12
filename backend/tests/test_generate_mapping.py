@@ -11,7 +11,7 @@ including next month's file of it -- never calls the model.
 import json
 
 import pytest
-from conftest import fairprice_txt, sheng_siong_xlsx
+from conftest import fairprice_txt, ledger_csv, prime_sales_xlsx, sheng_siong_xlsx
 
 from app.services import generate_mapping as gm
 from app.services import reference_contracts
@@ -67,11 +67,16 @@ def _answer(contract: dict) -> dict:
                 "values": [{"from": k, "to": v} for k, v in (transform.get("values") or {}).items()],
                 "rules": transform.get("rules") or [], "default": transform.get("default"),
                 "case_sensitive": False, "column": transform.get("column"), "factors": factors,
-                "format": transform.get("format"),
+                "format": transform.get("format"), "decimal": transform.get("decimal"),
+                "factor": transform.get("factor"), "case": transform.get("case"),
+                "replacement": transform.get("replacement"), "tokens": transform.get("tokens") or [],
+                "columns": transform.get("columns") or [], "separator": transform.get("separator"),
+                "index": transform.get("index"),
             })
         fields.append({
             "target": target, "status": entry["status"], "source": entry.get("source"),
             "melt_group": entry.get("melt_group"), "from_field": entry.get("from_field"),
+            "from_layout": entry.get("from_layout"), "from_cell": entry.get("from_cell"),
             "value": entry.get("value"), "reason": entry.get("reason"), "transforms": transforms,
             "confidence": "high", "rationale": "",
         })
@@ -83,7 +88,10 @@ def _answer(contract: dict) -> dict:
         "period_type": group.get("period_type"), "value_target": group["value_target"],
         "confidence": "high", "rationale": "",
     } for group in contract["melt_groups"]]
-    return _no_nulls({"fields": fields, "melt_groups": groups, "aggregate_to_month": bool(contract.get("aggregate"))})
+    return _no_nulls({
+        "fields": fields, "melt_groups": groups, "filters": contract.get("filters") or [],
+        "aggregate_to_month": bool(contract.get("aggregate")), "unsupported": contract.get("unsupported") or [],
+    })
 
 
 def _no_nulls(value, key=None):
@@ -93,7 +101,7 @@ def _no_nulls(value, key=None):
     if isinstance(value, list):
         return [_no_nulls(v) for v in value]
     if value is None:
-        return 0 if key in ("group", "factor") else ""
+        return 0 if key in ("group", "factor", "index") else ""
     return value
 
 
@@ -524,6 +532,71 @@ def test_the_schema_offers_everything_the_contract_accepts():
     assert _enum_at(schema, "melt_groups", "items", "labels", "items", "target") == set(gm.mapping_prompt.LABEL_TARGETS)
 
 
+# Every word of the contract the model writes, each with the schema parameter
+# that carries it. A term added to the contract and left out of the prompt
+# would never be proposed.
+PROMPT_VOCABULARY = (
+    "mapped", "derived", "constant", "not_available",
+    "from_field", "from_layout", "stated_period", "from_cell",
+    "melt_group", "key_target", "key_pattern", "date_format", "period_type",
+    "select_kind", "'pattern'", "'between'", "select_before",
+    "rows_above", "rows_below", "cells_above_header", "cells_below_header",
+    "aggregate_to_month", "case_sensitive", "factor_column", "'group'", "'format'", "'column'",
+    "filename_period", "stacked_sheets", "written_as", "date_formats", "total_columns",
+    "filters", "'action'", "'drop'", "'keep'", "unsupported", "'issue'",
+    "'decimal'", "'factor'", "'case'", "'replacement'", "'tokens'", "'columns'", "'separator'", "'index'",
+    "excel_serial",
+)
+
+
+def test_the_prompt_explains_every_word_of_the_contract_vocabulary():
+    prompt = gm.mapping_prompt.SYSTEM_PROMPT
+    vocabulary = (
+        *PROMPT_VOCABULARY,
+        *gm.mapping_prompt.TRANSFORM_TYPES,
+        *gm.mapping_prompt.RULE_OPS,
+        *gm.mapping_prompt.MEASURE_FIELDS,
+        *gm.mapping_prompt.MELT_KEY_TARGETS,
+        *gm.mapping_prompt.CELL_TARGETS,
+        *gm.mapping_prompt.FILTER_OPS,
+        *gm.mapping_prompt.TEXT_CASES,
+    )
+
+    assert [term for term in vocabulary if term not in prompt] == []
+
+
+def test_every_field_the_model_decides_is_defined():
+    assert set(gm.mapping_prompt.FIELD_DEFINITIONS) == set(gm.mapping_prompt.DECIDABLE_FIELDS)
+
+
+def test_a_proposed_cell_survives_parsing_and_validation():
+    answer = {
+        "fields": [
+            _answer_field("period_start", "derived", from_cell="A1"),
+            _answer_field("retailer", "derived", from_cell="B1", transforms=[
+                _answer_transform("value_map", values=[{"from": "ACME", "to": "acme_offline"}]),
+            ]),
+        ],
+        "melt_groups": [],
+        "aggregate_to_month": False,
+    }
+
+    contract = gm.validate_contract(gm.mapping_prompt.parse_proposal(answer), ["Product", "Qty"], gm.TARGET_SCHEMA)
+
+    assert contract["fields"]["period_start"]["from_cell"] == "A1"
+    assert contract["fields"]["retailer"]["from_cell"] == "B1"
+    assert contract["fields"]["retailer"]["transforms"][0]["values"] == {"ACME": "acme_offline"}
+
+
+def test_the_prompt_lists_the_cells_down_to_the_header_by_reference():
+    layout = {"header_row": 1, "cells": {"A1": "Jul-26", "B1": "YISHUN", "B2": "HQ"}}
+
+    prompt = gm.mapping_prompt.user_prompt("codes.xlsx", {}, [], layout, 2, [], [])
+
+    assert '"A1": "Jul-26"' in prompt
+    assert '"B2"' not in prompt
+
+
 def _answer_field(target, status, **values):
     return {
         "target": target, "status": status, "source": "", "melt_group": "", "from_field": "",
@@ -535,7 +608,8 @@ def _answer_field(target, status, **values):
 def _answer_transform(kind, **values):
     return {
         "type": kind, "pattern": "", "group": 0, "values": [], "rules": [], "default": "",
-        "case_sensitive": False, "column": "", "factors": [], "format": "", **values,
+        "case_sensitive": False, "column": "", "factors": [], "format": "", "decimal": "", "factor": 0,
+        "case": "", "replacement": "", "tokens": [], "columns": [], "separator": "", "index": 0, **values,
     }
 
 
@@ -602,6 +676,35 @@ def test_the_prompt_shows_the_cells_above_the_header_counted_up_from_it():
     assert '"rows_above": 3' in prompt
 
 
+def test_the_prompt_shows_the_headings_under_the_header_counted_down_from_it():
+    layout = {"header_row": 1, "rows_below_header": [{"row": 2, "cells": {"YISHUN": "HQ"}, "in_table": False}]}
+
+    prompt = gm.mapping_prompt.user_prompt("codes.xlsx", {}, [], layout, 2, [], [])
+
+    assert '"cells_below_header"' in prompt
+    assert '"rows_below": 1' in prompt and '"HQ"' in prompt
+
+
+@pytest.mark.parametrize("answer_label, label", [
+    ({"rows_above": 0, "rows_below": 1, "target": "store_code"}, {"rows_below": 1, "target": "store_code"}),
+    ({"rows_above": 1, "rows_below": 0, "target": "store_code"}, {"rows_above": 1, "target": "store_code"}),
+    ({"rows_above": 0, "rows_below": 0, "target": "store_code"}, {"rows_above": 0, "target": "store_code"}),
+])
+def test_a_proposed_label_reads_under_the_headings_only_when_rows_below_is_set(answer_label, label):
+    answer = {
+        "fields": [],
+        "melt_groups": [{
+            "id": "outlets", "select_kind": "pattern", "select_pattern": "^[A-Z]+$", "select_after": "",
+            "select_before": "", "key_target": "store_name", "key_pattern": "", "date_format": "",
+            "period_type": "", "value_target": "quantity_units", "labels": [answer_label],
+            "confidence": "high", "rationale": "",
+        }],
+        "aggregate_to_month": False,
+    }
+
+    assert gm.mapping_prompt.parse_proposal(answer)["melt_groups"][0]["labels"] == [label]
+
+
 def test_disable_examples_flag_leaves_every_reference_contract_out_of_the_prompt(monkeypatch):
     monkeypatch.delenv("MAPPING_DISABLE_EXAMPLES", raising=False)
     with_examples = gm.mapping_prompt.user_prompt("new.xlsx", {}, [], {}, 2, [], [])
@@ -634,3 +737,179 @@ def test_unused_parameters_written_as_empty_or_zero_are_left_out():
     assert "melt_group" not in entry and "from_field" not in entry and "value" not in entry
     assert entry["transforms"] == [{"type": "regex_extract", "pattern": "(\d+)"}]
     assert "aggregate" not in contract
+
+
+# ---- The model's vocabulary is the transformation's ---------------------------------------
+#
+# Generation and transformation are tested apart: here a scripted model answers
+# and only the contract it leads to is judged; test_apply_contract.py runs
+# contracts with no model anywhere.
+
+def test_every_transform_the_engine_runs_is_explained_and_no_other():
+    assert set(gm.mapping_prompt.TRANSFORM_GUIDE) == set(gm.mapping_prompt.TRANSFORM_TYPES)
+    for kind, guide in gm.mapping_prompt.TRANSFORM_GUIDE.items():
+        assert f"- {kind}: {guide}" in gm.mapping_prompt.SYSTEM_PROMPT
+
+
+def test_the_schema_lets_the_model_name_only_the_engines_transforms_and_filters():
+    schema = gm.mapping_prompt.output_schema(["Qty", "Type"])
+
+    transform = schema["properties"]["fields"]["items"]["properties"]["transforms"]["items"]["properties"]
+    row_filter = schema["properties"]["filters"]["items"]["properties"]
+    assert transform["type"]["enum"] == list(gm.mapping_prompt.TRANSFORM_TYPES)
+    assert transform["columns"]["items"]["enum"] == ["Qty", "Type"]
+    assert set(transform["decimal"]["enum"]) == {".", ",", ""}
+    assert row_filter["column"]["enum"] == ["Qty", "Type"]
+    assert row_filter["op"]["enum"] == list(gm.mapping_prompt.FILTER_OPS)
+    assert set(schema["required"]) == {"fields", "melt_groups", "filters", "aggregate_to_month", "unsupported"}
+
+
+def test_the_prompt_says_what_the_transformation_cannot_do():
+    for limit in gm.mapping_prompt.ENGINE_LIMITS:
+        assert limit in gm.mapping_prompt.SYSTEM_PROMPT
+
+
+def _ledger_answer(**changes) -> dict:
+    """The model's answer for conftest's ledger_csv, reading each value as it is written."""
+    fields = {
+        "period_start": _answer_field("period_start", "mapped", source="Txn Date", transforms=[
+            _answer_transform("month_start", format="%d/%m/%Y"),
+        ]),
+        "period_type": _answer_field("period_type", "constant", value="month"),
+        "retailer": _answer_field("retailer", "constant", value="acme_offline"),
+        "store_code": _answer_field("store_code", "mapped", source="Outlet", transforms=[
+            _answer_transform("split_part", separator=" - ", index=1),
+        ]),
+        "sku": _answer_field("sku", "mapped", source="Item", transforms=[
+            _answer_transform("value_map", values=[{"from": "A-1", "to": "13255043"}, {"from": "A-2", "to": "13255044"}]),
+        ]),
+        "quantity_units": _answer_field("quantity_units", "mapped", source="Qty", transforms=[
+            _answer_transform("parse_number", decimal="."),
+            _answer_transform("uom_factor", column="Type", factors=[{"uom": "RETURN", "factor": -1, "factor_column": ""}]),
+        ]),
+        "revenue": _answer_field("revenue", "mapped", source="Net Sales", transforms=[
+            _answer_transform("parse_number", decimal="."), _answer_transform("add", column="Discount"),
+        ]),
+        **changes,
+    }
+    return {
+        "fields": [{**field, "from_cell": ""} for field in fields.values()],
+        "melt_groups": [],
+        "filters": [
+            {"column": "Supplier", "op": "equals", "value": "XEL", "action": "keep", "case_sensitive": False},
+            {"column": "Type", "op": "equals", "value": "TRANSFER", "action": "drop", "case_sensitive": False},
+        ],
+        "aggregate_to_month": True,
+        "unsupported": [],
+    }
+
+
+def _ledger():
+    return gm.read_layout("ledger.csv", ledger_csv())
+
+
+def test_a_proposal_using_the_reading_steps_and_filters_passes_in_one_call(monkeypatch):
+    messages = _install(monkeypatch, [_ledger_answer()])
+    frame, layout = _ledger()
+
+    proposal = gm.generate_mapping_contract("ledger.csv", frame, layout)
+
+    contract = proposal["contract"]
+    assert len(messages.calls) == 1
+    assert contract["warnings"] == []
+    assert gm.mapping_checks.failures(proposal["checks"]) == []
+    assert contract["fields"]["revenue"]["transforms"] == [
+        {"type": "parse_number", "decimal": "."}, {"type": "add", "column": "Discount"},
+    ]
+    assert contract["fields"]["quantity_units"]["transforms"][1]["factors"] == {"RETURN": -1}
+    assert [item["action"] for item in contract["filters"]] == ["keep", "drop"]
+
+
+def test_the_prompt_shows_how_each_text_column_is_written(monkeypatch):
+    messages = _install(monkeypatch, [_ledger_answer()])
+    frame, layout = _ledger()
+
+    gm.generate_mapping_contract("ledger.csv", frame, layout)
+
+    prompt = _text(messages.calls[0]["contents"][0])
+    assert '"written_as"' in prompt
+    assert '"%d/%m/%Y"' in prompt
+    assert '"currency"' in prompt
+
+
+def test_figures_left_unparsed_are_sent_back_with_the_values_and_the_step_to_add(monkeypatch):
+    unparsed = _ledger_answer(revenue=_answer_field("revenue", "mapped", source="Net Sales"))
+    messages = _install(monkeypatch, [unparsed, _ledger_answer()])
+    frame, layout = _ledger()
+
+    proposal = gm.generate_mapping_contract("ledger.csv", frame, layout)
+
+    repair = _text(messages.calls[1]["contents"][2])
+    assert proposal["attempts"] == 2
+    assert "$1,250.50" in repair and "parse_number" in repair
+    assert gm.mapping_checks.failures(proposal["checks"]) == []
+
+
+def test_a_step_the_engine_does_not_have_is_dropped_and_sent_back_never_run(monkeypatch):
+    invented = _ledger_answer(quantity_units=_answer_field("quantity_units", "mapped", source="Qty", transforms=[
+        _answer_transform("round_to_integer"),
+    ]))
+    messages = _install(monkeypatch, [invented, _ledger_answer()])
+    frame, layout = _ledger()
+
+    proposal = gm.generate_mapping_contract("ledger.csv", frame, layout)
+
+    repair = _text(messages.calls[1]["contents"][2])
+    assert "unsupported type: 'round_to_integer'" in repair
+    assert proposal["attempts"] == 2
+    for entry in proposal["contract"]["fields"].values():
+        assert {step["type"] for step in entry.get("transforms") or []} <= set(gm.mapping_prompt.TRANSFORM_TYPES)
+
+
+def test_what_the_model_flags_as_unsupported_reaches_the_reviewer_as_a_check(monkeypatch):
+    answer = _ledger_answer(revenue=_answer_field("revenue", "not_available", reason="Sales are in two currencies."))
+    answer["unsupported"] = [{"field": "revenue", "issue": "Net Sales mixes SGD and MYR with no rate to convert by."}]
+    _install(monkeypatch, [answer])
+    frame, layout = _ledger()
+
+    proposal = gm.generate_mapping_contract("ledger.csv", frame, layout)
+
+    flagged = next(check for check in proposal["checks"] if check["id"] == "unsupported_1")
+    assert proposal["attempts"] == 1
+    assert "SGD and MYR" in flagged["message"]
+    assert proposal["contract"]["unsupported"] == [
+        {"field": "revenue", "issue": "Net Sales mixes SGD and MYR with no rate to convert by."},
+    ]
+
+
+def test_the_prompt_names_the_stacked_sheets_and_the_period_in_the_files_name(monkeypatch):
+    messages = _install(monkeypatch, [_answer(reference_contracts.reference_contract("prime_sales"))])
+    filename = "Prime - Jan 2026 - Sales report.xlsx"
+    frame, layout = gm.read_layout(filename, prime_sales_xlsx())
+
+    proposal = gm.generate_mapping_contract(filename, frame, layout)
+
+    prompt = _text(messages.calls[0]["contents"][0])
+    assert '"stacked_sheets"' in prompt and '"filename_period"' in prompt
+    assert proposal["contract"]["fields"]["period_start"]["from_layout"] == "filename_period"
+    assert proposal["contract"]["layout"]["stacked_sheets"] is True
+    assert gm.mapping_checks.failures(proposal["checks"]) == []
+
+
+def test_replace_and_concat_keep_an_empty_replacement_and_separator():
+    answer = {
+        "fields": [
+            _answer_field("store_code", "mapped", source="Qty", transforms=[
+                _answer_transform("replace", pattern="^0+"),
+                _answer_transform("concat", columns=["Type"]),
+            ]),
+        ],
+        "melt_groups": [], "filters": [], "aggregate_to_month": False, "unsupported": [],
+    }
+
+    contract = gm.validate_contract(gm.mapping_prompt.parse_proposal(answer), ["Qty", "Type"], gm.TARGET_SCHEMA)
+
+    assert contract["fields"]["store_code"]["transforms"] == [
+        {"type": "replace", "pattern": "^0+", "replacement": ""},
+        {"type": "concat", "columns": ["Type"], "separator": ""},
+    ]

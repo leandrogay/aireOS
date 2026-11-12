@@ -7,7 +7,7 @@ from typing import Any
 import pandas as pd
 
 from app.schemas.sellout import BUSINESS_COLUMNS
-from app.services import mapping_contract
+from app.services import layout_detection, mapping_contract, value_parsing
 
 
 class ContractApplicationError(ValueError):
@@ -111,26 +111,25 @@ def preview_rows(dataframe: pd.DataFrame, limit: int = 3) -> list[dict[str, Any]
 def _labels(group: dict, layout: dict | None, columns: list[str]) -> dict[str, dict[str, str]]:
     """
     Each label field of a melt group and, per melted column, the cell above
-    that column's header it reads (SingHealth's outlet code over its name).
+    or below that column's header it reads (SingHealth's outlet code over its
+    name, another file's code under it).
 
     A melted column with no cell there fails the file: its rows would load
     with no store code and be counted as the retailer's "all stores".
     """
     labels = {}
-    header_row = int((layout or {}).get("header_row") or 1)
-    above = {item["row"]: item["cells"] for item in (layout or {}).get("rows_above_header") or []}
     for label in group.get("labels") or []:
         # No rows above: the header itself, read for a second field.
-        if label["rows_above"] == 0:
+        if mapping_contract.reads_headings(label):
             labels[label["target"]] = {column: column for column in columns}
             continue
-        row = header_row - label["rows_above"]
-        cells = above.get(row) or {}
+        cells = mapping_contract.label_cells(label, layout)
         missing = [column for column in columns if column not in cells]
         if missing:
+            where = "below" if label.get("rows_below") is not None else "above"
             raise ContractApplicationError(
-                f"Melt group {group['id']!r} reads {label['target']!r} from row {row}, "
-                f"which has nothing above {missing[:3]}."
+                f"Melt group {group['id']!r} reads {label['target']!r} from row "
+                f"{mapping_contract.label_row(label, layout)}, which has nothing {where} {missing[:3]}."
             )
         labels[label["target"]] = {column: cells[column] for column in columns}
     return labels
@@ -173,7 +172,7 @@ def _melt(dataframe: pd.DataFrame, contract: dict, layout: dict | None) -> pd.Da
         if key["target"] == "period_start":
             try:
                 key_values = pd.to_datetime(
-                    key_values,
+                    key_values.map(value_parsing.month_names),
                     format=key.get("date_format"),
                     errors="raise",
                 )
@@ -214,20 +213,56 @@ def _melt(dataframe: pd.DataFrame, contract: dict, layout: dict | None) -> pd.Da
 
 def _rule_matches(value: str, rule: dict, case_sensitive: bool) -> bool:
     """Whether one rules-transform condition matches one source value."""
-    expected = rule["value"]
-    actual = value
-    if rule["op"] != "regex" and not case_sensitive:
-        actual, expected = actual.casefold(), expected.casefold()
-    if rule["op"] == "equals":
-        return actual == expected
-    if rule["op"] == "startswith":
-        return actual.startswith(expected)
-    if rule["op"] == "endswith":
-        return actual.endswith(expected)
-    if rule["op"] == "contains":
-        return expected in actual
-    flags = 0 if case_sensitive else re.IGNORECASE
-    return bool(re.search(expected, actual, flags=flags))
+    return mapping_contract.rule_matches(value, rule["op"], rule["value"], case_sensitive)
+
+
+def _calculated(series: pd.Series, compute, numbers: pd.Series | None = None) -> pd.Series:
+    """
+    A figure worked out from each value (`compute` is given the values as
+    numbers). A value that is there but is not a number is kept as it was
+    written, so validation rejects its row and counts it; turned into an
+    empty cell it would vanish like a store that sold nothing.
+    """
+    if numbers is None:
+        numbers = pd.to_numeric(series, errors="coerce")
+    unreadable = numbers.isna() & ~value_parsing.is_blank(series)
+    result = compute(numbers)
+    if not unreadable.any():
+        return result
+    return result.astype(object).where(~unreadable, series)
+
+
+def _text_step(series: pd.Series, change) -> pd.Series:
+    """A step applied to each value's text; an empty cell stays empty."""
+    def apply(value):
+        if pd.isna(value) or str(value).strip() == "":
+            return value
+        return change(str(value).strip())
+
+    return series.map(apply)
+
+
+def _arithmetic(series: pd.Series, target: str, transformation: dict, context: pd.DataFrame) -> pd.Series:
+    """Each value worked out with the same row's value in another column."""
+    operation, column = transformation["type"], transformation["column"]
+    other = value_parsing.read_numbers(context[column])
+    if operation == "multiply":
+        return _calculated(series, lambda numbers: numbers * other)
+    if operation == "divide":
+        # Nothing divides by an empty cell or by 0, and the undivided figure
+        # must not load in its place.
+        undivided = pd.to_numeric(series, errors="coerce").notna() & ~(other.abs() > 0)
+        if undivided.any():
+            raise ContractApplicationError(
+                f"{target!r} is divided by {column!r}, which is empty or 0 on {int(undivided.sum())} "
+                "rows that have a value to divide."
+            )
+        return _calculated(series, lambda numbers: numbers / other)
+    # An empty cell beside a figure adds or takes away nothing.
+    other = other.fillna(0)
+    if operation == "add":
+        return _calculated(series, lambda numbers: numbers + other)
+    return _calculated(series, lambda numbers: numbers - other)
 
 
 def _apply_transform(
@@ -270,16 +305,53 @@ def _apply_transform(
         return series.map(translate)
     if operation == "forward_fill":
         return series.ffill()
-    if operation == "month_start":
-        date_format = transformation.get("format")
-        parsed = pd.to_datetime(series, format=date_format, errors="coerce")
-        return parsed.dt.to_period("M").dt.to_timestamp()
+    if operation in mapping_contract.DATE_TRANSFORMS:
+        # Read by the format given, or as ISO dates; never by guessing which
+        # of "01/02/2026" is the day (value_parsing.read_dates).
+        parsed = value_parsing.read_dates(series, transformation.get("format"))
+        if operation == "month_start":
+            return parsed.dt.to_period("M").dt.to_timestamp()
+        return parsed.dt.normalize()
     if operation == "zero_as_empty":
         numeric = pd.to_numeric(series, errors="coerce")
         return series.mask(numeric.eq(0))
     if operation == "negate":
-        numeric = pd.to_numeric(series, errors="coerce")
-        return -numeric
+        return _calculated(series, lambda numbers: -numbers)
+    if operation == "parse_number":
+        numbers = value_parsing.read_numbers(series, transformation.get("decimal", "."))
+        return _calculated(series, lambda read: read, numbers)
+    if operation == "scale":
+        return _calculated(series, lambda numbers: numbers * transformation["factor"])
+    if operation == "replace":
+        pattern = re.compile(transformation["pattern"])
+        return _text_step(series, lambda text: pattern.sub(transformation.get("replacement", ""), text))
+    if operation == "normalize_text":
+        change = {"upper": str.upper, "lower": str.lower, "title": str.title}.get(transformation.get("case"))
+        return _text_step(series, lambda text: change(" ".join(text.split())) if change else " ".join(text.split()))
+    if operation == "split_part":
+        def part(text):
+            parts = text.split(transformation["separator"])
+            index = transformation["index"]
+            position = index - 1 if index > 0 else index
+            found = parts[position].strip() if -len(parts) <= position < len(parts) else ""
+            return found or pd.NA
+
+        return _text_step(series, part)
+    if operation == "blank_if":
+        tokens = {token.casefold() for token in transformation["tokens"]}
+        return _text_step(series, lambda text: pd.NA if text.casefold() in tokens else text)
+    if operation == "fill_empty":
+        fill = context[transformation["column"]] if transformation.get("column") else transformation["default"]
+        return series.where(~value_parsing.is_blank(series), fill)
+    if operation == "concat":
+        parts = pd.concat([series, *(context[column] for column in transformation["columns"])], axis=1)
+        separator = transformation.get("separator", " ")
+
+        def joined(row):
+            present = [str(value).strip() for value in row if not pd.isna(value) and str(value).strip()]
+            return separator.join(present) if present else pd.NA
+
+        return parts.apply(joined, axis=1)
     if operation == "rules":
         values = context[transformation["column"]] if transformation.get("column") else series
         case_sensitive = transformation.get("case_sensitive", False)
@@ -297,7 +369,6 @@ def _apply_transform(
 
         return values.map(apply_rule)
     if operation == "uom_factor":
-        numeric = pd.to_numeric(series, errors="coerce")
         factor_source = context[transformation["column"]]
         factors = transformation.get("factors") or {}
         lookup = {str(key).casefold(): value for key, value in factors.items()}
@@ -312,14 +383,13 @@ def _apply_transform(
             return factor
 
         factor_values = pd.Series(
-            [factor_for(index) for index in numeric.index],
-            index=numeric.index,
+            [factor_for(index) for index in series.index],
+            index=series.index,
             dtype="float64",
         )
-        return numeric * factor_values
-    if operation == "multiply":
-        numeric = pd.to_numeric(series, errors="coerce")
-        return numeric * pd.to_numeric(context[transformation["column"]], errors="coerce")
+        return _calculated(series, lambda numbers: numbers * factor_values)
+    if operation in mapping_contract.ARITHMETIC_TRANSFORMS:
+        return _arithmetic(series, target, transformation, context)
     raise ContractApplicationError(
         f"Unsupported transformation type for {target!r}: {operation!r}"
     )
@@ -341,7 +411,7 @@ def _aggregate(result: pd.DataFrame, aggregate: dict) -> pd.DataFrame:
     """Roll mapped rows up to the contract's declared grain."""
     if aggregate.get("period") == "month":
         result["period_start"] = (
-            pd.to_datetime(result["period_start"], errors="coerce")
+            value_parsing.read_dates(result["period_start"])
             .dt.to_period("M")
             .dt.to_timestamp()
         )
@@ -367,8 +437,18 @@ def _aggregate(result: pd.DataFrame, aggregate: dict) -> pd.DataFrame:
     return totals
 
 
+def _unreadable_figures(output: pd.DataFrame, measures: list[str]) -> pd.Series:
+    """Rows holding a measure that is there but is not a number ("N/A", "$1,250.50" left unparsed)."""
+    unreadable = pd.Series(False, index=output.index)
+    for measure in measures:
+        unreadable |= pd.to_numeric(output[measure], errors="coerce").isna() & ~value_parsing.is_blank(output[measure])
+    return unreadable
+
+
 def _derive_period_fields(result: pd.DataFrame) -> pd.DataFrame:
-    periods = pd.to_datetime(result["period_start"], errors="coerce")
+    # ISO dates only: a period that reached here as other text was never
+    # given a format to be read by, and is rejected rather than guessed.
+    periods = value_parsing.read_dates(result["period_start"])
     result["period_start"] = periods
     result["period_end"] = periods
     weekly = result["period_type"].eq("week")
@@ -379,24 +459,75 @@ def _derive_period_fields(result: pd.DataFrame) -> pd.DataFrame:
     return result
 
 
-def _stated_month(layout: dict | None) -> pd.Timestamp:
+def _stated_month(layout: dict | None, source: str = "stated_period", source_file: str | None = None) -> pd.Timestamp:
     """
-    The calendar month the file states it covers above its table, for a
-    contract that reads its period from there. A statement spanning several
-    months cannot say which month a row belongs to.
+    The calendar month the file states it covers, for a contract that reads
+    its period from there: above its table (`stated_period`), or in its name
+    (`filename_period`). A statement spanning several months cannot say which
+    month a row belongs to.
     """
-    stated = (layout or {}).get("stated_period")
+    if source == "filename_period":
+        stated = layout_detection.filename_period(source_file)
+        where, missing = "file's name states", f"the name {source_file!r} states no month"
+    else:
+        stated = (layout or {}).get("stated_period")
+        where, missing = "file states", "this file states no period in its title or as a month heading"
     if not stated:
-        raise ContractApplicationError(
-            "The nomenclature reads the period from the file's title, but this file states no period."
-        )
+        raise ContractApplicationError(f"The nomenclature reads the period the {where}, but {missing}.")
     start, end = pd.Timestamp(stated["start"]), pd.Timestamp(stated["end"])
     if start.to_period("M") != end.to_period("M"):
         raise ContractApplicationError(
-            f"The file states the period {stated['start']} to {stated['end']}, which is more "
+            f"The {where} the period {stated['start']} to {stated['end']}, which is more "
             "than one month, so its rows cannot be dated to a month."
         )
     return start.to_period("M").to_timestamp()
+
+
+def _cell_field(target: str, entry: dict, layout: dict | None, context: pd.DataFrame) -> pd.Series:
+    """
+    A field read from one cell of the sheet and written on every row, after
+    its steps. Each file is read at the same cell, so July's file gives
+    "Jul-26" where August's gives "Aug-26". An empty cell, or a period cell
+    that names no date, fails the file rather than load rows without one.
+    """
+    reference = entry["from_cell"]
+    value = mapping_contract.cell_value(layout, reference)
+    if value is None:
+        raise ContractApplicationError(
+            f"The nomenclature reads {target!r} from cell {reference}, which is empty in this file."
+        )
+    series = _transformed_field(pd.Series(value, index=context.index, dtype=object), target, entry, context)
+    if target != "period_start":
+        return series
+    periods = series.map(mapping_contract.cell_period)
+    if periods.isna().any():
+        raise ContractApplicationError(
+            f"The nomenclature reads the period from cell {reference}, but {value!r} is not a month or a date."
+        )
+    return pd.to_datetime(periods)
+
+
+def _check_fixed_period(contract: dict, layout: dict | None) -> None:
+    """
+    A period typed into the contract as one fixed date must fall in the
+    period the file states, when it states one. A monthly file read through
+    the contract made from last month's would otherwise load every row into
+    last month without a word.
+    """
+    entry = (contract.get("fields") or {}).get("period_start") or {}
+    stated = (layout or {}).get("stated_period")
+    if entry.get("status") != "constant" or not stated:
+        return
+    fixed = pd.to_datetime(entry.get("value"), errors="coerce")
+    if pd.isna(fixed):
+        return
+    first, last = pd.Timestamp(stated["start"]).to_period("M"), pd.Timestamp(stated["end"]).to_period("M")
+    if not first <= fixed.to_period("M") <= last:
+        raise ContractApplicationError(
+            f"The nomenclature dates every row {fixed:%b %Y}, but this file states {stated['start']} to "
+            f"{stated['end']} (“{stated['stated_in']}”). Read Period start from the period the file "
+            "states instead of a fixed date, so each month's file is dated by itself."
+        )
 
 
 def apply_contract(
@@ -408,13 +539,28 @@ def apply_contract(
 ) -> pd.DataFrame:
     """
     Execute every instruction in one approved contract, deterministically and
-    without using AI. `layout` is what layout detection found in the file
-    (read_table); the contract reads its stated period and the cells above
-    its header from there.
+    without using AI: the same file and contract always give the same rows.
+    Nothing is guessed. A value an instruction cannot read is kept as it was
+    written, so validation rejects that row and says how many; a file an
+    instruction cannot be carried out on at all fails with the reason.
+    `layout` is what layout detection found in the file
+    (read_table); the contract reads its stated period, the cells above or
+    below its header and any one cell it writes on every row (`from_cell`)
+    from there, and a row of headings under the header
+    is not data (mapping_contract.table_rows). Columns are read by this
+    file's names for them ("Jul-26" for the "Aug-26" the contract was made
+    with, mapping_contract.with_file_columns).
     """
     if not contract.get("fields"):
         raise ContractApplicationError("Nomenclature contract is empty.")
 
+    contract = mapping_contract.with_file_columns(contract, list(dataframe.columns))
+    _check_fixed_period(contract, layout)
+    dataframe = mapping_contract.table_rows(dataframe, contract, layout)
+    try:
+        dataframe = mapping_contract.filtered_rows(dataframe, contract)
+    except ValueError as exc:
+        raise ContractApplicationError(f"The nomenclature cannot filter this file's rows: {exc}.") from exc
     working = _melt(dataframe, contract, layout)
     fields = contract["fields"]
     output = pd.DataFrame(index=working.index)
@@ -429,13 +575,19 @@ def apply_contract(
                 )
             output[target] = _transformed_field(working[source], target, entry, working)
         elif status == "constant":
-            output[target] = entry.get("value")
+            value = entry.get("value")
+            # A typed period is read as a cell's would be ("Aug 2026", day first).
+            if target == "period_start":
+                value = mapping_contract.cell_period(value) or value
+            output[target] = value
         elif status == "system":
             output[target] = source_file
         elif status == "not_available":
             output[target] = pd.NA
-        elif status == "derived" and entry.get("from_layout") == "stated_period":
-            output[target] = _stated_month(layout)
+        elif status == "derived" and entry.get("from_layout"):
+            output[target] = _stated_month(layout, entry["from_layout"], source_file)
+        elif status == "derived" and entry.get("from_cell"):
+            output[target] = _cell_field(target, entry, layout, working)
         elif target == "period_type" and status == "derived":
             if "_period_type" not in working:
                 raise ContractApplicationError(
@@ -472,6 +624,11 @@ def apply_contract(
     if measures:
         output = output.dropna(subset=measures, how="all")
     if contract.get("aggregate") and not output.empty:
-        output = _aggregate(output, contract["aggregate"])
+        # A figure that is not a number cannot be added up. Its row is left
+        # out of the totals and passed on as it is, for validation to reject.
+        unreadable = _unreadable_figures(output, measures)
+        readable = output[~unreadable].copy()
+        totals = _aggregate(readable, contract["aggregate"]) if not readable.empty else readable
+        output = pd.concat([totals, output[unreadable]], ignore_index=True) if unreadable.any() else totals
     output = _derive_period_fields(output)
     return output.reindex(columns=BUSINESS_COLUMNS).reset_index(drop=True)

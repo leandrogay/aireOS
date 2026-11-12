@@ -32,8 +32,15 @@ file and whether rows are rolled up:
                  "date_format": "%d-%m-%Y"},
          "value_target": "revenue", "period_type": "month"}
       ],
-      "aggregate": {"period": "month", "by": [...], "sum": ["quantity_units", "revenue"]}
+      "filters": [{"column": "Txn Type", "op": "equals", "value": "TRANSFER", "action": "drop"}],
+      "aggregate": {"period": "month", "by": [...], "sum": ["quantity_units", "revenue"]},
+      "unsupported": [{"field": "revenue", "issue": "Sales are in two currencies."}]
     }
+
+`filters` say which of the file's rows are sales at all: each drops the rows
+it matches, or keeps only those, before anything else is read. `unsupported`
+is where a proposal says what the file needs that no instruction can do, so
+the gap is put in front of a reviewer instead of papered over.
 
 Statuses:
   mapped         read from a source column, or from a melt group's key or value
@@ -42,7 +49,12 @@ Statuses:
                  (`from_field`, e.g. retailer from the outlet code's _Ecomm suffix,
                  revenue as quantity times a per-unit price column), or the
                  period the file states above its table (`from_layout`:
-                 "stated_period", SingHealth's "DATE : 01 Aug 2026 TO 31 Aug 2026")
+                 "stated_period", SingHealth's "DATE : 01 Aug 2026 TO 31 Aug 2026";
+                 "filename_period", the one month the file's name states, for a
+                 file that carries no date at all -- "Prime - Jan 2026 - ..."),
+                 or one cell of the sheet written on every row (`from_cell`:
+                 "A1", where Pharmex writes its month "Jul-26"); each month's
+                 file is read at the same cell, so it is dated by itself
   constant       the same `value` on every row (NHG's retailer)
   system         written by the pipeline (source_file)
   not_available  the file does not hold it; `reason` says why. Never invented.
@@ -52,7 +64,10 @@ code or a store name). Its `labels` read more of it: {"rows_above": 1,
 "target": "store_code"} fills store_code from the cell directly above each
 melted column, where SingHealth writes the outlet's code over its name, and
 {"rows_above": 0, "target": "store_name"} reads the header itself again, so one
-heading can fill both the store code and the store name.
+heading can fill both the store code and the store name. {"rows_below": 1,
+"target": "store_code"} reads the cell directly under each melted column's
+header instead, for a file that writes the outlet's code under its name; that
+row is a heading, so it is never read as data (table_rows).
 
 The sku field's value_map is the product-code table: each retailer code in the
 file and the master SKU it is. A field with no value_map uses the file's codes
@@ -67,6 +82,8 @@ import re
 import pandas as pd
 
 from app.schemas.sellout import BUSINESS_COLUMNS
+from app.services import value_parsing
+from app.services.column_profile import header_template, month_year
 
 FIELD_STATUSES = ("mapped", "derived", "constant", "system", "not_available")
 CONFIDENCE_LEVELS = ("high", "medium", "low")
@@ -96,7 +113,13 @@ HEADING_FIELDS = tuple(
 MELT_KEY_TARGETS = ("period_start", *HEADING_FIELDS)
 LABEL_TARGETS = HEADING_FIELDS
 # What a field may be read from in the file's layout rather than its table.
-LAYOUT_SOURCES = ("stated_period",)
+LAYOUT_SOURCES = ("stated_period", "filename_period")
+# What one cell of the sheet may fill on every row: the period, or any
+# descriptive field (an outlet written once at the top, say). A figure is
+# never one cell repeated.
+CELL_TARGETS = ("period_start", *HEADING_FIELDS)
+# A cell named the way a spreadsheet names it: "A1", "AB12".
+CELL_REFERENCE = re.compile(r"^[A-Z]{1,3}[1-9]\d*$")
 PERIOD_TYPES = ("month", "week")
 SELECTOR_KINDS = ("pattern", "between", "columns")
 
@@ -109,18 +132,69 @@ AGGREGATE_PERIODS = ("month",)
 FOOTER_LABEL_PATTERN = r"^(grand\s+)?total\b"
 SUBTOTAL_LABEL_PATTERN = r"^(grand\s+|sub\s*)?total$"
 
+# The transformation's whole vocabulary (apply_contract runs each; the
+# prompt, docs/mapping-transformations.md and the review screen's
+# transformSteps.js describe each). Grouped by what a step is for.
+TEXT_TRANSFORMS = ("regex_extract", "split_part", "replace", "normalize_text", "concat")
+LOOKUP_TRANSFORMS = ("value_map", "rules")
+EMPTY_TRANSFORMS = ("blank_if", "fill_empty", "forward_fill", "zero_as_empty")
+NUMBER_TRANSFORMS = ("parse_number", "negate", "scale", "uom_factor", "multiply", "divide", "add", "subtract")
+DATE_TRANSFORMS = ("parse_date", "month_start")
 TRANSFORM_TYPES = (
-    "regex_extract",
-    "value_map",
-    "rules",
-    "negate",
-    "uom_factor",
-    "multiply",
-    "month_start",
-    "forward_fill",
-    "zero_as_empty",
+    *TEXT_TRANSFORMS, *LOOKUP_TRANSFORMS, *EMPTY_TRANSFORMS, *NUMBER_TRANSFORMS, *DATE_TRANSFORMS,
 )
+# Steps that work a figure out with the same row's value in another column.
+ARITHMETIC_TRANSFORMS = ("multiply", "divide", "add", "subtract")
+TEXT_CASES = ("upper", "lower", "title", "keep")
 RULE_OPS = ("equals", "startswith", "endswith", "contains", "regex")
+# A row filter tests one column the way a rule does, or for an empty cell.
+FILTER_OPS = (*RULE_OPS, "empty")
+FILTER_ACTIONS = ("drop", "keep")
+
+
+# ---- Matching a value against a rule ------------------------------------------------
+
+def rule_matches(text: str, op: str, expected: str, case_sensitive: bool = False) -> bool:
+    """Whether a value meets one condition of a rules transform or a row filter (RULE_OPS)."""
+    if op == "regex":
+        return re.search(expected, text, 0 if case_sensitive else re.IGNORECASE) is not None
+    if not case_sensitive:
+        text, expected = text.casefold(), expected.casefold()
+    if op == "equals":
+        return text == expected
+    if op == "startswith":
+        return text.startswith(expected)
+    if op == "endswith":
+        return text.endswith(expected)
+    return op == "contains" and expected in text
+
+
+def rows_matching(frame: pd.DataFrame, row_filter: dict) -> pd.Series:
+    """
+    Which of the file's rows a row filter matches: the ones it drops, or the
+    only ones it keeps. An empty cell matches "empty" and nothing else.
+    Raises ValueError when the filter's column is not in the file.
+    """
+    column = row_filter["column"]
+    if column not in frame:
+        raise ValueError(f"row filter column {column!r} is not in the file")
+    blank = value_parsing.is_blank(frame[column])
+    if row_filter["op"] == "empty":
+        return blank
+    case_sensitive = row_filter.get("case_sensitive", False)
+    matched = frame[column].map(
+        lambda value: not pd.isna(value)
+        and rule_matches(str(value).strip(), row_filter["op"], row_filter["value"], case_sensitive)
+    )
+    return matched.astype(bool) & ~blank
+
+
+def filtered_rows(frame: pd.DataFrame, contract: dict) -> pd.DataFrame:
+    """The file's rows the contract's filters leave, each filter applied in turn."""
+    for row_filter in (contract or {}).get("filters") or []:
+        matched = rows_matching(frame, row_filter)
+        frame = frame[~matched if row_filter["action"] == "drop" else matched]
+    return frame.reset_index(drop=True)
 
 
 # ---- Reading a contract ----------------------------------------------------------
@@ -134,6 +208,57 @@ def read_contract(contract: dict | None) -> dict:
     contract = copy.deepcopy(contract or {})
     contract.setdefault("fields", {})
     contract.setdefault("melt_groups", [])
+    return contract
+
+
+def with_file_columns(contract: dict | None, columns: list[str]) -> dict:
+    """
+    A copy of a contract whose column names are this file's.
+
+    A file is matched to a contract by its headings with their months and
+    numbers set aside (column_profile.fingerprint), so next month's file may
+    head a column "Jul-26" where the contract, made from August's, names
+    "Aug-26". Each column the contract names that the file lacks becomes the
+    file's one column whose heading reads the same once its month and numbers
+    are set aside (header_template). A name with no such column, or with
+    several, is left as it is and fails where it is read, as before.
+    """
+    contract = read_contract(contract)
+    present = set(columns)
+    by_template: dict[str, list[str]] = {}
+    for column in columns:
+        by_template.setdefault(header_template(column), []).append(column)
+
+    def renamed(name):
+        if not isinstance(name, str) or name in present:
+            return name
+        matches = by_template.get(header_template(name)) or []
+        return matches[0] if len(matches) == 1 else name
+
+    for entry in contract["fields"].values():
+        if entry.get("source"):
+            entry["source"] = renamed(entry["source"])
+        for transform in entry.get("transforms") or []:
+            if transform.get("column"):
+                transform["column"] = renamed(transform["column"])
+            if transform.get("columns"):
+                transform["columns"] = [renamed(column) for column in transform["columns"]]
+            for factor in (transform.get("factors") or {}).values():
+                if isinstance(factor, dict) and factor.get("column"):
+                    factor["column"] = renamed(factor["column"])
+    for group in contract["melt_groups"]:
+        select = group.get("select") or {}
+        for marker in ("after", "before"):
+            if select.get(marker):
+                select[marker] = renamed(select[marker])
+        if select.get("columns"):
+            select["columns"] = [renamed(column) for column in select["columns"]]
+    for row_filter in contract.get("filters") or []:
+        if isinstance(row_filter, dict) and row_filter.get("column"):
+            row_filter["column"] = renamed(row_filter["column"])
+    layout = contract.get("layout")
+    if isinstance(layout, dict) and layout.get("fill_down"):
+        layout["fill_down"] = [renamed(column) for column in layout["fill_down"]]
     return contract
 
 
@@ -190,6 +315,103 @@ def group_columns(contract: dict, columns: list[str]) -> dict[str, list[str]]:
         except (ValueError, re.error):
             resolved[group["id"]] = []
     return resolved
+
+
+# ---- The rows a melt group's labels read ----------------------------------------------
+
+def reads_headings(label: dict) -> bool:
+    """Whether a label reads the headings themselves again (rows_above 0) rather than another row."""
+    return label.get("rows_below") is None and label.get("rows_above") == 0
+
+
+def label_row(label: dict, layout: dict | None) -> int:
+    """The file row a label reads: counted up from the header row, or down with rows_below."""
+    header_row = int((layout or {}).get("header_row") or 1)
+    if label.get("rows_below") is not None:
+        return header_row + label["rows_below"]
+    return header_row - label["rows_above"]
+
+
+def label_cells(label: dict, layout: dict | None) -> dict[str, str]:
+    """
+    The cells of the row a label reads, keyed by the header each sits under
+    (layout_detection rows_above_header / rows_below_header); {} when the
+    file has nothing on that row.
+    """
+    key = "rows_below_header" if label.get("rows_below") is not None else "rows_above_header"
+    row = label_row(label, layout)
+    return next((item["cells"] for item in (layout or {}).get(key) or [] if item.get("row") == row), {})
+
+
+def table_rows(frame: pd.DataFrame, contract: dict, layout: dict | None) -> pd.DataFrame:
+    """
+    The file's data rows without the rows of headings under its header that
+    the contract reads labels from: outlet codes under the outlet names are
+    headings, not sales. Layout detection keeps such a row in the table when
+    nothing else marks it (layout_detection _rows_below_header, `in_table`),
+    always at the top. Rows are matched by their cells, so a table they were
+    already taken out of comes back as it is.
+    """
+    deepest = max(
+        (
+            label["rows_below"]
+            for group in (contract or {}).get("melt_groups") or []
+            for label in group.get("labels") or []
+            if label.get("rows_below") is not None
+        ),
+        default=0,
+    )
+    if not deepest:
+        return frame
+    # Every row from the header down to the deepest one read is a heading.
+    last = int((layout or {}).get("header_row") or 1) + deepest
+    headings = [
+        item["cells"]
+        for item in (layout or {}).get("rows_below_header") or []
+        if item["row"] <= last and item.get("in_table")
+    ]
+    if not headings:
+        return frame
+    top = frame.head(len(headings))
+    taken = [
+        index
+        for index, record in zip(top.index, top.to_dict(orient="records"))
+        if {column: value for column, value in record.items() if value is not None} in headings
+    ]
+    return frame.drop(index=taken).reset_index(drop=True)
+
+
+# ---- One cell written on every row --------------------------------------------------
+
+def clean_cell_reference(value) -> str | None:
+    """A cell reference as the contract stores it ("a1", "$A$1" -> "A1"), or None when it is not one."""
+    text = str(value if value is not None else "").strip().upper().replace("$", "")
+    return text if CELL_REFERENCE.match(text) else None
+
+
+def cell_value(layout: dict | None, reference: str) -> str | None:
+    """
+    The text in one cell at the top of the sheet (layout_detection `cells`),
+    or None when the cell is empty or lies below the rows that are kept.
+    """
+    return ((layout or {}).get("cells") or {}).get(reference)
+
+
+def cell_period(text) -> pd.Timestamp | None:
+    """
+    The date a cell's value names, or None: a month and year ("Jul-26",
+    "August 2026") is its first day, else a date as Excel or a person writes
+    it ("2026-07-01", "01/07/2026").
+    """
+    if text is None or not str(text).strip():
+        return None
+    month = month_year(text)
+    if month is not None:
+        return month
+    parsed = pd.to_datetime(str(text).strip(), format="ISO8601", errors="coerce")
+    if pd.isna(parsed):
+        parsed = pd.to_datetime(str(text).strip(), dayfirst=True, errors="coerce")
+    return None if pd.isna(parsed) else parsed.normalize()
 
 
 # ---- Validation ---------------------------------------------------------------------
@@ -321,12 +543,13 @@ def _validate_uom_factor(target, raw, raw_columns, reject):
     for uom, factor in (raw.get("factors") or {}).items():
         if isinstance(factor, dict) and factor.get("column") in raw_columns:
             factors[str(uom).strip()] = {"column": factor["column"]}
-        elif isinstance(factor, (int, float)) and not isinstance(factor, bool) and factor > 0:
+        # Negative for the rows a type column marks as returns.
+        elif _is_number(factor) and factor != 0:
             factors[str(uom).strip()] = factor
         else:
             return reject(
                 f"Dropped transformation for {target!r} — factor for {uom!r} must be a "
-                "positive number or a column of the file"
+                "number other than 0 or a column of the file"
             )
     default = raw.get("default", 1)
     if not isinstance(default, (int, float)) or isinstance(default, bool) or default <= 0:
@@ -334,12 +557,109 @@ def _validate_uom_factor(target, raw, raw_columns, reject):
     return {"type": "uom_factor", "column": column, "factors": factors, "default": default}
 
 
-def _validate_multiply(target, raw, raw_columns, reject):
-    """Each value times the same row's value in another column (units x price)."""
+def _validate_arithmetic(target, operation, raw, raw_columns, reject):
+    """Each value worked out with the same row's value in another column (units x price)."""
     column = raw.get("column")
     if column not in raw_columns:
-        return reject(f"Dropped transformation for {target!r} — multiply column {column!r} is not in the file")
-    return {"type": "multiply", "column": column}
+        return reject(f"Dropped transformation for {target!r} — {operation} column {column!r} is not in the file")
+    return {"type": operation, "column": column}
+
+
+def _is_number(value) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _validate_parse_number(target, raw, reject):
+    decimal = raw.get("decimal") or "."
+    if decimal not in value_parsing.DECIMAL_MARKS:
+        return reject(f"Dropped transformation for {target!r} — parse_number decimal must be '.' or ','")
+    return {"type": "parse_number", "decimal": decimal}
+
+
+def _validate_scale(target, raw, reject):
+    factor = raw.get("factor")
+    if not _is_number(factor) or factor == 0:
+        return reject(f"Dropped transformation for {target!r} — scale needs a factor other than 0")
+    return {"type": "scale", "factor": factor}
+
+
+def _validate_date_step(target, operation, raw, reject):
+    """parse_date or month_start: an optional strptime format that must at least be usable."""
+    date_format = str(raw.get("format") or "").strip()
+    if not date_format:
+        return {"type": operation}
+    if date_format != value_parsing.EXCEL_SERIAL and "%" not in date_format:
+        return reject(
+            f"Dropped transformation for {target!r} — {operation} format {date_format!r} is not a "
+            f"strptime format such as '%d/%m/%Y', nor {value_parsing.EXCEL_SERIAL!r}"
+        )
+    return {"type": operation, "format": date_format}
+
+
+def _validate_replace(target, raw, reject):
+    pattern = raw.get("pattern")
+    try:
+        re.compile(pattern or "")
+    except (re.error, TypeError) as exc:
+        return reject(f"Dropped transformation for {target!r} — invalid regex: {exc}")
+    if not pattern:
+        return reject(f"Dropped transformation for {target!r} — replace needs a pattern")
+    replacement = str(raw.get("replacement") if raw.get("replacement") is not None else "")
+    try:
+        re.sub(pattern, replacement, "")
+    except (re.error, IndexError) as exc:
+        return reject(f"Dropped transformation for {target!r} — invalid replacement: {exc}")
+    return {"type": "replace", "pattern": pattern, "replacement": replacement}
+
+
+def _validate_normalize_text(target, raw, reject):
+    case = str(raw.get("case") or "keep").strip().lower()
+    if case not in TEXT_CASES:
+        return reject(f"Dropped transformation for {target!r} — case must be one of {', '.join(TEXT_CASES)}")
+    return {"type": "normalize_text", "case": case}
+
+
+def _validate_blank_if(target, raw, reject):
+    tokens = raw.get("tokens")
+    tokens = [str(token).strip() for token in tokens if str(token).strip()] if isinstance(tokens, list) else []
+    if not tokens:
+        return reject(f"Dropped transformation for {target!r} — blank_if needs at least one token")
+    return {"type": "blank_if", "tokens": list(dict.fromkeys(tokens))}
+
+
+def _validate_fill_empty(target, raw, raw_columns, reject):
+    column = raw.get("column")
+    default = str(raw.get("default") if raw.get("default") is not None else "").strip()
+    if column:
+        if column not in raw_columns:
+            return reject(f"Dropped transformation for {target!r} — fill_empty column {column!r} is not in the file")
+        return {"type": "fill_empty", "column": column}
+    if not default:
+        return reject(f"Dropped transformation for {target!r} — fill_empty needs a default or a column")
+    return {"type": "fill_empty", "default": default}
+
+
+def _validate_concat(target, raw, raw_columns, reject):
+    columns = raw.get("columns")
+    if not isinstance(columns, list) or not columns:
+        return reject(f"Dropped transformation for {target!r} — concat needs at least one column")
+    missing = [column for column in columns if column not in raw_columns]
+    if missing:
+        return reject(f"Dropped transformation for {target!r} — concat columns not in the file: {missing[:3]}")
+    separator = raw.get("separator")
+    return {"type": "concat", "columns": list(columns), "separator": separator if isinstance(separator, str) else " "}
+
+
+def _validate_split_part(target, raw, reject):
+    separator, index = raw.get("separator"), raw.get("index")
+    if not isinstance(separator, str) or separator == "":
+        return reject(f"Dropped transformation for {target!r} — split_part needs a separator")
+    if not _whole_number(index) or index == 0:
+        return reject(
+            f"Dropped transformation for {target!r} — split_part index counts parts from 1, "
+            "or from the end with -1; it is never 0"
+        )
+    return {"type": "split_part", "separator": separator, "index": index}
 
 
 def validate_transforms(
@@ -383,12 +703,26 @@ def validate_transforms(
             transform = _validate_rules(target, raw, raw_columns, reject)
         elif operation == "uom_factor":
             transform = _validate_uom_factor(target, raw, raw_columns, reject)
-        elif operation == "multiply":
-            transform = _validate_multiply(target, raw, raw_columns, reject)
-        elif operation == "month_start":
-            transform = {"type": "month_start"}
-            if raw.get("format"):
-                transform["format"] = str(raw["format"])
+        elif operation in ARITHMETIC_TRANSFORMS:
+            transform = _validate_arithmetic(target, operation, raw, raw_columns, reject)
+        elif operation in DATE_TRANSFORMS:
+            transform = _validate_date_step(target, operation, raw, reject)
+        elif operation == "parse_number":
+            transform = _validate_parse_number(target, raw, reject)
+        elif operation == "scale":
+            transform = _validate_scale(target, raw, reject)
+        elif operation == "replace":
+            transform = _validate_replace(target, raw, reject)
+        elif operation == "normalize_text":
+            transform = _validate_normalize_text(target, raw, reject)
+        elif operation == "blank_if":
+            transform = _validate_blank_if(target, raw, reject)
+        elif operation == "fill_empty":
+            transform = _validate_fill_empty(target, raw, raw_columns, reject)
+        elif operation == "concat":
+            transform = _validate_concat(target, raw, raw_columns, reject)
+        elif operation == "split_part":
+            transform = _validate_split_part(target, raw, reject)
         elif operation in ("negate", "forward_fill", "zero_as_empty"):
             transform = {"type": operation}
         else:
@@ -396,6 +730,10 @@ def validate_transforms(
         if transform is None:
             return None
         clean.append(transform)
+        # The samples are the column as the file has it. Once a step has
+        # changed the values, a later step no longer meets them.
+        if operation != "forward_fill":
+            values = []
     return clean
 
 
@@ -409,18 +747,32 @@ def _validate_labels(raw, key_target: str, label: str, warnings: list[str]) -> l
     clean = []
     for item in raw:
         item = item if isinstance(item, dict) else {}
-        rows_above, target = item.get("rows_above"), item.get("target")
-        if not isinstance(rows_above, int) or isinstance(rows_above, bool) or rows_above < 0:
+        rows_above, rows_below, target = item.get("rows_above"), item.get("rows_below"), item.get("target")
+        if rows_below is not None:
+            if rows_above is not None or not _whole_number(rows_below) or rows_below < 1:
+                warnings.append(
+                    f"Dropped melt group for {label!r} — a label reads rows_above or rows_below, "
+                    "not both, and rows_below must be 1 or more"
+                )
+                return None
+            position = {"rows_below": rows_below}
+        elif not _whole_number(rows_above) or rows_above < 0:
             warnings.append(f"Dropped melt group for {label!r} — a label's rows_above must be 0 (the header) or more")
             return None
+        else:
+            position = {"rows_above": rows_above}
         if target not in LABEL_TARGETS or target == key_target or any(c["target"] == target for c in clean):
             warnings.append(
                 f"Dropped melt group for {label!r} — each label fills one descriptive field "
                 f"({', '.join(LABEL_TARGETS)}) once, and not the field the key fills"
             )
             return None
-        clean.append({"rows_above": rows_above, "target": target})
+        clean.append({**position, "target": target})
     return clean
+
+
+def _whole_number(value) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
 
 
 def _group_fills(group: dict) -> tuple[str, ...]:
@@ -483,7 +835,7 @@ def _validate_group(group, raw_columns, target_schema, trust_review, warnings):
             warnings.append(f"Dropped melt group for {label!r} — a period key needs a date_format")
             return None
         try:
-            pd.to_datetime(pd.Series(keys), format=date_format, errors="raise")
+            pd.to_datetime(pd.Series(keys).map(value_parsing.month_names), format=date_format, errors="raise")
         except Exception as exc:
             warnings.append(
                 f"Dropped melt group for {label!r} — date_format {date_format!r} "
@@ -519,6 +871,18 @@ def _validate_group(group, raw_columns, target_schema, trust_review, warnings):
         if period_type:
             clean["period_type"] = period_type
     return clean, columns
+
+
+def _has_values(entry: dict) -> bool:
+    """
+    Whether a field gives another field values to be worked out from: not one
+    that is missing, nor one itself worked out from a field, which would chain.
+    A field read from the title or a cell is derived but has its value.
+    """
+    status = entry.get("status")
+    if status == "derived":
+        return bool(entry.get("from_cell") or entry.get("from_layout"))
+    return status not in ("not_available", None)
 
 
 def _fixed_entry(target: str) -> dict | None:
@@ -559,7 +923,8 @@ def validate_contract(
     a reviewer; a freshly generated contract has every "reviewed" flag cleared.
     """
     target_schema = list(target_schema or BUSINESS_COLUMNS)
-    proposed = read_contract(contract)
+    # Next month's file names its month heading differently; it is still the column meant.
+    proposed = with_file_columns(contract, raw_columns)
     warnings: list[str] = list(proposed.get("warnings") or [])
     samples = samples or {}
     raw_set = set(raw_columns)
@@ -614,7 +979,7 @@ def validate_contract(
     for target, entry in fields.items():
         source_field = entry.get("from_field")
         if entry["status"] == "derived" and source_field:
-            if fields.get(source_field, {}).get("status") in ("not_available", "derived", None):
+            if not _has_values(fields.get(source_field) or {}):
                 warnings.append(
                     f"Dropped field nomenclature — {target!r} is derived from {source_field!r}, "
                     "which has no values"
@@ -628,7 +993,7 @@ def validate_contract(
         period_type.get("status") != "constant" or period_type.get("value") != "month"
     ):
         warnings.append(
-            "Dropped field nomenclature — a period read from the file's stated period is a month, "
+            "Dropped field nomenclature — a period read from the file's title or name is a month, "
             "so period_type must be the constant 'month'"
         )
         fields["period_start"] = _not_available("The stated period needs period_type 'month'.", period_start, trust_review)
@@ -644,7 +1009,9 @@ def validate_contract(
         "layout": _validate_layout(proposed.get("layout"), raw_set, warnings),
         "fields": fields,
         "melt_groups": list(groups.values()),
+        "filters": _validate_filters(proposed.get("filters"), warnings),
         "aggregate": _validate_aggregate(proposed.get("aggregate"), warnings),
+        "unsupported": _validate_unsupported(proposed.get("unsupported"), target_schema),
         "warnings": warnings,
     }
 
@@ -665,6 +1032,7 @@ def layout_instructions(layout: dict) -> dict:
         "sheet": layout.get("sheet"),
         "sheet_position": position,
         "header_row": int(layout.get("header_row") or 1),
+        "stacked_sheets": bool(layout.get("stacked_sheets")),
         "fill_down": list(layout.get("filled_columns") or []),
         "footer_label_pattern": FOOTER_LABEL_PATTERN,
         "subtotal_label_pattern": SUBTOTAL_LABEL_PATTERN,
@@ -689,6 +1057,7 @@ def _validate_layout(raw, raw_set: set[str], warnings: list[str]) -> dict | None
         "sheet": raw.get("sheet"),
         "sheet_position": raw.get("sheet_position"),
         "header_row": header_row,
+        "stacked_sheets": bool(raw.get("stacked_sheets")),
         "fill_down": fill_down,
     }
     for key in ("footer_label_pattern", "subtotal_label_pattern"):
@@ -715,9 +1084,81 @@ def _validate_aggregate(raw, warnings: list[str]) -> dict | None:
     return monthly_aggregate()
 
 
+def _validate_filters(raw, warnings: list[str]) -> list[dict]:
+    """
+    The row filters, cleaned. One that is not a filter at all is dropped with
+    a warning; one naming a column this file lacks is kept, so the checks and
+    the transformation fail on it rather than load rows it was written to
+    leave out.
+    """
+    clean = []
+    for item in raw if isinstance(raw, list) else []:
+        item = item if isinstance(item, dict) else {}
+        column = item.get("column")
+        op = str(item.get("op") or "").strip().lower()
+        action = str(item.get("action") or "").strip().lower()
+        value = str(item.get("value") if item.get("value") is not None else "").strip()
+        problem = None
+        if not isinstance(column, str) or not column or op not in FILTER_OPS or action not in FILTER_ACTIONS:
+            problem = (
+                f"needs a column, an op ({', '.join(FILTER_OPS)}) and an action ({' or '.join(FILTER_ACTIONS)})"
+            )
+        elif op != "empty" and not value:
+            problem = "needs a value to test for"
+        elif op == "regex":
+            try:
+                re.compile(value)
+            except re.error as exc:
+                problem = f"has an invalid regex: {exc}"
+        if problem:
+            warnings.append(f"Dropped row filter on {column!r} — it {problem}")
+            continue
+        entry = {"column": column, "op": op, "action": action, "case_sensitive": bool(item.get("case_sensitive", False))}
+        if op != "empty":
+            entry["value"] = value
+        clean.append(entry)
+    return clean
+
+
+def _validate_unsupported(raw, target_schema: list[str]) -> list[dict]:
+    """What a proposal said it could not do, cleaned: the field it concerns (if one) and the issue."""
+    clean = []
+    for item in raw if isinstance(raw, list) else []:
+        item = item if isinstance(item, dict) else {}
+        issue = str(item.get("issue") or "").strip()
+        if issue:
+            field = item.get("field")
+            clean.append({"field": field if field in target_schema else None, "issue": issue})
+    return clean
+
+
 def monthly_aggregate() -> dict:
     """The roll-up instruction for business rule B1: calendar months."""
     return {"period": "month", "by": list(AGGREGATE_KEY), "sum": list(MEASURE_FIELDS)}
+
+
+def _validate_cell_field(target, raw, raw_columns, annotation, trust_review, warnings):
+    """A field read from one cell and written on every row, cleaned; not_available when unusable."""
+    reference = clean_cell_reference(raw["from_cell"])
+    if target not in CELL_TARGETS:
+        warnings.append(
+            f"Dropped field nomenclature — {target!r} cannot be read from one cell: only the period "
+            f"or a descriptive field ({', '.join(CELL_TARGETS[1:])}) is the same on every row"
+        )
+        return _not_available("This field cannot be read from one cell.", raw, trust_review)
+    if reference is None:
+        warnings.append(
+            f"Dropped field nomenclature — {target!r} reads cell {raw['from_cell']!r}, "
+            "which is not a cell like 'A1'"
+        )
+        return _not_available("Its cell is not a cell like A1.", raw, trust_review)
+    transforms = validate_transforms(target, raw.get("transforms"), raw_columns, [], None, warnings)
+    if transforms is None:
+        return _not_available("Its transform was rejected.", raw, trust_review)
+    entry = {"status": "derived", "from_cell": reference, **annotation}
+    if transforms:
+        entry["transforms"] = transforms
+    return entry
 
 
 def _validate_field(target, raw, raw_columns, raw_set, groups, group_cols, samples, trust_review, warnings):
@@ -753,13 +1194,15 @@ def _validate_field(target, raw, raw_columns, raw_set, groups, group_cols, sampl
                 )
                 return _not_available("No period columns to read the period type from.", raw, trust_review)
             return {"status": "derived", **annotation}
+        if raw.get("from_cell") is not None:
+            return _validate_cell_field(target, raw, raw_columns, annotation, trust_review, warnings)
         if raw.get("from_layout"):
             if target != "period_start" or raw["from_layout"] not in LAYOUT_SOURCES:
                 warnings.append(
-                    f"Dropped field nomenclature — only period_start can be read from the file's "
-                    f"stated period, not {target!r} from {raw['from_layout']!r}"
+                    f"Dropped field nomenclature — only period_start can be read from the period the file "
+                    f"states ({', '.join(LAYOUT_SOURCES)}), not {target!r} from {raw['from_layout']!r}"
                 )
-                return _not_available("Only the period can be read from the file's title.", raw, trust_review)
+                return _not_available("Only the period can be read from the file's title or name.", raw, trust_review)
             return {"status": "derived", "from_layout": raw["from_layout"], **annotation}
         source_field = raw.get("from_field")
         if source_field not in BUSINESS_COLUMNS or source_field == target:
@@ -849,8 +1292,9 @@ def unreviewed_low_confidence(contract: dict) -> list[str]:
 
 def _heading_values(contract: dict, entry: dict, target: str, columns: list[str], layout: dict | None) -> list[str] | None:
     """
-    What a field read from a melt group's headings -- or the cells above them
-    -- is filled with, or None when that cannot be told without the file.
+    What a field read from a melt group's headings -- or the cells above or
+    below them -- is filled with, or None when that cannot be told without
+    the file.
     """
     group = next((g for g in contract.get("melt_groups") or [] if g.get("id") == entry.get("melt_group")), None)
     if group is None:
@@ -860,12 +1304,11 @@ def _heading_values(contract: dict, entry: dict, target: str, columns: list[str]
     except (ValueError, re.error):
         return None
     label = next((item for item in group.get("labels") or [] if item.get("target") == target), None)
-    if (group.get("key") or {}).get("target") == target or (label and label.get("rows_above") == 0):
+    if (group.get("key") or {}).get("target") == target or (label and reads_headings(label)):
         return selected
     if label is None or layout is None:
         return None
-    row = int(layout.get("header_row") or 1) - label["rows_above"]
-    cells = next((item["cells"] for item in layout.get("rows_above_header") or [] if item.get("row") == row), {})
+    cells = label_cells(label, layout)
     return [cells[column] for column in selected if column in cells]
 
 
@@ -918,7 +1361,7 @@ def retailer_outputs(
     return list(dict.fromkeys(str(output) for output in outputs if output not in (None, "")))
 
 
-DECISION_KEYS = ("status", "source", "melt_group", "from_field", "from_layout", "value", "transforms")
+DECISION_KEYS = ("status", "source", "melt_group", "from_field", "from_layout", "from_cell", "value", "transforms")
 
 
 def contract_diff(before: dict | None, after: dict) -> list[dict]:

@@ -1,3 +1,5 @@
+import copy
+
 from app.services import mapping_contract, mapping_view as mv
 from app.services.reference_contracts import SINGHEALTH_ER130
 
@@ -138,7 +140,19 @@ def test_store_codes_above_the_header_and_a_stated_period_survive_review():
     assert contract["fields"]["period_start"]["from_layout"] == "stated_period"
     assert contract["fields"]["revenue"]["transforms"] == [{"type": "multiply", "column": "Promo cost"}]
     assert by_field["store_code"]["description"].startswith("Read from the cells above the column headers")
-    assert by_field["period_start"]["description"] == "The month the file's title states"
+    assert by_field["period_start"]["description"] == "The month the file states (its title or a month heading)"
+
+
+def test_a_period_read_from_one_cell_survives_review():
+    proposal = copy.deepcopy(SINGHEALTH_ER130)
+    proposal["fields"]["period_start"] = {"status": "derived", "from_cell": "A1", "confidence": "high"}
+    packet = mv.envelope_to_packet("sh", {"contract": proposal, "raw_columns": SINGHEALTH_COLUMNS}, "pending")
+    by_field = {rule["targetField"]: rule for rule in packet["rules"]}
+
+    contract = mapping_contract.validate_contract(mv.rules_to_contract(packet["rules"]), SINGHEALTH_COLUMNS, trust_review=True)
+
+    assert contract["fields"]["period_start"]["from_cell"] == "A1"
+    assert by_field["period_start"]["description"] == "Read from cell A1, the same on every row"
 
 
 def test_packet_reports_unread_columns_and_missing_requirements():

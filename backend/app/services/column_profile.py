@@ -20,6 +20,8 @@ import re
 
 import pandas as pd
 
+from app.services import value_parsing
+
 # A date inside a header: 01-08-2026, 2026-08-01, 1/8/26.
 DATE_TOKEN = re.compile(r"\d{1,4}[-/.]\d{1,2}[-/.]\d{1,4}")
 MONTH_NAME = re.compile(
@@ -171,10 +173,25 @@ _MONTH_YEAR_FORMATS = tuple(
 
 def _guess_month_year_format(keys: list[str]) -> str | None:
     for date_format in _MONTH_YEAR_FORMATS:
-        parsed = pd.to_datetime(pd.Series(keys), format=date_format, errors="coerce")
+        parsed = value_parsing.read_dates(pd.Series(keys, dtype=object), date_format)
         if parsed.notna().all():
             return date_format
     return None
+
+
+def month_year(text: str) -> pd.Timestamp | None:
+    """
+    The first day of the month a text names when it is a month and year and
+    nothing else ("Aug-26", "August 2026"), else None. "Sales Aug 2026" is a
+    metric for a month, not a month, so it is None.
+    """
+    text = str(text).strip()
+    if not MONTH_YEAR_TOKEN.fullmatch(text):
+        return None
+    date_format = _guess_month_year_format([text])
+    if date_format is None:
+        return None
+    return pd.to_datetime(value_parsing.month_names(text), format=date_format).to_period("M").to_timestamp()
 
 
 def _month_year_patterns(header: str, token: re.Match) -> tuple[str, str]:
@@ -297,6 +314,10 @@ def profile_columns(frame: pd.DataFrame, layout: dict | None = None) -> dict[str
     `values` lists every distinct value of a low-cardinality column and an even
     spread of a high-cardinality one. Spacer and total columns found by layout
     detection are marked with a `role`, so the proposal knows not to map them.
+
+    A text column whose values are numbers or dates written another way says
+    so (`written_as`): "$1,250.50" needs parse_number and "31/12/2025" a date
+    format before the transformation can read them (value_parsing).
     """
     layout = layout or {}
     roles = {
@@ -337,11 +358,26 @@ def profile_columns(frame: pd.DataFrame, layout: dict | None = None) -> dict[str
         elif kind == "date":
             entry["min"] = dates.min().date().isoformat()
             entry["max"] = dates.max().date().isoformat()
+        if kind == "text":
+            written_as = _written_as(distinct)
+            if written_as:
+                entry["written_as"] = written_as
         if column in roles:
             entry["role"] = roles[column]
         profile[str(column)] = entry
 
     return profile
+
+
+def _written_as(distinct: list[str]) -> dict | None:
+    """What a text column's values are when read another way: numbers, or dates in a known format."""
+    numbers = value_parsing.number_traits(distinct)
+    if numbers:
+        return {"kind": "number", **numbers}
+    formats = value_parsing.date_formats(distinct)
+    if formats:
+        return {"kind": "date", "date_formats": formats}
+    return None
 
 
 def head_rows(frame: pd.DataFrame, limit: int = 5) -> list[list[str | None]]:
