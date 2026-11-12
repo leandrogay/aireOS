@@ -7,7 +7,7 @@ from app.services.scenario import building_blocks as building_blocks_service
 client = TestClient(app)
 
 BODY = {
-    "customer_name": "fairprice",
+    "customer_names": ["fairprice"],
     "product_name": None,
     "name": "New Store Opening",
     "explanation": None,
@@ -86,7 +86,7 @@ def test_create_is_201_and_passes_the_validated_body(monkeypatch):
 
     assert response.status_code == 201
     assert response.json() == SAVED
-    assert seen["customer_name"] == "fairprice"
+    assert seen["customer_names"] == ["fairprice"]
     assert seen["uplift_mode"] == "units"
 
 
@@ -112,7 +112,7 @@ def test_create_with_an_unknown_customer_is_400(monkeypatch):
         _raises(ValueError("Unknown customer: giant")),
     )
 
-    response = client.post("/api/scenario/building-blocks", json={**BODY, "customer_name": "giant"})
+    response = client.post("/api/scenario/building-blocks", json={**BODY, "customer_names": ["giant"]})
 
     assert response.status_code == 400
     assert response.json()["detail"] == "Unknown customer: giant"

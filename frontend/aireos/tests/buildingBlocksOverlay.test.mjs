@@ -5,15 +5,21 @@ import { describe, test } from 'node:test';
 
 import { blocksWithoutEffect, customerBlocks, pickedBlockIds } from '../app/utils/buildingBlocksOverlay.js';
 
-function block(blockId, name, customer = 'fairprice') {
-  return { blockId, name, customer };
+function block(blockId, name, customers = ['fairprice']) {
+  return { blockId, name, customers };
 }
 
 describe('customerBlocks', () => {
   test('offers only the saved blocks of the chosen customer, by name', () => {
-    const blocks = [block(2, 'Store closing'), block(1, 'New store'), block(3, 'Other', 'nhg'), { ...block(null, 'Draft') }];
+    const blocks = [block(2, 'Store closing'), block(1, 'New store'), block(3, 'Other', ['nhg']), { ...block(null, 'Draft') }];
 
     assert.deepEqual(customerBlocks(blocks, 'fairprice').map((b) => b.name), ['New store', 'Store closing']);
+  });
+
+  test('offers blocks naming several customers, or every customer, to each of them', () => {
+    const blocks = [block(1, 'Both', ['fairprice', 'nhg']), block(2, 'Everyone', []), block(3, 'Other', ['prime'])];
+
+    assert.deepEqual(customerBlocks(blocks, 'nhg').map((b) => b.name), ['Both', 'Everyone']);
   });
 });
 

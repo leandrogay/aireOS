@@ -11,9 +11,9 @@ from app.schemas.catalog import _Base
 # SCENARIO BUILDING BLOCKS
 #
 # Mirrors the scenario_building_blocks CHECKs, which stay as the
-# backstop. Customer and product are named the way the Forecast page
-# names them (customer_name / product_name from the forecast
-# options); the service resolves them to customer_id / sku.
+# backstop. Customers and product are named the way the Forecast page
+# names them (customer_names / product_name from the forecast
+# options); the service resolves them to customer_ids / sku.
 # The frontend builds this body in buildScenarioBlockPayload
 # (app/utils/scenarioBlocks.js).
 # ============================================================
@@ -36,7 +36,9 @@ class ScenarioBuildingBlockBase(_Base):
     # A PUT replaces every field, so the page must send kind back unchanged.
     kind: BlockKind = "block"
 
-    customer_name: str = Field(min_length=1, max_length=255)
+    # A block can cover several customers (migration 022); None (or an empty
+    # list) = every customer. A growth names exactly one.
+    customer_names: list[str] | None = Field(default=None, max_length=100)
 
     # Blocks follow SKU ranges: sku_ranges = every SKU of those ranges; None
     # (or an empty list) with no product_name = every SKU of the customer.
@@ -61,6 +63,16 @@ class ScenarioBuildingBlockBase(_Base):
     @classmethod
     def _blank_explanation_is_none(cls, value: str | None) -> str | None:
         return value or None
+
+    @field_validator("customer_names")
+    @classmethod
+    def _customers_in_order_once(cls, value: list[str] | None) -> list[str] | None:
+        # Same rule as sku_ranges: one set of customers is stored one way;
+        # nothing left = every customer (None).
+        names = sorted({item.strip() for item in value or [] if item and item.strip()})
+        if any(len(item) > 255 for item in names):
+            raise ValueError("A customer name is at most 255 characters")
+        return names or None
 
     @field_validator("sku_ranges")
     @classmethod
@@ -100,6 +112,9 @@ class ScenarioBuildingBlockBase(_Base):
     def _validate_growth(self) -> None:
         if self.uplift_mode != "pct":
             raise ValueError("Growth must be a % uplift")
+
+        if self.customer_names is None or len(self.customer_names) != 1:
+            raise ValueError("Growth is set for one customer")
 
         if self.sku_ranges is None or len(self.sku_ranges) != 1 or self.product_name is not None:
             raise ValueError("Growth is set for one SKU range")

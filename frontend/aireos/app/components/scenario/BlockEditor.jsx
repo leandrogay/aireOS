@@ -5,10 +5,11 @@ import { Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { primaryButtonClass, secondaryButtonClass } from '@/components/ui/formStyles';
+import MultiSelectDropdown from '@/components/ui/MultiSelectDropdown';
 import SkuRangePicker from '@/components/scenario/SkuRangePicker';
 import UpliftField from '@/components/scenario/UpliftField';
 import { formatMonthLabel } from '@/app/utils/forecastView';
-import { customerLabel } from '@/app/utils/retailerLabel';
+import { customerLabel, customersLabel } from '@/app/utils/retailerLabel';
 import {
   BLOCK_NAME_SUGGESTIONS,
   MAX_UPLIFT_PCT,
@@ -53,7 +54,7 @@ function ImpactNote({ block, impact }) {
         {formatUnits(impact.deltaUnits)} units
       </b>
       {pctOfCurrent == null ? '' : `, or ${sign}${Math.abs(pctOfCurrent)}% on Current,`} {removes ? 'from' : 'to'}{' '}
-      {customerLabel(block.customer)} sell-out across {monthSpanLabel(impact.months)}.
+      {customersLabel(block.customers)} sell-out across {monthSpanLabel(impact.months)}.
     </>
   );
 }
@@ -136,18 +137,24 @@ export default function BlockEditor({
       </div>
 
       <div className="grid grid-cols-2 gap-2">
+        {/* Any number of customers, or none for every customer (migration 022),
+            like the SKU ranges beside it. */}
         <div>
-          <label className={labelClass} htmlFor="block-customer">Customer</label>
-          <select
-            id="block-customer"
-            value={block.customer}
-            onChange={(event) => onChange({ customer: event.target.value })}
-            className={fieldClass}
-          >
-            {customerOptions.map((name) => (
-              <option key={name} value={name}>{customerLabel(name)}</option>
-            ))}
-          </select>
+          <span id="block-customers-label" className={labelClass}>Customers</span>
+          <MultiSelectDropdown
+            ariaLabel="Customers"
+            options={customerOptions.map((name) => ({ value: name, label: customerLabel(name) }))}
+            values={block.customers ?? []}
+            onChange={(customers) => onChange({ customers })}
+            allLabel="All customers"
+            noneMeansAll
+            placeholder="All customers"
+            look="field"
+            searchable={customerOptions.length > 8}
+            searchPlaceholder="Search customers…"
+            invalid={Boolean(errors.customer)}
+            className="w-full"
+          />
           <FieldError message={errors.customer} />
         </div>
         <SkuRangePicker

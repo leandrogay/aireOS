@@ -12,7 +12,8 @@ import { PAGE_SIZES } from '@/components/ui/TablePagination';
 import TableSearch from '@/components/ui/TableSearch';
 import { Switch } from '@/components/ui/switch';
 import TableRow from '@/components/ui/TableRow';
-import { customerLabel } from '@/app/utils/retailerLabel';
+import { customersLabel } from '@/app/utils/retailerLabel';
+import { coversCustomer } from '@/app/utils/scenarioEngine';
 import { blockScopeLabel, upliftLabel } from '@/app/utils/scenarioBlocks';
 import { monthSpanLabel } from '@/app/utils/scenarioPitch';
 import { matchesSearch, nextSort, paginate } from '@/app/utils/tableView';
@@ -32,13 +33,13 @@ function monthLabel(monthYear) {
 }
 
 /**
- * True when the page's filters show this block: its customer (or All
- * customers), its SKU (an All SKUs block shows for any one SKU too, since
+ * True when the page's filters show this block: a customer it covers (or
+ * All customers in view), its SKU (an All SKUs block shows for any one SKU too, since
  * it applies to it), and any month of it inside the period. Overlap, not
  * containment: a block reaching past the period still belongs in the list.
  */
 export function blockInView(block, view) {
-  if (view.customerName && view.customerName !== block.customer) return false;
+  if (view.customerName && !coversCustomer(block, view.customerName)) return false;
   if (view.productName && block.sku && view.productName !== block.sku) return false;
   if (view.skuRange && block.skuRanges?.length && !block.skuRanges.includes(view.skuRange)) return false;
   if (view.startMonth && block.endMonth < view.startMonth) return false;
@@ -201,7 +202,9 @@ export default function BlockTable({
         const isEditing = editingId === block.id;
         const toggling = togglingIds.includes(block.id);
         const sku = blockScopeLabel(block);
-        const appliesTo = showCustomer ? `${customerLabel(block.customer)} · ${sku}` : sku;
+        // With one customer in view, a block that also covers others still says so.
+        const appliesTo =
+          showCustomer || block.customers?.length !== 1 ? `${customersLabel(block.customers)} · ${sku}` : sku;
         const actions = [
           {
             key: 'edit',

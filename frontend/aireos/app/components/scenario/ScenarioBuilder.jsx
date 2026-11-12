@@ -21,7 +21,7 @@ import Tier0Details from '@/components/scenario/Tier0Details';
 import { nextYearDateRange } from '@/app/utils/dateRange';
 import { FORECAST_TIER_OPTIONS } from '@/app/utils/forecastLineText';
 import { DEFAULT_TIER } from '@/app/utils/forecastTiers';
-import { customerLabel } from '@/app/utils/retailerLabel';
+import { customerLabel, customersLabel } from '@/app/utils/retailerLabel';
 import {
   ALL_PACK_TYPE_VALUES,
   ALL_PROMO_TYPE_VALUES,
@@ -35,7 +35,9 @@ import {
   SIMULATED_SERIES,
   cellsByMonth,
   chartView,
+  coversCustomer,
   forecastMonths,
+  itemCustomers,
   itemMarkers,
   simulate,
   simulatedYearTotals,
@@ -87,11 +89,11 @@ function itemState(item, isPromotion) {
   return edited ? 'edited' : 'saved';
 }
 
-// True when a switched-on item is for what the chart shows (its customer,
-// and its SKU or all SKUs) and runs at some point from `first` to `last`.
+// True when a switched-on item is for what the chart shows (a customer it
+// covers, and its SKU or all SKUs) and runs at some point from `first` to `last`.
 function itemInView(item, filters, first, last) {
-  if (!item.customer || !item.startMonth || !item.endMonth) return false;
-  if (filters.customerName && filters.customerName !== item.customer) return false;
+  if (!itemCustomers(item) || !item.startMonth || !item.endMonth) return false;
+  if (filters.customerName && !coversCustomer(item, filters.customerName)) return false;
   if (filters.productName && item.sku && filters.productName !== item.sku) return false;
   // An all-ranges item counts for any range in view; a ranges item only for its own.
   if (filters.skuRange && item.skuRanges?.length && !item.skuRanges.includes(filters.skuRange)) return false;
@@ -162,6 +164,8 @@ export default function ScenarioBuilder() {
     [SIMULATED_SERIES.key]: true,
   });
   const [panelCollapsed, setPanelCollapsed] = useState(false);
+  // The panel's tab, here so opening a block from the Monthly plan shows it.
+  const [panelTab, setPanelTab] = useState('breakdown');
   const view = useForecastView({ ready, productName, skuRange, customerName, startDate, endDate, tier: DEFAULT_TIER });
   const { rows, actuals, promotions, freshness } = view.data;
   const scenarioBlocks = useScenarioBlocks();
@@ -211,7 +215,7 @@ export default function ScenarioBuilder() {
   // SKU is picked) are split over rows fetched for their whole scope.
   const splitBasis = useUnitsSplitBasis({
     ready,
-    needs: splitBasisNeeds(activeScenarioBlocks(scenarioBlocks.blocks), chartView(filters)),
+    needs: splitBasisNeeds(activeScenarioBlocks(scenarioBlocks.blocks), chartView(filters), rows),
   });
 
   if (!ready) {
@@ -415,7 +419,6 @@ export default function ScenarioBuilder() {
   ];
 
   const months = forecastMonths(rows);
-  const itemCount = allBlocks.length + scenarioPromotions.promotions.length;
   const error =
     filters.error ?? view.error ?? scenarioBlocks.error ?? scenarioPromotions.error ?? splitBasis.error ?? actionError;
 
@@ -446,6 +449,7 @@ export default function ScenarioBuilder() {
 
   function editSaved(block) {
     setSelectedId(block.id);
+    setPanelTab('blocks');
     setPanelCollapsed(false);
   }
 
@@ -581,7 +585,8 @@ export default function ScenarioBuilder() {
         <ScenarioPanel
           collapsed={panelCollapsed}
           onCollapsedChange={setPanelCollapsed}
-          itemCount={itemCount}
+          tab={panelTab}
+          onTabChange={setPanelTab}
           breakdownSection={
             <FrozenBaselinePanel
               tier0Split={tier0SplitState}
@@ -681,7 +686,7 @@ export default function ScenarioBuilder() {
                 { label: 'Block', value: deletion.target.name },
                 {
                   label: 'Applies to',
-                  value: `${customerLabel(deletion.target.customer)} · ${blockScopeLabel(deletion.target)}`,
+                  value: `${customersLabel(deletion.target.customers)} · ${blockScopeLabel(deletion.target)}`,
                 },
                 {
                   label: 'Months',

@@ -9,7 +9,7 @@ from app.schemas.scenario.building_blocks import ScenarioBuildingBlockCreate
 
 def _block(**changes):
     block = {
-        "customer_name": "fairprice",
+        "customer_names": ["fairprice"],
         "product_name": None,
         "name": "New Store Opening",
         "explanation": "3 new outlets in Punggol",
@@ -61,7 +61,7 @@ def test_is_active_defaults_to_true():
     "changes",
     [
         {"name": "   "},
-        {"customer_name": ""},
+        {"customer_names": ["x" * 256]},
         {"uplift_mode": "dollars"},
         {"uplift_value": 0},
         {"uplift_mode": "units", "uplift_value": 0},
@@ -102,6 +102,18 @@ def test_a_units_decrease_is_a_negative_whole_number():
 def test_a_units_decrease_must_be_whole_units():
     with pytest.raises(ValidationError):
         ScenarioBuildingBlockCreate(**_block(uplift_mode="units", uplift_value=-900.5))
+
+
+# ---- Customers ---------------------------------------------------------------
+
+
+def test_customers_are_stored_in_order_once_and_none_means_every_customer():
+    assert ScenarioBuildingBlockCreate(**_block(customer_names=[" NHG", "FairPrice", "NHG", ""])).customer_names == [
+        "FairPrice",
+        "NHG",
+    ]
+    assert ScenarioBuildingBlockCreate(**_block(customer_names=[])).customer_names is None
+    assert ScenarioBuildingBlockCreate(**_block(customer_names=None)).customer_names is None
 
 
 # ---- Growth ------------------------------------------------------------------
@@ -181,3 +193,9 @@ def test_growth_for_two_ranges_at_once_is_rejected():
 def test_a_block_cannot_name_both_a_range_and_one_sku():
     with pytest.raises(ValidationError):
         ScenarioBuildingBlockCreate(**_block(sku_ranges=["Ultra Tape"], product_name="Comfort Pants M"))
+
+
+@pytest.mark.parametrize("customers", [None, ["fairprice", "nhg"]])
+def test_growth_names_exactly_one_customer(customers):
+    with pytest.raises(ValidationError, match="Growth is set for one customer"):
+        ScenarioBuildingBlockCreate(**_growth(customer_names=customers))

@@ -16,7 +16,8 @@
 //     blockId,                      // server id, null until first saved
 //     kind,                         // 'block', or 'growth' (scenarioGrowth.js); never
 //                                   // changes, and every save sends it back
-//     customer,                     // forecast customer_name
+//     customers,                    // forecast customer_names ([] = every customer;
+//                                   // a growth names exactly one), migration 022
 //     skuRanges,                    // SKU ranges ([] = All SKU ranges): blocks follow ranges
 //     sku,                          // one product_name, only on blocks saved before
 //                                   // ranges (backend migration 017); new blocks keep ''
@@ -36,6 +37,7 @@
 // `saved` is what Discard goes back to and what tells the list a block has
 // unsaved changes.
 
+import { customersLabel } from '@/app/utils/retailerLabel';
 import { unitsDeltaCells, upliftDeltaCells } from '@/app/utils/scenarioEngine';
 
 // Suggested as the user types a block name.
@@ -81,7 +83,7 @@ export const NEW_BLOCK_NAME = 'New building block';
 
 // The fields a save writes; `saved` keeps a copy of exactly these.
 const SAVED_FIELDS = [
-  'customer',
+  'customers',
   'skuRanges',
   'sku',
   'name',
@@ -107,17 +109,17 @@ function newClientId() {
 }
 
 /**
- * A new, unsaved block for the given customer / SKU range, covering the
+ * A new, unsaved block for the given customers / SKU ranges, covering the
  * first forecast month. It starts switched on so it shows on the chart at once.
  *
- * @param {{ customer: string, skuRanges?: string[], months?: string[] }} defaults
+ * @param {{ customers?: string[], skuRanges?: string[], months?: string[] }} defaults
  */
-export function newScenarioBlock({ customer = '', skuRanges = [], months = [] }) {
+export function newScenarioBlock({ customers = [], skuRanges = [], months = [] }) {
   return {
     id: newClientId(),
     blockId: null,
     kind: 'block',
-    customer,
+    customers,
     skuRanges,
     sku: '',
     name: NEW_BLOCK_NAME,
@@ -270,7 +272,8 @@ export function applySavedBlock(current, sent, savedBlock) {
 export function validateScenarioBlock(block) {
   const errors = {};
   if (!block.name.trim()) errors.name = 'Give the building block a name.';
-  if (!block.customer) errors.customer = 'Pick a customer.';
+  // No customer ticked = every customer; only a growth needs exactly one.
+  if (block.kind === 'growth' && block.customers?.length !== 1) errors.customer = 'Pick one customer.';
   const value = Number(block.upliftValue) || 0;
   if (value === 0) {
     errors.upliftValue =
@@ -288,8 +291,8 @@ export function validateScenarioBlock(block) {
 
 /**
  * Request body for saving a block: backend ScenarioBuildingBlockBase
- * (app/schemas/scenario/building_blocks.py). sku_ranges and product_name
- * both null = All SKU ranges; product_name is only ever set on a block saved
+ * (app/schemas/scenario/building_blocks.py). customer_names null = every
+ * customer; sku_ranges and product_name both null = All SKU ranges; product_name is only ever set on a block saved
  * before ranges. A PUT replaces every field, so `kind` always goes back as
  * it is, or a growth would turn into an ordinary block.
  *
@@ -298,7 +301,7 @@ export function validateScenarioBlock(block) {
 export function buildScenarioBlockPayload(block) {
   return {
     kind: block.kind ?? 'block',
-    customer_name: block.customer,
+    customer_names: block.customers?.length ? block.customers : null,
     sku_ranges: block.skuRanges?.length ? block.skuRanges : null,
     product_name: block.skuRanges?.length ? null : block.sku || null,
     name: block.name.trim(),
@@ -322,7 +325,7 @@ export function scenarioBlockFromApi(row) {
     id: `saved-${row.block_id}`,
     blockId: row.block_id,
     kind: row.kind ?? 'block',
-    customer: row.customer_name,
+    customers: row.customer_names ?? [],
     skuRanges: row.sku_ranges ?? [],
     sku: row.product_name ?? '',
     name: row.name,
@@ -362,7 +365,7 @@ export const scenarioBlocksSource = {
     return {
       title: block.name || NEW_BLOCK_NAME,
       upliftLabel: upliftLabel(block),
-      customer: block.customer,
+      customer: customersLabel(block.customers),
       sku: blockScopeLabel(block),
       explanation: block.explanation,
       startMonth: block.startMonth,
@@ -385,7 +388,7 @@ export const scenarioGrowthSource = {
     return {
       title: block.name,
       upliftLabel: upliftLabel(block),
-      customer: block.customer,
+      customer: customersLabel(block.customers),
       sku: block.skuRanges[0],
       explanation: `Growth on Tier 0 for every ${block.skuRanges[0]} SKU, January to December.`,
       startMonth: block.startMonth,

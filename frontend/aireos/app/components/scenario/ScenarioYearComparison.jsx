@@ -81,7 +81,7 @@ const PART_COLUMNS = [
 ];
 
 const headerCell = cn(
-  'border-b bg-cream px-2.5 py-1.5 text-right text-[10px] font-bold uppercase tracking-wide text-deep-violet-blue',
+  'border-b bg-cream px-2.5 py-1.5 text-left align-middle text-[10px] font-bold uppercase tracking-wide text-deep-violet-blue',
   HEADER_RULE
 );
 
@@ -121,7 +121,7 @@ export default function ScenarioYearComparison({ rows, loading = false }) {
       <table className="w-full border-separate border-spacing-0 text-xs text-deep-violet-blue">
         <thead>
           <tr>
-            <th className={cn(headerCell, 'text-left')}>Period</th>
+            <th className={headerCell}>Period</th>
             <th className={headerCell}>Current</th>
             {compare ? (
               <>
@@ -141,10 +141,11 @@ export default function ScenarioYearComparison({ rows, loading = false }) {
           {rows.map((row, index) => {
             const rule = index < rows.length - 1 ? 'border-b border-lavander/70' : '';
             const changed = Boolean(row.delta) && row.current != null;
-            const cell = cn('whitespace-nowrap px-2.5 py-1.5 text-right tabular-nums', rule);
+            // Left-aligned and vertically centred, as the Monthly plan.
+            const cell = cn('whitespace-nowrap px-2.5 py-1.5 text-left align-middle tabular-nums', rule);
             return (
               <tr key={row.key} className="bg-white">
-                <td className={cn('whitespace-nowrap px-2.5 py-1.5 text-left', rule)}>
+                <td className={cn('whitespace-nowrap px-2.5 py-1.5 text-left align-middle', rule)}>
                   <span className="font-medium">{row.label}</span>
                   {row.caption ? (
                     <span className="ml-1.5 text-[10px] font-normal text-deep-violet-blue/50">{row.caption}</span>

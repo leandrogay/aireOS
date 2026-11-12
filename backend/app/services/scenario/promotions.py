@@ -185,6 +185,7 @@ def create_scenario_promotion(promotion: dict) -> dict:
                 """
                 INSERT INTO scenario_promotions (
                     customer_id,
+                    customer_ids,
                     sku_ranges,
                     sku,
                     promo_type,
@@ -206,6 +207,8 @@ def create_scenario_promotion(promotion: dict) -> dict:
                 )
                 VALUES (
                     :customer_id,
+                    -- One customer for now, as a list (migration 022).
+                    ARRAY[CAST(:customer_id AS INTEGER)],
                     CAST(:sku_ranges AS TEXT[]),
                     :sku,
                     :promo_type,
@@ -245,6 +248,7 @@ def update_scenario_promotion(promotion_id: int, promotion: dict) -> dict | None
 
                 SET
                     customer_id = :customer_id,
+                    customer_ids = ARRAY[CAST(:customer_id AS INTEGER)],
                     sku_ranges = CAST(:sku_ranges AS TEXT[]),
                     sku = :sku,
                     promo_type = :promo_type,

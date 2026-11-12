@@ -149,7 +149,7 @@ export default function GrowthControl({
       if (value === '' || Number(value) === 0) return;
       onChange((current) => [
         ...current,
-        { ...newScenarioBlock({ customer }), ...growthFields(customer, skuRange, year), ...changes },
+        { ...newScenarioBlock({ customers: [customer] }), ...growthFields(customer, skuRange, year), ...changes },
       ]);
       return;
     }
@@ -169,7 +169,7 @@ export default function GrowthControl({
         {growthInYears(blocks, years).map((block) => (
           <p key={block.id} className="flex justify-between gap-2 text-xs text-deep-violet-blue">
             <span className="min-w-0 truncate">
-              {customerLabel(block.customer)} · {block.skuRanges[0]} · {block.startMonth.slice(0, 4)}
+              {customerLabel(block.customers[0])} · {block.skuRanges[0]} · {block.startMonth.slice(0, 4)}
             </span>
             <span className="font-semibold tabular-nums">{upliftLabel(block)}</span>
           </p>

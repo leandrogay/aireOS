@@ -22,7 +22,7 @@ function row(customer, product, skuRange) {
 test('a growth covers one SKU range of one customer from january to december as a %', () => {
   assert.deepEqual(growthFields('fairprice', 'Ultra Tape', '2027'), {
     kind: 'growth',
-    customer: 'fairprice',
+    customers: ['fairprice'],
     skuRanges: ['Ultra Tape'],
     sku: '',
     name: 'Growth 2027 · Ultra Tape',

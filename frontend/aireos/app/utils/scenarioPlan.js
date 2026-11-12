@@ -39,19 +39,21 @@ function totalsByMonth(rows, unitsKey) {
 }
 
 // The Promotions column of one month: what last year's promotions still add
-// (with the months and mechanics behind them) and what the official ones
-// planned add in their place. A part left out in the Breakdown tab has no
+// and what the official ones planned add in their place, each with the
+// mechanics behind it in groups -- same month last year, the recent
+// (run-rate) months, or planned. A part left out in the Breakdown tab has no
 // line; with official promotions left out, last year's carry on in their
 // months too.
 function promotionLines(parts, split, { carriedOn, officialOn }) {
   if (!parts || !split?.splitRows) return [];
   const lines = [];
   if (carriedOn && Math.round(parts.carried)) {
-    const sources = officialOn ? split.carriedPromotions.unplanned : split.carriedPromotions.all;
-    lines.push({ kind: 'carried', units: parts.carried, sources });
+    const groups = officialOn ? split.carriedPromotions.unplanned : split.carriedPromotions.all;
+    lines.push({ kind: 'carried', units: parts.carried, groups });
   }
   if (officialOn && split.official.plannedRows) {
-    lines.push({ kind: 'official', units: parts.official, mechanics: split.official.mechanics });
+    const groups = [{ kind: 'planned', months: [], mechanics: split.official.mechanics }];
+    lines.push({ kind: 'official', units: parts.official, groups });
   }
   return lines;
 }
@@ -74,8 +76,8 @@ function variance(adjusted, lastYear) {
  *     parts: { baseline, carried, official, growth, blocks, promotions } | null,
  *                                            // what Adjusted is made of (they add up to it
  *                                            // before the 0 floor); null with no breakdown
- *     promotionLines: [{ kind: 'carried', units, sources: [{ kind: 'lastYear' | 'runRate', months, mechanics }] }
- *                    | { kind: 'official', units, mechanics }],  // the Promotions column
+ *     promotionLines: [{ kind: 'carried' | 'official', units,
+ *                        groups: [{ kind: 'lastYear' | 'runRate' | 'planned', months, mechanics }] }],  // the Promotions column
  *     planStatus: 'planned' | 'partly' | 'not_planned' | null,   // scenarioTier0Split.planStatus
  *     variance: { units, unitsPct } | null,
  *     items: [{ itemId, name, state, source }], // what adds to this month; state 'saved' | 'draft' | 'edited'

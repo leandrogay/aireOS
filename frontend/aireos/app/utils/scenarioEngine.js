@@ -55,16 +55,40 @@ export const SIMULATED_SERIES = {
 
 const CURRENT_UNITS = 'forecast_current';
 
-// The forecast rows an item applies to: its customer, its SKU ranges (every
+/**
+ * The customers an item covers, [] meaning every customer: a building
+ * block names a list (`customers`, migration 022); a promotion still names
+ * one (`customer`). null when it names none yet (a draft being set up).
+ *
+ * @param {{ customers?: string[], customer?: string }} item
+ * @returns {string[] | null}
+ */
+export function itemCustomers(item) {
+  if (Array.isArray(item.customers)) return item.customers;
+  return item.customer ? [item.customer] : null;
+}
+
+/**
+ * Whether an item covers a customer (it names it, or covers every customer).
+ *
+ * @param {object} item
+ * @param {string} customerName
+ */
+export function coversCustomer(item, customerName) {
+  const customers = itemCustomers(item);
+  return Boolean(customers) && (!customers.length || customers.includes(customerName));
+}
+
+// The forecast rows an item applies to: its customers, its SKU ranges (every
 // SKU of them, by the rows' sku_range) or its one SKU (items saved before
 // ranges; every SKU when neither is set), its months, and only rows with a
 // Current value (months with actuals have none, so they are never changed).
 export function itemRows(rows, item) {
-  if (!item.customer || !item.startMonth || !item.endMonth) return [];
+  if (!itemCustomers(item) || !item.startMonth || !item.endMonth) return [];
   return rows.filter(
     (row) =>
       row[CURRENT_UNITS] != null &&
-      row.customer_name === item.customer &&
+      coversCustomer(item, row.customer_name) &&
       (!item.skuRanges?.length || item.skuRanges.includes(row.sku_range)) &&
       (!item.sku || row.product_name === item.sku) &&
       row.month_year >= item.startMonth &&
@@ -133,7 +157,9 @@ export function chartView(
  * @param {ReturnType<typeof chartView>} view
  */
 export function viewCoversItem(item, view) {
-  if (view.customerName && view.customerName !== item.customer) return false;
+  // One customer in view covers only an item for exactly that customer.
+  const customers = itemCustomers(item) ?? [];
+  if (view.customerName && !(customers.length === 1 && customers[0] === view.customerName)) return false;
   if (view.productName && view.productName !== item.sku) return false;
   // A range in view covers only an item for exactly that range; an item on
   // more ranges, all of them, or one SKU reaches beyond what the view fetched.
@@ -165,9 +191,19 @@ export function upliftDeltaCells(rows, item, upliftPct, source) {
 // the part that happens to be on screen.
 function splitRowsFor(rows, item, view) {
   if (viewCoversItem(item, view)) return rows;
-  const basis = view.splitBasis?.get(item.customer);
+  const basis = view.splitBasis?.get(itemCustomers(item)?.[0]);
   if (basis && basis.startMonth <= item.startMonth && basis.endMonth >= item.endMonth) return basis.rows;
   return null;
+}
+
+// A units item for each customer it covers that the page's rows hold: each
+// customer gets the full number of units, split over its own SKUs and months.
+// An item for every customer covers the customers in the rows.
+function perCustomer(rows, item) {
+  const customers = itemCustomers(item);
+  if (!customers) return [];
+  const names = customers.length ? customers : [...new Set(rows.map((row) => row.customer_name))];
+  return names.map((customer) => ({ ...item, customers: [customer] }));
 }
 
 /**
@@ -177,26 +213,33 @@ function splitRowsFor(rows, item, view) {
  *
  * @param {object[]} items switched-on items
  * @param {ReturnType<typeof chartView>} view
+ * @param {object[]} [rows] the page's forecast rows: the customers an item for every customer covers
  */
-export function splitBasisNeeds(items, view) {
+export function splitBasisNeeds(items, view, rows = []) {
   const needs = {};
   for (const item of items) {
-    if (item.upliftMode !== 'units' || !item.customer || !item.startMonth || !item.endMonth) continue;
-    if (viewCoversItem(item, view)) continue;
-    const need = needs[item.customer];
-    needs[item.customer] = {
-      startMonth: need && need.startMonth < item.startMonth ? need.startMonth : item.startMonth,
-      endMonth: need && need.endMonth > item.endMonth ? need.endMonth : item.endMonth,
-    };
+    if (item.upliftMode !== 'units' || !item.startMonth || !item.endMonth) continue;
+    for (const one of perCustomer(rows, item)) {
+      const [customer] = one.customers;
+      // Another customer than the one in view adds no cells to the page.
+      if (view.customerName && customer !== view.customerName) continue;
+      if (viewCoversItem(one, view)) continue;
+      const need = needs[customer];
+      needs[customer] = {
+        startMonth: need && need.startMonth < item.startMonth ? need.startMonth : item.startMonth,
+        endMonth: need && need.endMonth > item.endMonth ? need.endMonth : item.endMonth,
+      };
+    }
   }
   return needs;
 }
 
 /**
  * Delta cells for one item that adds a fixed number of units over its whole
- * date range. The units are split across its months and SKUs in proportion
- * to their Current forecast, so the seasonality and SKU mix stay as they
- * are; if Current is 0 everywhere, they are split evenly.
+ * date range, to each customer it covers (each gets the full number). The
+ * units are split across that customer's months and SKUs in proportion to
+ * their Current forecast, so the seasonality and SKU mix stay as they are;
+ * if Current is 0 everywhere, they are split evenly.
  *
  * The split is always over the item's whole scope (splitRowsFor), and cells
  * are returned only for the page's rows, so an All SKUs block shows its
@@ -210,14 +253,17 @@ export function splitBasisNeeds(items, view) {
  * @param {ReturnType<typeof chartView>} view
  */
 export function unitsDeltaCells(rows, item, units, source, view) {
-  const splitRows = splitRowsFor(rows, item, view);
-  if (!splitRows) return [];
-  const scope = itemRows(splitRows, item);
   const total = Number(units) || 0;
-  const baseTotal = scope.reduce((sum, row) => sum + row[CURRENT_UNITS], 0);
-  return itemRows(rows, item).map((row) => {
-    const share = baseTotal > 0 ? row[CURRENT_UNITS] / baseTotal : 1 / scope.length;
-    return deltaCell(row, item, source, total * share);
+  return perCustomer(itemRows(rows, item), item).flatMap((one) => {
+    const splitRows = splitRowsFor(rows, one, view);
+    if (!splitRows) return [];
+    const scope = itemRows(splitRows, one);
+    const baseTotal = scope.reduce((sum, row) => sum + row[CURRENT_UNITS], 0);
+    // Cells keep the item's own id (`one` differs only in its customers).
+    return itemRows(rows, one).map((row) => {
+      const share = baseTotal > 0 ? row[CURRENT_UNITS] / baseTotal : 1 / scope.length;
+      return deltaCell(row, item, source, total * share);
+    });
   });
 }
 

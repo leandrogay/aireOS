@@ -246,9 +246,26 @@ def test_deleting_a_customer_leaves_its_doh_settings_to_the_cascade(monkeypatch)
 
     customer_service.delete_customer(3)
 
-    # doh_settings.customer_id is ON DELETE CASCADE, so only the customer row is deleted here.
-    deletes = [sql for sql, _ in conn.calls if sql.startswith("DELETE FROM")]
-    assert [sql.split()[2] for sql in deletes] == ["customers"]
+    # doh_settings.customer_id is ON DELETE CASCADE, so it is never deleted here.
+    deletes = [sql.split()[2] for sql, _ in conn.calls if sql.startswith("DELETE FROM")]
+    assert "doh_settings" not in deletes
+    assert deletes[-1] == "customers"
+
+
+def test_deleting_a_customer_takes_it_out_of_scenario_item_lists_first(monkeypatch):
+    conn = FakeConnection(_respond(customer=_customer()))
+    _install(monkeypatch, conn)
+
+    customer_service.delete_customer(3)
+
+    statements = [(sql.split()[0], sql, params) for sql, params in conn.calls if sql.split()[0] in ("DELETE", "UPDATE")]
+    tables = {"scenario_building_blocks", "scenario_promotions"}
+    # Items naming only this customer go; others lose it from their list; then the customer.
+    for table in tables:
+        assert any(kind == "DELETE" and table in sql and "ARRAY[" in sql for kind, sql, _ in statements)
+        assert any(kind == "UPDATE" and table in sql and "array_remove" in sql for kind, sql, _ in statements)
+    assert statements[-1][1].startswith("DELETE FROM customers")
+    assert all(params["customer_id"] == 3 for _, _, params in statements)
 
 
 def test_doh_settings_do_not_make_a_customer_in_use(monkeypatch):

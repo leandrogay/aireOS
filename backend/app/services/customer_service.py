@@ -4,6 +4,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 
 from app.services import sql
+from app.services.scenario import common as scenario_common
 from app.services.settings import doh
 
 
@@ -491,7 +492,9 @@ def delete_customer(
                 f"Delete the retailers under {current['customer_name']} first"
             )
 
-        # doh_settings rows go with the customer (ON DELETE CASCADE).
+        # doh_settings rows go with the customer (ON DELETE CASCADE); Scenario
+        # builder items name customers in lists, which have no foreign key.
+        scenario_common.remove_customer(conn, customer_id)
         conn.execute(
             text(
                 """

@@ -27,7 +27,7 @@ SKUS = [
 def _block(**changes):
     block = {
         "kind": "block",
-        "customer_name": "fairprice",
+        "customer_names": ["fairprice"],
         "sku_ranges": None,
         "product_name": None,
         "name": "New Store Opening",
@@ -55,13 +55,14 @@ class FakeBlocksDatabase:
 
     def _view_row(self, block_id):
         block = self.blocks[block_id]
-        customer_name = next(name for name, cid in CUSTOMERS.items() if cid == block["customer_id"])
+        # As the SELECT's ARRAY(...): empty for NULL customer_ids (every customer).
+        customer_names = sorted(name for name, cid in CUSTOMERS.items() if cid in (block["customer_ids"] or []))
         product_name = next((row["product_name"] for row in SKUS if row["sku"] == block["sku"]), None)
         return {
             "block_id": block_id,
-            "customer_name": customer_name,
+            "customer_names": customer_names,
             "product_name": product_name,
-            **{key: value for key, value in block.items() if key != "customer_id"},
+            **{key: value for key, value in block.items() if key not in ("customer_id", "customer_ids")},
             "created_at": STAMP,
             "updated_at": STAMP,
         }
@@ -69,9 +70,12 @@ class FakeBlocksDatabase:
     def respond(self, sql, params):
         params = params or {}
 
-        if "FROM customers" in sql and "customer_name = :customer_name" in sql:
-            customer_id = CUSTOMERS.get(params["customer_name"])
-            return [(customer_id,)] if customer_id else []
+        if "FROM customers" in sql and "customer_name = ANY(:customer_names)" in sql:
+            return [
+                {"customer_id": CUSTOMERS[name], "customer_name": name}
+                for name in params["customer_names"]
+                if name in CUSTOMERS
+            ]
 
         if "FROM skus" in sql and "product_name = :product_name" in sql:
             return [
@@ -160,7 +164,7 @@ def test_create_returns_the_block_as_the_list_shows_it(monkeypatch):
     assert saved == {
         "block_id": 1,
         "kind": "block",
-        "customer_name": "fairprice",
+        "customer_names": ["fairprice"],
         "sku_ranges": None,
         "sku": "SKU-A",
         "product_name": "Comfort Pants M",
@@ -204,7 +208,7 @@ def test_an_unknown_customer_raises_without_writing(monkeypatch):
     conn = _install(monkeypatch, db)
 
     with pytest.raises(ValueError, match="Unknown customer: giant"):
-        building_blocks_service.create_building_block(_block(customer_name="giant"))
+        building_blocks_service.create_building_block(_block(customer_names=["giant"]))
 
     assert not conn.sql_containing("INSERT INTO")
 
@@ -238,14 +242,14 @@ def test_update_replaces_every_field_and_stamps_updated_at(monkeypatch):
     building_blocks_service.create_building_block(_block())
 
     saved = building_blocks_service.update_building_block(
-        1, _block(customer_name="sheng_siong", is_active=False, uplift_value=Decimal("25"))
+        1, _block(customer_names=["sheng_siong"], is_active=False, uplift_value=Decimal("25"))
     )
 
     (sql, params), = conn.sql_containing("UPDATE scenario_building_blocks")
     assert "updated_at = CURRENT_TIMESTAMP" in sql
     assert params["block_id"] == 1
     assert params["customer_id"] == 2
-    assert saved["customer_name"] == "sheng_siong"
+    assert saved["customer_names"] == ["sheng_siong"]
     assert saved["is_active"] is False
     assert saved["uplift_value"] == 25.0
 
@@ -297,7 +301,7 @@ def test_growth_for_another_year_or_customer_is_allowed(monkeypatch):
     next_year = building_blocks_service.create_building_block(
         _growth(start_month=date(2028, 1, 1), end_month=date(2028, 12, 1))
     )
-    other_customer = building_blocks_service.create_building_block(_growth(customer_name="sheng_siong"))
+    other_customer = building_blocks_service.create_building_block(_growth(customer_names=["sheng_siong"]))
 
     assert next_year["block_id"] == 2
     assert other_customer["block_id"] == 3
@@ -390,6 +394,53 @@ def test_a_block_for_several_ranges_stores_them_all(monkeypatch):
     assert saved["sku_ranges"] == ["Comfort Pants", "Ultra Tape"]
 
 
+# ---- Several customers ----------------------------------------------------------
+
+
+def test_a_block_for_several_customers_stores_them_all_and_no_single_customer(monkeypatch):
+    db = FakeBlocksDatabase()
+    conn = _install(monkeypatch, db)
+
+    saved = building_blocks_service.create_building_block(_block(customer_names=["fairprice", "sheng_siong"]))
+
+    (_, params), = conn.sql_containing("INSERT INTO scenario_building_blocks")
+    assert params["customer_ids"] == [1, 2]
+    assert params["customer_id"] is None
+    assert saved["customer_names"] == ["fairprice", "sheng_siong"]
+
+
+def test_a_block_for_every_customer_is_stored_as_null_and_read_back_as_none(monkeypatch):
+    db = FakeBlocksDatabase()
+    conn = _install(monkeypatch, db)
+
+    saved = building_blocks_service.create_building_block(_block(customer_names=None))
+
+    (_, params), = conn.sql_containing("INSERT INTO scenario_building_blocks")
+    assert params["customer_ids"] is None
+    assert params["customer_id"] is None
+    assert saved["customer_names"] is None
+
+
+def test_one_unknown_customer_among_several_raises_without_writing(monkeypatch):
+    db = FakeBlocksDatabase()
+    conn = _install(monkeypatch, db)
+
+    with pytest.raises(ValueError, match="Unknown customer: giant"):
+        building_blocks_service.create_building_block(_block(customer_names=["fairprice", "giant"]))
+
+    assert conn.sql_containing("INSERT INTO") == []
+
+
+def test_overlay_blocks_cover_their_customers_or_every_customer():
+    conn = FakeConnection(lambda sql, params: [])
+
+    building_blocks_service.fetch_blocks_for_customer(conn, 4, [7])
+
+    sql, params = conn.calls[0]
+    assert "block.customer_ids IS NULL OR CAST(:customer_id AS INTEGER) = ANY(block.customer_ids)" in sql
+    assert params["customer_id"] == 4
+
+
 def test_one_unknown_range_among_several_raises_without_writing(monkeypatch):
     db = FakeBlocksDatabase()
     conn = _install(monkeypatch, db)
@@ -427,8 +478,9 @@ def test_list_returns_newest_first(monkeypatch):
     blocks = building_blocks_service.list_building_blocks()
 
     assert [block["name"] for block in blocks] == ["Second", "First"]
-    (sql, _), = [call for call in conn.sql_containing("ORDER BY") if "FROM scenario_building_blocks" in call[0]]
-    assert "block.created_at DESC" in sql
+    # The list is the one read ordered by block (each block's customer names have their own ORDER BY).
+    (sql, _), = conn.sql_containing("block.created_at DESC")
+    assert "block.block_id DESC" in sql
 
 
 # ---- blocks for the sell-in plan overlay ----

@@ -72,7 +72,7 @@ export function findGrowth(blocks, customer, skuRange, year) {
   return (
     blocks.find(
       (block) =>
-        block.customer === customer && block.skuRanges?.[0] === skuRange && block.startMonth === `${year}-01-01`
+        block.customers?.[0] === customer && block.skuRanges?.[0] === skuRange && block.startMonth === `${year}-01-01`
     ) ?? null
   );
 }
@@ -88,7 +88,8 @@ export function findGrowth(blocks, customer, skuRange, year) {
 export function growthFields(customer, skuRange, year) {
   return {
     kind: GROWTH_KIND,
-    customer,
+    // A growth names exactly one customer and one range (backend schema).
+    customers: [customer],
     // A growth names exactly one range (backend schema).
     skuRanges: [skuRange],
     sku: '',
@@ -111,7 +112,7 @@ export function growthInYears(blocks, years) {
     .filter((block) => years.includes(block.startMonth.slice(0, 4)))
     .sort(
       (a, b) =>
-        a.customer.localeCompare(b.customer) ||
+        a.customers[0].localeCompare(b.customers[0]) ||
         a.skuRanges[0].localeCompare(b.skuRanges[0]) ||
         a.startMonth.localeCompare(b.startMonth)
     );

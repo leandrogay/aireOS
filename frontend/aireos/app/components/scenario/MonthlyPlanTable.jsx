@@ -1,19 +1,24 @@
 'use client';
 
 import Link from 'next/link';
-import { ArrowUpRight, ChevronDown } from 'lucide-react';
+import { ChevronDown, Plus } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import InfoTooltip from '@/components/ui/InfoTooltip';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { HEADER_RULE } from '@/components/forecast/ForecastYearTotals';
+import { buttonVariants } from '@/components/ui/button';
 import ExpandableRow from '@/components/ui/ExpandableRow';
 import StatusPill from '@/components/ui/StatusPill';
 import { formatMonthLabel } from '@/app/utils/forecastView';
 import useExpandedRows from '@/hooks/useExpandedRows';
 
+import MechanicPills, { PROMOTION_SOURCE_LABELS, monthSpan } from './MechanicPills';
+
+// One line while the table has room (the @container below); headers wrap
+// only once it is narrow.
 const headerCell = cn(
-  'border-b bg-cream px-2 py-1.5 text-right align-bottom text-[10px] font-bold uppercase leading-tight tracking-wide text-deep-violet-blue',
+  'border-b bg-cream px-2 py-1.5 text-left align-middle text-[10px] font-bold uppercase leading-tight tracking-wide text-deep-violet-blue @4xl:whitespace-nowrap',
   HEADER_RULE
 );
 
@@ -29,10 +34,11 @@ function percent(share) {
   return share == null ? '—' : `${share < 0 ? '−' : '+'}${Math.abs(share * 100).toFixed(1)}%`;
 }
 
-function Header({ label, hint, align = 'right' }) {
+// Headers and cells are all left-aligned and vertically centred.
+function Header({ label, hint, className }) {
   return (
-    <th className={cn(headerCell, align === 'left' && 'text-left')}>
-      <span className={cn('inline-flex items-end gap-1', align === 'right' && 'justify-end')}>
+    <th className={cn(headerCell, className)}>
+      <span className="inline-flex items-center gap-1">
         {label}
         {hint ? <InfoTooltip label={`About ${label}`}>{hint}</InfoTooltip> : null}
       </span>
@@ -118,7 +124,7 @@ const PART_COLUMNS = [
   {
     part: 'promotionLines',
     label: 'Promotions',
-    hint: "What promotions add to the baseline. Last year's: the promotions of last year's month and the run-rate months, carried by Tier 0 until a promotion is planned (negative when they sold less than an ordinary month). Planned: the official promotions on the Promotions page, in their place.",
+    hint: "What promotions add to the baseline. Last year's: carried by Tier 0 until a promotion is planned (negative when they sold less than an ordinary month); filled pills ran in the same month last year, dashed ones in the recent months Tier 0 averages. Planned (blue): official promotions on the Promotions page, in their place.",
     include: ['carried', 'official'],
     split: true,
   },
@@ -131,34 +137,6 @@ const PART_COLUMNS = [
     include: ['promotions'],
   },
 ];
-
-// Planned on the Promotions page or not, beside the month (planStatus).
-// Where something is still to plan, the pill links to the Promotions page.
-const PLAN_STATUS = {
-  planned: { tone: 'info', label: 'Planned' },
-  partly: { tone: 'info', label: 'Partly planned · Create promotion', link: true },
-  not_planned: { tone: 'muted', label: 'Not planned yet · Create promotion', link: true },
-};
-
-function PlanStatusPill({ status, month }) {
-  const shown = PLAN_STATUS[status];
-  if (!shown) return null;
-  if (!shown.link) return <StatusPill tone={shown.tone}>{shown.label}</StatusPill>;
-  return (
-    <Link
-      href="/promotions"
-      // The row opens on a click; following the link must not open it too.
-      onClick={(event) => event.stopPropagation()}
-      title={`${month} still carries last year's promotions. Create a promotion for it on the Promotions page.`}
-      className="rounded-full transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-scenario/50"
-    >
-      <StatusPill tone={shown.tone}>
-        {shown.label}
-        <ArrowUpRight className="size-3" aria-hidden="true" />
-      </StatusPill>
-    </Link>
-  );
-}
 
 // A column shows only when some month has something in it.
 function columnHasValues(column, rows) {
@@ -220,11 +198,12 @@ export default function MonthlyPlanTable({ rows, lastYearLoading, onOpenItem, sc
         <span className="font-semibold text-deep-violet-blue">{scope}</span> · Units. Open a month to see how its Tier 0 is
         built.
       </p>
-      <div className="overflow-x-auto rounded-md border border-lavander">
+      <div className="@container overflow-x-auto rounded-md border border-lavander">
         <table className="w-full border-separate border-spacing-0 text-xs text-deep-violet-blue">
           <thead>
             <tr>
-              <Header label="Month" align="left" />
+              {/* px-4: in line with the month cell's chevron (ExpandableRow). */}
+              <Header label="Month" className="px-4" />
               <Header label="Last year actual" hint="Sell-out in the same month a year earlier." />
               {partColumns.map((column) => (
                 <Header key={column.part} label={column.label} hint={column.hint} />
@@ -235,7 +214,7 @@ export default function MonthlyPlanTable({ rows, lastYearLoading, onOpenItem, sc
           </thead>
           <tbody>
             {rows.map((row) => {
-              const cell = 'whitespace-nowrap px-2 py-1.5 text-right align-top tabular-nums';
+              const cell = 'whitespace-nowrap px-2 py-1.5 text-left align-middle tabular-nums';
               const label = formatMonthLabel(row.month_year);
               const change = row.variance;
               const tone = (value) => (value < 0 ? 'text-red-700' : 'text-emerald-700');
@@ -250,8 +229,7 @@ export default function MonthlyPlanTable({ rows, lastYearLoading, onOpenItem, sc
                   wrapPrimary
                   primary={
                     <span className="inline-flex flex-wrap items-center gap-1.5">
-                      {label}
-                      <PlanStatusPill status={row.planStatus} month={label} />
+                      <span className="whitespace-nowrap">{label}</span>
                       {flagged(row.month_year) ? <StatusPill tone="warning">Big change</StatusPill> : null}
                     </span>
                   }
@@ -265,7 +243,7 @@ export default function MonthlyPlanTable({ rows, lastYearLoading, onOpenItem, sc
                     )}
                   </td>
                   {partColumns.map((column) => (
-                    <PartCell key={column.part} column={column} row={row} cell={cell} onOpenItem={onOpenItem} />
+                    <PartCell key={column.part} column={column} row={row} cell={cell} onOpenItem={onOpenItem} month={label} />
                   ))}
                   <td className={cell}>
                     <span className="font-semibold text-scenario-ink">{units(row.adjusted.units)}</span>
@@ -292,8 +270,10 @@ export default function MonthlyPlanTable({ rows, lastYearLoading, onOpenItem, sc
 
 // One part of a month. The baseline (or Tier 0) is a level; every other part
 // is signed, and building blocks list the blocks behind them.
-function PartCell({ column, row, cell, onOpenItem }) {
-  if (column.part === 'promotionLines') return <PromotionsCell lines={row.promotionLines} cell={cell} />;
+function PartCell({ column, row, cell, onOpenItem, month }) {
+  if (column.part === 'promotionLines') {
+    return <PromotionsCell lines={row.promotionLines} status={row.planStatus} cell={cell} month={month} />;
+  }
   const value = column.part === 'tier0' ? row.model.units : row.parts?.[column.part] ?? (column.part === 'blocks' ? row.blocks.units : 0);
   const level = column.part === 'baseline' || column.part === 'tier0';
   const blockItems = column.part === 'blocks' ? row.items.filter((item) => item.source === 'blocks') : [];
@@ -317,17 +297,27 @@ function PartCell({ column, row, cell, onOpenItem }) {
 
 const LINE_TAGS = { carried: "Last year's", official: 'Planned' };
 
-function monthsLabel(months) {
-  if (!months.length) return '';
-  const first = formatMonthLabel(months[0]);
-  const last = formatMonthLabel(months[months.length - 1]);
-  return first === last ? first : `${first} – ${last}`;
+// Where something is still to plan, a button to the Promotions page.
+function PlanLink({ status, month }) {
+  if (status !== 'not_planned' && status !== 'partly') return null;
+  return (
+    <Link
+      href="/promotions"
+      // The row opens on a click; following the link must not open it too.
+      onClick={(event) => event.stopPropagation()}
+      title={`${month} still carries last year's promotions. Plan a promotion for it on the Promotions page.`}
+      className={cn(buttonVariants({ size: 'xs' }), 'mt-1.5')}
+    >
+      <Plus data-icon="inline-start" aria-hidden="true" />
+      {status === 'partly' ? 'Plan the rest' : 'Plan promotion'}
+    </Link>
+  );
 }
 
-// The Promotions column: one line per kind in the month (last year's, the
-// official ones planned, or both when only some SKUs are planned), each
-// with every mechanic behind it.
-function PromotionsCell({ lines, cell }) {
+// The Promotions column: one block per kind in the month (last year's, the
+// official ones planned, or both when only some SKUs are planned), each a
+// figure and its mechanics as pills under where they come from.
+function PromotionsCell({ lines, status, cell, month }) {
   if (!lines.length) {
     return (
       <td className={cell}>
@@ -336,26 +326,26 @@ function PromotionsCell({ lines, cell }) {
     );
   }
   return (
-    <td className={cn(cell, 'min-w-[13rem] whitespace-normal text-left')}>
-      <div className="space-y-1.5">
+    // A set width, so the pills wrap instead of taking the room every header needs.
+    <td className={cn(cell, 'w-[17rem] min-w-[11rem] whitespace-normal')}>
+      <div className="space-y-2">
         {lines.map((line) => (
           <div key={line.kind}>
-            <p className="flex items-baseline justify-between gap-2">
+            <p className="flex items-baseline gap-2">
               <span className="text-[10px] font-bold uppercase tracking-wide text-deep-violet-blue/55">{LINE_TAGS[line.kind]}</span>
               <span className="font-semibold text-scenario-ink">{signed(line.units, units)}</span>
             </p>
-            {line.kind === 'official' ? (
-              <p className="text-[11px] text-deep-violet-blue/70">{line.mechanics.join(', ') || 'No mechanic recorded'}</p>
-            ) : (
-              line.sources.map((source) => (
-                <p key={source.kind} className="text-[11px] text-deep-violet-blue/70">
-                  <span className="text-deep-violet-blue/50">
-                    {source.kind === 'runRate' ? 'Run-rate' : 'Last year'} ({monthsLabel(source.months)}):
-                  </span>{' '}
-                  {source.mechanics.join(', ')}
-                </p>
-              ))
-            )}
+            {line.groups.map((group) => (
+              <div key={group.kind} className="mt-1">
+                {group.kind === 'planned' ? null : (
+                  <p className="mb-0.5 text-[10px] text-deep-violet-blue/55">
+                    {PROMOTION_SOURCE_LABELS[group.kind]} ({monthSpan(group.months)})
+                  </p>
+                )}
+                <MechanicPills kind={group.kind} mechanics={group.mechanics} />
+              </div>
+            ))}
+            {line.kind === 'carried' ? <PlanLink status={status} month={month} /> : null}
           </div>
         ))}
       </div>

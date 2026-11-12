@@ -95,8 +95,9 @@ export default function BuildingBlocksSection({
 
   function addBlock() {
     const block = newScenarioBlock({
-      customer: defaultCustomer || customerOptions[0] || '',
-      // The chart's range to start with; none picked = All SKU ranges.
+      // The chart's customer and range to start with; none = every customer /
+      // All SKU ranges.
+      customers: defaultCustomer ? [defaultCustomer] : [],
       skuRanges: defaultSkuRange ? [defaultSkuRange] : [],
       months,
     });

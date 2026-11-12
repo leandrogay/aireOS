@@ -9,9 +9,14 @@ from app.services.scenario import common
 # plan chart's building blocks overlay when picked there. Nothing here reads
 # or writes the forecast, Inventory or Dashboard data; the Scenario builder
 # applies a block to the Current forecast itself (app/utils/scenarioEngine.js),
-# the overlay through scenario/block_effects. Requests name the customer and product
-# the way the Forecast page does, and they are resolved to customer_id /
-# sku here so the table holds real foreign keys.
+# the overlay through scenario/block_effects. Requests name the customers and product
+# the way the Forecast page does, and they are resolved to customer_ids /
+# sku here.
+#
+# A block can cover several customers (migration 022): customer_ids = those
+# customers, NULL = every customer. customer_id is also filled when it names
+# exactly one (growth always does), for the growth index and ON DELETE CASCADE;
+# customer_service.delete_customer takes a deleted customer out of the lists.
 #
 # Blocks follow SKU ranges (migration 017): sku_ranges = every SKU of those
 # ranges, sku and sku_ranges both NULL = every SKU ("All SKU ranges"), and
@@ -35,7 +40,13 @@ _BLOCK_SELECT = """
     SELECT
         block.block_id,
         block.kind,
-        customer.customer_name,
+        -- Empty for NULL customer_ids (every customer).
+        ARRAY(
+            SELECT customer.customer_name
+            FROM customers AS customer
+            WHERE customer.customer_id = ANY(block.customer_ids)
+            ORDER BY customer.customer_name
+        ) AS customer_names,
         block.sku_ranges,
         block.sku,
         product.product_name,
@@ -51,9 +62,6 @@ _BLOCK_SELECT = """
 
     FROM scenario_building_blocks AS block
 
-    JOIN customers AS customer
-        ON customer.customer_id = block.customer_id
-
     LEFT JOIN skus AS product
         ON product.sku = block.sku
 """
@@ -63,7 +71,8 @@ def _block_view(row: dict) -> dict:
     return {
         "block_id": row["block_id"],
         "kind": row["kind"],
-        "customer_name": row["customer_name"],
+        # None = every customer, as sku_ranges.
+        "customer_names": list(row["customer_names"]) or None,
         "sku_ranges": list(row["sku_ranges"]) if row["sku_ranges"] else None,
         "sku": row["sku"],
         "product_name": row["product_name"],
@@ -116,7 +125,8 @@ def list_building_blocks() -> list[dict]:
 
 def fetch_blocks_for_customer(conn: Connection, customer_id: int, block_ids: list[int]) -> list[dict]:
     """
-    The picked blocks that belong to this customer, as the sell-in plan's
+    The picked blocks that cover this customer (it is in customer_ids, or
+    they cover every customer), as the sell-in plan's
     building blocks overlay applies them (scenario/block_effects): sku is a
     single SKU's code, range_skus the codes of the block's SKU range (both
     None = every SKU), months are dates. A picked block of another customer,
@@ -151,7 +161,7 @@ def fetch_blocks_for_customer(conn: Connection, customer_id: int, block_ids: lis
             FROM scenario_building_blocks AS block
 
             WHERE
-                block.customer_id = :customer_id
+                (block.customer_ids IS NULL OR CAST(:customer_id AS INTEGER) = ANY(block.customer_ids))
                 AND block.block_id = ANY(:block_ids)
 
             ORDER BY
@@ -188,6 +198,37 @@ def _resolve_customer_id(conn: Connection, customer_name: str) -> int:
     if customer_id is None:
         raise ValueError(f"Unknown customer: {customer_name}")
     return customer_id
+
+
+def resolve_customer_ids(conn: Connection, customer_names: list[str] | None) -> list[int] | None:
+    """The customers' ids in the order named, or None for every customer; every name must exist."""
+
+    if not customer_names:
+        return None
+
+    found = {
+        row["customer_name"]: row["customer_id"]
+        for row in conn.execute(
+            text(
+                """
+                SELECT
+                    customer_id,
+                    customer_name
+
+                FROM customers
+
+                WHERE
+                    customer_name = ANY(:customer_names)
+                """
+            ),
+            {"customer_names": list(customer_names)},
+        ).mappings().all()
+    }
+
+    unknown = [name for name in customer_names if name not in found]
+    if unknown:
+        raise ValueError(f"Unknown customer: {', '.join(unknown)}")
+    return [found[name] for name in customer_names]
 
 
 def _resolve_sku(conn: Connection, product_name: str | None) -> str | None:
@@ -303,15 +344,18 @@ def _ensure_one_growth_per_year(conn: Connection, block: dict, params: dict, blo
 
     if existing is not None:
         raise GrowthBlockExistsError(
-            f"{block['customer_name']} already has growth for {params['sku_ranges'][0]} in {params['start_month'].year}; "
+            f"{block['customer_names'][0]} already has growth for {params['sku_ranges'][0]} in {params['start_month'].year}; "
             "edit that one instead."
         )
 
 
 def _write_params(conn: Connection, block: dict) -> dict:
+    customer_ids = resolve_customer_ids(conn, block["customer_names"])
     return {
         "kind": block["kind"],
-        "customer_id": _resolve_customer_id(conn, block["customer_name"]),
+        "customer_ids": customer_ids,
+        # The one customer, or None for several or every customer.
+        "customer_id": customer_ids[0] if customer_ids and len(customer_ids) == 1 else None,
         "sku_ranges": _resolve_sku_ranges(conn, block["sku_ranges"]),
         "sku": _resolve_sku(conn, block["product_name"]),
         "name": block["name"],
@@ -345,6 +389,7 @@ def create_building_block(block: dict) -> dict:
                 INSERT INTO scenario_building_blocks (
                     kind,
                     customer_id,
+                    customer_ids,
                     sku_ranges,
                     sku,
                     name,
@@ -358,6 +403,7 @@ def create_building_block(block: dict) -> dict:
                 VALUES (
                     :kind,
                     :customer_id,
+                    CAST(:customer_ids AS INTEGER[]),
                     CAST(:sku_ranges AS TEXT[]),
                     :sku,
                     :name,
@@ -392,6 +438,7 @@ def update_building_block(block_id: int, block: dict) -> dict | None:
                 SET
                     kind = :kind,
                     customer_id = :customer_id,
+                    customer_ids = CAST(:customer_ids AS INTEGER[]),
                     sku_ranges = CAST(:sku_ranges AS TEXT[]),
                     sku = :sku,
                     name = :name,
