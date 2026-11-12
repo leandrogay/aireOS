@@ -80,13 +80,19 @@ def get_forecast_options():
         raise HTTPException(status_code=503, detail=f"Unable to reach BigQuery: {e.message}")
 
 
-# Both below are best effort (the services never raise): they feed small
-# notes on the Forecast page, so they sit outside GET / and can't slow or
+# All three below are best effort (the services never raise): they feed small
+# notes on the Forecast page and its help panel, so they sit outside GET / and can't slow or
 # fail the chart.
 @router.get("/initial-status")
 def get_initial_status():
     """Per-year Initial Yearly Forecast lock state, for the note under the chart."""
     return forecast_service.get_initial_status()
+
+
+@router.get("/missing-months")
+def get_missing_months():
+    """Each customer's months with no sales file, for the help panel (all customers)."""
+    return forecast_service.get_missing_months()
 
 
 @router.get("/refresh-status")

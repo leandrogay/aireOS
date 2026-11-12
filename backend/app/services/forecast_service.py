@@ -360,6 +360,30 @@ def _is_past(stamp: str | None, now: datetime) -> bool:
     return datetime.fromisoformat(stamp.replace("Z", "+00:00")) < now
 
 
+def get_missing_months() -> dict:
+    """Months each customer never sent a sales file for, for the help panel's
+    "Missing months" list: {customers: [{customer_id, customer_name, months}],
+    available}. All customers and all history, whatever the page's filters.
+
+    Best effort, like get_initial_status: a failed read logs and returns no
+    customers with available False, so the panel says the list couldn't load
+    instead of claiming nothing is missing.
+    """
+    try:
+        rows = bigquery_service.get_missing_months()
+    except Exception as exc:
+        logger.warning("Could not read the missing sales months: %s", exc)
+        return {"customers": [], "available": False}
+    customers: dict[int, dict] = {}
+    for row in rows:
+        entry = customers.setdefault(
+            row["customer_id"],
+            {"customer_id": row["customer_id"], "customer_name": row["customer_name"], "months": []},
+        )
+        entry["months"].append(row["month_year"])
+    return {"customers": list(customers.values()), "available": True}
+
+
 def get_initial_status() -> dict:
     """Whether each year's Initial Yearly Forecast is still updating or locked.
 

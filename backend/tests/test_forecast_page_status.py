@@ -39,7 +39,7 @@ class _FakeBigQueryClient:
 
 
 def _meta_frame(*rows):
-    return pd.DataFrame(rows, columns=["forecast_year", "lock_at", "refreshed_at"])
+    return pd.DataFrame(rows, columns=["forecast_year", "lock_at", "refreshed_at", "data_cutoff"])
 
 
 def _client():
@@ -53,7 +53,7 @@ def _client():
 
 def test_initial_meta_reads_the_configured_forecast_dataset(monkeypatch):
     fake = _FakeBigQueryClient(_meta_frame(
-        (2027, pd.Timestamp("2026-12-31T15:59:00Z"), pd.Timestamp("2026-11-04T03:00:00Z")),
+        (2027, pd.Timestamp("2026-10-31T15:59:59Z"), pd.Timestamp("2026-11-04T03:00:00Z"), datetime.date(2026, 9, 1)),
     ))
     monkeypatch.setattr(bigquery, "get_bigquery_client", lambda: fake)
     monkeypatch.setattr(bigquery.config, "BQ_FORECAST_DATASET", "proj.forecast_ds")
@@ -63,8 +63,9 @@ def test_initial_meta_reads_the_configured_forecast_dataset(monkeypatch):
     assert "`proj.forecast_ds.aire_forecasting_initial_meta`" in fake.queries[0]
     assert rows == [{
         "forecast_year": 2027,
-        "lock_at": "2026-12-31T15:59:00Z",
+        "lock_at": "2026-10-31T15:59:59Z",
         "refreshed_at": "2026-11-04T03:00:00Z",
+        "data_cutoff": "2026-09-01",
     }]
 
 
@@ -160,3 +161,73 @@ def test_with_event_refresh_off_the_badge_never_shows_and_sql_is_not_read(monkey
     monkeypatch.setattr(worker.sql, "connect_with_connector_autocommit", no_database_allowed)
 
     assert worker.refresh_status_best_effort() == {"updating": False, "since": None}
+
+
+# ---- Missing sales months (help panel) ----
+
+
+def _missing_frame(*rows):
+    return pd.DataFrame(rows, columns=["customer_id", "customer_name", "month_year"])
+
+
+def test_missing_months_read_every_customer_with_a_timeout(monkeypatch):
+    from app.services import forecast_cache
+
+    forecast_cache.clear()
+    fake = _FakeBigQueryClient(_missing_frame(
+        (7, "NHG", datetime.date(2026, 1, 1)),
+        (9, "SingHealth", datetime.date(2026, 5, 1)),
+    ))
+    fake_configs = []
+    original_query = fake.query
+    fake.query = lambda query, job_config=None: fake_configs.append(job_config) or original_query(query, job_config)
+    monkeypatch.setattr(bigquery, "get_bigquery_client", lambda: fake)
+    monkeypatch.setattr(bigquery, "get_output_built_at", lambda: "2026-11-12T00:00:00Z")
+
+    rows = bigquery.get_missing_months()
+
+    assert rows == [
+        {"customer_id": 7, "customer_name": "NHG", "month_year": "2026-01-01"},
+        {"customer_id": 9, "customer_name": "SingHealth", "month_year": "2026-05-01"},
+    ]
+    sql = fake.queries[0]
+    # No customer or date filter: the list is for all customers and all history.
+    assert "@customer" not in sql and "@start_date" not in sql
+    assert "GENERATE_DATE_ARRAY(span.first_month, span.last_month" in sql
+    assert int(fake_configs[0].job_timeout_ms) == bigquery.MISSING_MONTHS_TIMEOUT_MS
+
+
+def test_missing_months_are_grouped_per_customer_in_order(monkeypatch):
+    monkeypatch.setattr(bigquery, "get_missing_months", lambda: [
+        {"customer_id": 7, "customer_name": "NHG", "month_year": "2026-01-01"},
+        {"customer_id": 7, "customer_name": "NHG", "month_year": "2026-03-01"},
+        {"customer_id": 9, "customer_name": "SingHealth", "month_year": "2026-05-01"},
+    ])
+
+    status = forecast_service.get_missing_months()
+
+    assert status == {
+        "available": True,
+        "customers": [
+            {"customer_id": 7, "customer_name": "NHG", "months": ["2026-01-01", "2026-03-01"]},
+            {"customer_id": 9, "customer_name": "SingHealth", "months": ["2026-05-01"]},
+        ],
+    }
+
+
+def test_no_missing_months_is_an_empty_but_available_list(monkeypatch):
+    monkeypatch.setattr(bigquery, "get_missing_months", lambda: [])
+
+    assert forecast_service.get_missing_months() == {"customers": [], "available": True}
+
+
+def test_a_failed_missing_months_read_says_unavailable_instead_of_an_error(monkeypatch):
+    def bigquery_down():
+        raise RuntimeError("BigQuery unavailable")
+
+    monkeypatch.setattr(bigquery, "get_missing_months", bigquery_down)
+
+    response = _client().get("/api/forecast/missing-months")
+
+    assert response.status_code == 200
+    assert response.json() == {"customers": [], "available": False}
