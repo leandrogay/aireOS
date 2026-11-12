@@ -4,7 +4,7 @@ import { inputClass } from '@/components/ui/formStyles';
 import Disclosure from '@/components/ui/Disclosure';
 import SelectDropdown from '@/components/ui/SelectDropdown';
 import { glassNoteClass } from '@/components/ui/surfaceStyles';
-import { fieldLabel, periodLabel } from '@/app/utils/mappingReview';
+import { fieldLabel, labelPosition, periodLabel, positionPhrase } from '@/app/utils/mappingReview';
 import { cn } from '@/lib/utils';
 
 const LAST_COLUMN = '';
@@ -62,15 +62,16 @@ export default function ColumnGroupDetails({ group, entry, columns, onSettingsCh
           <>
             {' '}
             · headings are the {fieldLabel(group.settings.key?.target).toLowerCase()}s
-            {labels.map((label) =>
-              label.rows_above === 0 ? (
-                <span key={label.target}> and the {fieldLabel(label.target).toLowerCase()}s</span>
-              ) : (
+            {labels.map((label) => {
+              const position = labelPosition(label);
+              return position ? (
                 <span key={label.target}>
-                  , {fieldLabel(label.target).toLowerCase()}s are {label.rows_above === 1 ? 'the row' : `${label.rows_above} rows`} above
+                  , {fieldLabel(label.target).toLowerCase()}s are {positionPhrase(position)}
                 </span>
-              ),
-            )}
+              ) : (
+                <span key={label.target}> and the {fieldLabel(label.target).toLowerCase()}s</span>
+              );
+            })}
           </>
         )}
         {isPeriod && entry?.first && (

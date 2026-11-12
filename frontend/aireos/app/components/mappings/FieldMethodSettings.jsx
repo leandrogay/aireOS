@@ -3,10 +3,11 @@
 import { inputClass, labelClass } from '@/components/ui/formStyles';
 import SelectDropdown from '@/components/ui/SelectDropdown';
 import { glassNoteClass } from '@/components/ui/surfaceStyles';
-import { rowsAboveChoices } from '@/app/utils/fieldDecision';
+import { headingRowChoices } from '@/app/utils/fieldDecision';
 import { MEASURE_FIELDS, fieldLabel, groupChoices, groupOptionLabel, periodLabel } from '@/app/utils/mappingReview';
 import { cn } from '@/lib/utils';
 
+import CellPicker from './CellPicker';
 import StepsEditor from './StepsEditor';
 
 const note = cn(glassNoteClass, 'px-2 py-1.5 text-[11px] text-deep-violet-blue');
@@ -59,11 +60,16 @@ function Headings({ groups }) {
   );
 }
 
-// The cells over the group's headings, one choice per row that has any, so
-// the reviewer picks the row by what is in it.
-function RowsAbove({ draft, onChange, groups, layout }) {
+const SIDE_OPTIONS = [
+  { value: 'above', label: 'Above the headings' },
+  { value: 'below', label: 'Below the headings' },
+];
+
+// The cells over and under the group's headings, one choice per row that has
+// any, so the reviewer picks the row by what is in it.
+function HeadingRow({ draft, onChange, groups, layout }) {
   const columns = groups[0]?.columns || [];
-  const choices = rowsAboveChoices(layout, columns);
+  const choices = headingRowChoices(layout, columns);
 
   return (
     <div className="space-y-1.5">
@@ -74,14 +80,15 @@ function RowsAbove({ draft, onChange, groups, layout }) {
               <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-deep-violet-blue/15 bg-white/40 p-2 hover:bg-white/70">
                 <input
                   type="radio"
-                  name="rows-above"
-                  checked={draft.rowsAbove === choice.rowsAbove}
-                  onChange={() => onChange({ ...draft, rowsAbove: choice.rowsAbove })}
+                  name="heading-row"
+                  checked={draft.side === choice.side && draft.rows === choice.rows}
+                  onChange={() => onChange({ ...draft, side: choice.side, rows: choice.rows })}
                   className="mt-0.5 size-3.5 accent-deep-violet-blue"
                 />
                 <span className="min-w-0 text-[11px] text-deep-violet-blue">
                   <span className="font-medium">
-                    Row {choice.row} ({choice.rowsAbove === 1 ? 'just above' : `${choice.rowsAbove} rows above`} the headings)
+                    Row {choice.row} ({choice.rows === 1 ? `just ${choice.side}` : `${choice.rows} rows ${choice.side}`} the
+                    headings)
                   </span>
                   <span className="block truncate font-mono text-deep-violet-blue/70">
                     {columns
@@ -96,27 +103,45 @@ function RowsAbove({ draft, onChange, groups, layout }) {
         </ul>
       ) : (
         <p className={note}>
-          No cells were found above these headings in the file as it was first read. Test the nomenclature to read the file
-          again, or say how many rows up to look.
+          No cells were found above or below these headings in the file as it was first read. Test the nomenclature to
+          read the file again, or say where to look.
         </p>
       )}
-      <label className="block text-[11px] text-deep-violet-blue/70">
-        Rows above the headings
-        <input
-          type="number"
-          min={1}
-          value={draft.rowsAbove}
-          onChange={(event) => onChange({ ...draft, rowsAbove: Math.max(1, Number(event.target.value) || 1) })}
-          className={cn(inputClass, 'mt-0.5 block w-24 py-1 text-xs')}
-        />
-      </label>
+      <div className="flex flex-wrap items-end gap-2 text-[11px] text-deep-violet-blue/70">
+        <div className="w-48">
+          <p>Where</p>
+          <SelectDropdown
+            value={draft.side}
+            onChange={(side) => onChange({ ...draft, side })}
+            size="sm"
+            ariaLabel="Above or below the headings"
+            options={SIDE_OPTIONS}
+          />
+        </div>
+        <label className="block">
+          Rows from the headings
+          <input
+            type="number"
+            min={1}
+            value={draft.rows}
+            onChange={(event) => onChange({ ...draft, rows: Math.max(1, Number(event.target.value) || 1) })}
+            className={cn(inputClass, 'mt-0.5 block w-24 py-1 text-xs')}
+          />
+        </label>
+      </div>
+      {draft.side === 'below' && (
+        <p className="text-[11px] text-deep-violet-blue/60">
+          The rows from the headings down to this one are headings too, so none of them is read as sales.
+        </p>
+      )}
     </div>
   );
 }
 
 /**
  * What one way of filling a field needs, in the field editor: the column and
- * its steps, the group of columns, which row above the headings, the price
+ * its steps, the group of columns, which row above or below the headings, the
+ * one cell written on every row, the price
  * column, the value, the field it is worked out from, or the reason it is not
  * in the file.
  *
@@ -196,8 +221,8 @@ export default function FieldMethodSettings({ field, method, draft, onChange, ma
           )}
           {chosen?.kind === 'store' && (
             <p className={note}>
-              One row per outlet column. Which store field the headings fill, and whether a row above them holds the
-              other, is set on Store code and Store name.
+              One row per outlet column. Which store field the headings fill, and whether a row above or below them
+              holds the other, is set on Store code and Store name.
             </p>
           )}
           {steps({ samples: chosen ? samples[chosen.columns[0]] || [] : [] })}
@@ -220,8 +245,8 @@ export default function FieldMethodSettings({ field, method, draft, onChange, ma
         </div>
       );
 
-    case 'above':
-      return <RowsAbove draft={draft} onChange={onChange} groups={groups} layout={layout} />;
+    case 'headingRow':
+      return <HeadingRow draft={draft} onChange={onChange} groups={groups} layout={layout} />;
 
     case 'title': {
       const stated = layout?.stated_period;
@@ -233,11 +258,24 @@ export default function FieldMethodSettings({ field, method, draft, onChange, ma
         </p>
       ) : (
         <p className="rounded-md bg-amber-50 px-2 py-1.5 text-[11px] text-amber-900">
-          No period was found in this file&apos;s title or the lines above its table. You can still choose this — next
+          No period was found in this file&apos;s title, the lines above its table or a month heading. You can still choose this — next
           month&apos;s file may state one — but testing on this file will fail.
         </p>
       );
     }
+
+    case 'cell':
+      return (
+        <div className="space-y-3">
+          <CellPicker
+            value={draft.cell}
+            cells={layout?.cells}
+            onChange={(cell) => onChange({ ...draft, cell })}
+            period={field === 'period_start'}
+          />
+          {steps({ samples: layout?.cells?.[draft.cell] ? [layout.cells[draft.cell]] : [] })}
+        </div>
+      );
 
     case 'price':
       return (

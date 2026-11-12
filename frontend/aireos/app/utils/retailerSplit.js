@@ -1,4 +1,4 @@
-import { currentDecision, rowsAboveChoices } from '@/app/utils/fieldDecision';
+import { currentDecision, headingRowChoices } from '@/app/utils/fieldDecision';
 import { channelRetailerName } from '@/app/utils/mappingCustomer';
 import { HEADING_FIELDS, fieldLabel } from '@/app/utils/mappingReview';
 import { ruleMatches } from '@/app/utils/transformSteps';
@@ -33,16 +33,18 @@ function asList(transforms) {
 
 /**
  * The values a field takes in the example file, as far as the screen knows:
- * its column's values, its group's headings, or the cells over them. `partial`
- * when only a spread of them is known (a column with many values).
+ * its column's values, its group's headings, or the cells over or under them.
+ * `partial` when only a spread of them is known (a column with many values).
  */
 function fieldValues(mapping, state, layout, field) {
   const decision = currentDecision(mapping, state, field);
   if (decision.method === 'column') return columnValues(mapping, decision.column);
   const columns = state.groups[0]?.columns || [];
   if (decision.method === 'headings') return { values: columns, partial: false };
-  if (decision.method === 'above') {
-    const row = rowsAboveChoices(layout, columns).find((item) => item.rowsAbove === decision.rowsAbove);
+  if (decision.method === 'headingRow') {
+    const row = headingRowChoices(layout, columns).find(
+      (item) => item.side === decision.side && item.rows === decision.rows,
+    );
     return row ? { values: columns.map((column) => row.cells[column]).filter(Boolean), partial: false } : null;
   }
   return null;
@@ -58,7 +60,7 @@ function columnValues(mapping, column) {
 /**
  * Every field or column the split can be read from, with its values: the
  * descriptive fields filled from the file (store name, store code…, read from
- * a column, the headings or a row above them), then every column of the file.
+ * a column, the headings or a row above or below them), then every column of the file.
  *
  * @returns {{ value: string, label: string, values: string[], partial: boolean }[]}
  */
