@@ -545,6 +545,12 @@ html.dark { background-color: var(--aire-canvas); }
     --aire-row-background: var(--aire-row-selected);
   }
 
+  /* A month a switched-on building block changes (scenario MonthlyPlanTable);
+     mixed into the row colour so it holds in both themes. */
+  .aire-table-grid tbody > tr[data-highlight='scenario']:not(:has(> td[colspan])) {
+    --aire-row-background: color-mix(in srgb, var(--aire-scenario) 9%, var(--aire-row-base));
+  }
+
   :is(.aire-table-grid, .aire-table-rows) tbody > tr:not(:has(> td[colspan])):hover > td:first-child {
     box-shadow: inset 3px 0 0 var(--aire-accent);
   }

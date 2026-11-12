@@ -14,8 +14,8 @@ const COLUMNS = [
   { key: 'total', label: 'Total', width: '9rem', align: 'right' },
 ];
 
-// The darker header line of the compact report tables (Inventory's sell-in
-// comparison, the Scenario builder's tables); a step darker than their cream
+// The darker header line of the compact report table (Inventory's sell-in
+// comparison); a step darker than their cream
 // header, so the column lines still read on it.
 export const HEADER_RULE = 'border-[#C5CBE0]';
 
