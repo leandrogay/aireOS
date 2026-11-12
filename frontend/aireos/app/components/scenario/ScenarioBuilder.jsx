@@ -55,6 +55,7 @@ import {
 } from '@/app/utils/scenarioPromotions';
 import { liveUpliftIndex } from '@/app/utils/scenarioLiveUplifts';
 import { breakdownTotals, withComposition } from '@/app/utils/scenarioComposition';
+import { milestoneBreakdown } from '@/app/utils/scenarioMilestones';
 import { OFFICIAL_ITEM, bigChange, monthSplit, tier0SplitIndex } from '@/app/utils/scenarioTier0Split';
 import { anchorInMonth, anchorLabel, anchorSourceLabel, anchorTargets } from '@/app/utils/promoUpliftSettings';
 import {
@@ -295,9 +296,16 @@ export default function ScenarioBuilder() {
   const monthSplits = new Map(
     tier0Split ? basePoints.map((point) => [point.month_year, monthSplit(rows, tier0Split, point.month_year)]) : []
   );
-  const chartPoints = (hasSimulated ? withSimulatedLine(basePoints, byMonth) : basePoints).map((point) =>
-    withComposition(point, [...(monthCells.get(point.month_year)?.values() ?? [])], monthSplits.get(point.month_year) ?? null)
-  );
+  // Blocks in months with actuals are milestones: worked back from the
+  // actual (scenarioMilestones.js), marked on the Actual line, never moving one.
+  const pastMonths = basePoints.filter((point) => point.actual != null && point.current == null).map((point) => point.month_year);
+  const rangeOf = Object.fromEntries(rows.map((row) => [row.product_name, row.sku_range ?? null]));
+  const milestones = milestoneBreakdown(actuals, activeScenarioBlocks(allBlocks), rangeOf);
+  const chartPoints = (hasSimulated ? withSimulatedLine(basePoints, byMonth) : basePoints).map((point) => {
+    const composed = withComposition(point, [...(monthCells.get(point.month_year)?.values() ?? [])], monthSplits.get(point.month_year) ?? null);
+    const milestone = milestones.get(point.month_year);
+    return milestone ? { ...composed, milestones: milestone } : composed;
+  });
   // Each month's parts, for the Monthly plan, and the months the promotions
   // planned move by more than 35% of Tier 0 (Big change).
   const breakdowns = new Map(chartPoints.filter((point) => point.breakdown).map((point) => [point.month_year, point.breakdown]));
@@ -362,6 +370,7 @@ export default function ScenarioBuilder() {
     // The chart takes the Simulated colour from series[0].
     series: hasSimulated ? [SIMULATED_SERIES] : [],
     markers: hasSimulated ? itemMarkers(byItem) : [],
+    milestoneMonths: [...milestones.keys()],
     promoBands: draftPromotionBands(activePromotions),
     seasonalAverage: seasonalAverage(basePoints),
     monthItems,
@@ -618,6 +627,7 @@ export default function ScenarioBuilder() {
                 )
               }
               totals={breakdownTotals(breakdowns)}
+              milestones={milestones}
             />
           }
           blocksSection={
@@ -641,6 +651,7 @@ export default function ScenarioBuilder() {
                 closedIds={closedIds}
                 skuRangeOptions={filters.skuRangeOptions}
                 defaultSkuRange={skuRange}
+                pastMonths={pastMonths}
                 {...sectionProps}
               />
             )

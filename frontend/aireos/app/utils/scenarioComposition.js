@@ -40,6 +40,24 @@ export const MIN_LABEL_PX = 12;
 // ...and only when months are at least this far apart.
 export const MIN_LABEL_SLOT_PX = 34;
 
+// One colour per part of the Scenario builder's breakdown, shared by the
+// chart's shaded bands, the Breakdown tab's lists, the milestone rings on the
+// Actual line and the Planned pills, so they always match. Each pair passes
+// the data-viz palette validator; next to the forecast lines some sit close
+// in hue (growth / Current, scenario promotions / Initial, blocks /
+// Simulated), but those are faint labelled fills, not lines.
+export const PART_COLORS = {
+  baseline: '#9CA3AF',
+  carried: '#374151',
+  official: '#2A78D6',
+  growth: '#3F8F3A',
+  blocks: '#E87BA4',
+  promotions: '#C9A227',
+  milestones: '#7A4A12',
+  // What takes units away, hatched above the Simulated line.
+  decrease: '#D23F74',
+};
+
 /**
  * One chart point with its layers and breakdown added. `items` are the
  * month's per-item totals ({ source, deltaUnits, addedUnits, replacedUnits },

@@ -89,6 +89,7 @@ function unitsWarning(block, impact) {
  *   customerOptions: string[],
  *   skuRangeOptions: string[],
  *   months: string[],
+ *   pastMonths?: string[],            months on the chart with actuals (milestones)
  *   impact: { baseUnits: number, deltaUnits: number, months: string[] } | undefined,
  * }} props
  */
@@ -104,11 +105,12 @@ export default function BlockEditor({
   customerOptions,
   skuRangeOptions,
   months,
+  pastMonths = [],
   impact,
 }) {
   const unsaved = hasUnsavedChanges(block);
   const warning = unitsWarning(block, impact);
-  const monthOptions = blockMonthOptions(block, months);
+  const monthOptions = blockMonthOptions(block, months, pastMonths);
 
   return (
     <div className="space-y-2.5 border-t border-lavander pt-3">
@@ -187,9 +189,9 @@ export default function BlockEditor({
               onChange={(event) => onChange({ startMonth: event.target.value })}
               className={fieldClass}
             >
-              {monthOptions.map(({ month, locked }) => (
+              {monthOptions.map(({ month, past, locked }) => (
                 <option key={month} value={month} disabled={locked}>
-                  {formatMonthLabel(month)}{locked ? ' (has actuals)' : ''}
+                  {formatMonthLabel(month)}{past ? ' (milestone)' : locked ? ' (off the chart)' : ''}
                 </option>
               ))}
             </select>
@@ -202,9 +204,9 @@ export default function BlockEditor({
               onChange={(event) => onChange({ endMonth: event.target.value })}
               className={fieldClass}
             >
-              {monthOptions.map(({ month, locked }) => (
+              {monthOptions.map(({ month, past, locked }) => (
                 <option key={month} value={month} disabled={locked}>
-                  {formatMonthLabel(month)}{locked ? ' (has actuals)' : ''}
+                  {formatMonthLabel(month)}{past ? ' (milestone)' : locked ? ' (off the chart)' : ''}
                 </option>
               ))}
             </select>
@@ -212,7 +214,7 @@ export default function BlockEditor({
         </div>
         <FieldError message={errors.months} />
         <p className="mt-1 text-[11px] text-deep-violet-blue/50">
-          Only forecast months can carry building blocks; months with actuals are locked.
+          In months with actual sales a block is a milestone: it marks an event behind the actuals and never moves a line.
         </p>
       </div>
 

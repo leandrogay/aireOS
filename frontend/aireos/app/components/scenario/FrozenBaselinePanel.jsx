@@ -4,29 +4,22 @@ import { LockKeyhole } from 'lucide-react';
 
 import InfoTooltip from '@/components/ui/InfoTooltip';
 import { formatMonthLabel } from '@/app/utils/forecastView';
+import { PART_COLORS } from '@/app/utils/scenarioComposition';
+import { milestoneTotals } from '@/app/utils/scenarioMilestones';
 
 // The chart's shaded layers, bottom to top (scenarioComposition.js; the
-// chart stacks them in this order), in three tones that stay clear of the
-// forecast lines' colours (checked with the data-viz palette validator):
-// Tier 0 in greys (its baseline, and the promotions it carries from last
-// year), promotions in blue (official and scenario, two shades), and growth
-// and building blocks in the Simulated line's crimson. What takes units away
-// is hatched above the Simulated line in its part's tone.
-const TIER0_GREY = '#9CA3AF';
-const CARRIED_GREY = '#6B7280';
-const PROMOTION_BLUE = '#5B8DEF';
-const SCENARIO_CRIMSON = '#D23F74';
-
+// chart stacks them in this order), one colour each (PART_COLORS). What
+// takes units away is hatched above the Simulated line in its part's colour.
 export const COMPOSITION_LAYERS = [
-  { key: 'baselineLayer', label: 'Baseline', color: TIER0_GREY, opacity: 0.15 },
-  { key: 'carriedLayer', label: "Last year's promotions", color: CARRIED_GREY, opacity: 0.3 },
-  { key: 'officialLayer', label: 'Official promotions', color: PROMOTION_BLUE, opacity: 0.5 },
-  { key: 'growthLayer', label: 'Growth', color: SCENARIO_CRIMSON, opacity: 0.32 },
-  { key: 'blocksLayer', label: 'Building blocks', color: SCENARIO_CRIMSON, opacity: 0.2 },
-  { key: 'promotionsLayer', label: 'Scenario promotions', color: PROMOTION_BLUE, opacity: 0.25 },
-  { key: 'carriedDownLayer', label: "Last year's promotions (below an ordinary month)", color: CARRIED_GREY, hatch: true },
-  { key: 'officialDownLayer', label: 'Official promotions (below the anchor)', color: PROMOTION_BLUE, hatch: true },
-  { key: 'decreaseLayer', label: 'Decreases', color: SCENARIO_CRIMSON, hatch: true },
+  { key: 'baselineLayer', label: 'Baseline', color: PART_COLORS.baseline, opacity: 0.2 },
+  { key: 'carriedLayer', label: "Last year's promotions", color: PART_COLORS.carried, opacity: 0.25 },
+  { key: 'officialLayer', label: 'Official promotions', color: PART_COLORS.official, opacity: 0.4 },
+  { key: 'growthLayer', label: 'Growth', color: PART_COLORS.growth, opacity: 0.35 },
+  { key: 'blocksLayer', label: 'Building blocks', color: PART_COLORS.blocks, opacity: 0.4 },
+  { key: 'promotionsLayer', label: 'Scenario promotions', color: PART_COLORS.promotions, opacity: 0.4 },
+  { key: 'carriedDownLayer', label: "Last year's promotions (below an ordinary month)", color: PART_COLORS.carried, hatch: true },
+  { key: 'officialDownLayer', label: 'Official promotions (below the anchor)', color: PART_COLORS.official, hatch: true },
+  { key: 'decreaseLayer', label: 'Decreases', color: PART_COLORS.decrease, hatch: true },
 ];
 
 function units(value) {
@@ -73,11 +66,14 @@ const GROUP_CLASS = 'mt-2 text-[10px] font-bold uppercase tracking-wide text-dee
  *   growthSection: import('react').ReactNode,
  *   tier0Split: { index: Map<string, object> | null, loading: boolean, error: string | null },
  *   totals: ReturnType<typeof import('@/app/utils/scenarioComposition').breakdownTotals>,
+ *   milestones: ReturnType<typeof import('@/app/utils/scenarioMilestones').milestoneBreakdown>,
  * }} props
  */
-export default function FrozenBaselinePanel({ growthSection, tier0Split, totals }) {
+export default function FrozenBaselinePanel({ growthSection, tier0Split, totals, milestones }) {
   const split = Boolean(tier0Split.index);
   const period = periodLabel(totals.months);
+  // Past months with milestones: their actual, worked back (scenarioMilestones.js).
+  const past = milestoneTotals(milestones);
 
   return (
     <div className="space-y-3" aria-label="Forecast breakdown">
@@ -104,19 +100,19 @@ export default function FrozenBaselinePanel({ growthSection, tier0Split, totals 
             <ul>
               {split ? (
                 <>
-                  <Part color={TIER0_GREY} label="Baseline" value={units(totals.baseline)} />
-                  <Part color={CARRIED_GREY} label="Last year's promotions" value={signedUnits(totals.carried)} />
-                  <Part color={PROMOTION_BLUE} label="Official promotions" value={signedUnits(totals.official)} />
+                  <Part color={PART_COLORS.baseline} label="Baseline" value={units(totals.baseline)} />
+                  <Part color={PART_COLORS.carried} label="Last year's promotions" value={signedUnits(totals.carried)} />
+                  <Part color={PART_COLORS.official} label="Official promotions" value={signedUnits(totals.official)} />
                 </>
               ) : (
-                <Part color={TIER0_GREY} label="Tier 0" value={units(totals.baseline)} />
+                <Part color={PART_COLORS.baseline} label="Tier 0" value={units(totals.baseline)} />
               )}
             </ul>
             <p className={GROUP_CLASS}>You add</p>
             <ul>
-              <Part color={SCENARIO_CRIMSON} label="Growth" value={signedUnits(totals.growth)} />
-              <Part color={SCENARIO_CRIMSON} label="Building blocks" value={signedUnits(totals.blocks)} />
-              <Part color={PROMOTION_BLUE} label="Scenario promotions" value={signedUnits(totals.promotions)} />
+              <Part color={PART_COLORS.growth} label="Growth" value={signedUnits(totals.growth)} />
+              <Part color={PART_COLORS.blocks} label="Building blocks" value={signedUnits(totals.blocks)} />
+              <Part color={PART_COLORS.promotions} label="Scenario promotions" value={signedUnits(totals.promotions)} />
             </ul>
             <p className="mt-2 flex items-center justify-between border-t border-lavander pt-1.5 font-semibold">
               <span>Simulated</span>
@@ -126,6 +122,28 @@ export default function FrozenBaselinePanel({ growthSection, tier0Split, totals 
         ) : (
           <p className="mt-1 text-[11px] text-deep-violet-blue/60">No forecast months on the chart.</p>
         )}
+        {past.months.length ? (
+          <div className="mt-3 border-t border-lavander pt-3">
+            <p className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-deep-violet-blue/55">
+              What Actual is made of · {periodLabel(past.months)}
+              <InfoTooltip label="About milestones">
+                Building blocks in months with actual sales are milestones: events behind the actuals. Each one&apos;s
+                share is worked back from the actual (a −20% flood on 2,000 means 2,500 without it), so they explain the
+                actual and never move a line. Only the months with a milestone are added up.
+              </InfoTooltip>
+            </p>
+            <ul className="mt-1">
+              <Part color={PART_COLORS.baseline} label="Without milestones" value={units(past.without)} />
+              {past.milestones.map((item) => (
+                <Part key={item.itemId} color={PART_COLORS.milestones} label={item.name} value={signedUnits(item.units)} />
+              ))}
+            </ul>
+            <p className="mt-2 flex items-center justify-between border-t border-lavander pt-1.5 font-semibold">
+              <span>Actual</span>
+              <span className="tabular-nums">{units(past.actual)}</span>
+            </p>
+          </div>
+        ) : null}
         {tier0Split.error ? (
           <p className="mt-2 rounded-md border border-violet bg-lavander/50 px-2.5 py-2 text-xs" role="alert">
             Tier 0 could not be split into its baseline and promotions: {tier0Split.error}

@@ -41,7 +41,7 @@ import {
   promoPeriodDividerXs,
   promosOverlappingMonth,
 } from '@/app/utils/forecastView';
-import { MIN_LABEL_PX, MIN_LABEL_SLOT_PX, bandLabels, totalLabel } from '@/app/utils/scenarioComposition';
+import { PART_COLORS, bandLabels, MIN_LABEL_PX, MIN_LABEL_SLOT_PX, totalLabel } from '@/app/utils/scenarioComposition';
 import { withActualBridges } from '@/app/utils/forecastActuals';
 import { CURRENT_DOT_FILL, INITIAL_MISSING_HINT, forecastLineHints } from '@/app/utils/forecastLineText';
 import { dotRevealDelay, lineSweepTimings } from '@/app/utils/lineAnimation';
@@ -66,6 +66,7 @@ const chartConfig = Object.fromEntries(
 );
 
 const ACTUAL_COLOR = FORECAST_SERIES.find((series) => series.key === 'actual')?.color;
+// Milestone rings on the Actual line: the milestone colour (PART_COLORS), hollow.
 
 function dotFill(seriesKey, payload, confidenceDots) {
   if (seriesKey === 'actual' && payload?.actualKind === 'partial') return 'hollow';
@@ -221,6 +222,36 @@ const SCENARIO_BREAKDOWN_ROWS = [
   { key: 'blocks', label: 'Building blocks' },
   { key: 'promotions', label: 'Scenario promotions' },
 ];
+
+// A past month's milestones (Scenario builder blocks in months with actuals,
+// scenarioMilestones.js): what the actual would have been without them, and
+// each one's share of it, worked back from the actual.
+function MilestoneDetails({ milestones, formatValue, className }) {
+  if (!milestones) return null;
+  const signed = (value) => `${value < 0 ? '−' : '+'}${formatValue(Math.abs(value))}`;
+  return (
+    <div className={cn('space-y-0.5 text-[11px] tabular-nums', className)}>
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-deep-violet-blue/50">Milestones</p>
+      <div className="flex justify-between gap-3">
+        <span>Without milestones</span>
+        <span className="font-semibold">{formatValue(milestones.without)}</span>
+      </div>
+      {milestones.milestones.map((item) => (
+        <div key={item.itemId} className="flex justify-between gap-3">
+          <span className="inline-flex min-w-0 items-center gap-1.5">
+            <span aria-hidden="true" className="size-2 shrink-0 rounded-full border-2" style={{ borderColor: PART_COLORS.milestones }} />
+            <span className="truncate">{item.name}</span>
+          </span>
+          <span className="font-semibold">{signed(item.units)}</span>
+        </div>
+      ))}
+      <div className="flex justify-between gap-3 border-t border-lavander pt-0.5">
+        <span className="font-semibold">Actual</span>
+        <span className="font-semibold">{formatValue(milestones.actual)}</span>
+      </div>
+    </div>
+  );
+}
 
 // Tiny numbers on the Scenario builder's shaded layers: each band's own
 // figure inside it when there is room (MIN_LABEL_PX tall, months
@@ -531,6 +562,10 @@ export default function ForecastChart({
         .map((marker) => ({ ...marker, x: monthX(marker.month_year) }))
         .filter((marker) => marker.x >= 0 && chartData[marker.x]?.simulated != null)
     : [];
+  // Milestones (blocks in months with actuals) sit on the Actual line.
+  const milestoneMarkers = (scenario?.milestoneMonths ?? [])
+    .map((month) => ({ month, x: monthX(month) }))
+    .filter((marker) => marker.x >= 0 && chartData[marker.x]?.actual != null);
   // The block selected in the panel or the blocks table: its months banded.
   const selectedBand =
     showSimulated && scenario.selectedBand
@@ -741,6 +776,11 @@ export default function ForecastChart({
                                   className="mt-1 border-t border-lavander pt-1.5"
                                 />
                               ) : null}
+                              <MilestoneDetails
+                                milestones={point?.milestones}
+                                formatValue={formatValue}
+                                className="mt-1 border-t border-lavander pt-1.5"
+                              />
                               <ForecastConfidenceDetails
                                 entries={point.confidence}
                                 formatValue={formatValue}
@@ -909,6 +949,18 @@ export default function ForecastChart({
                       ifOverflow="visible"
                     />
                   ))}
+                  {milestoneMarkers.map((marker) => (
+                    <ReferenceDot
+                      key={`milestone-${marker.month}`}
+                      x={marker.x}
+                      y={transition.rows[marker.x].actual}
+                      r={6}
+                      fill="#fff"
+                      stroke={PART_COLORS.milestones}
+                      strokeWidth={2.5}
+                      ifOverflow="visible"
+                    />
+                  ))}
                 </ComposedChart>
               </ChartContainer>
               {loading && <ChartLoading overlay label="Updating forecast…" />}
@@ -940,13 +992,18 @@ export default function ForecastChart({
                       />
                     }
                     scenarioDetails={
-                      showSimulated ? (
-                        <ScenarioPointDetails
-                          point={hoverPoint}
-                          items={scenario.monthItems?.get(hoverMonth) ?? []}
-                          anchor={scenario.anchorForMonth?.(hoverMonth) ?? null}
-                          formatValue={formatValue}
-                        />
+                      showSimulated || hoverPoint?.milestones ? (
+                        <>
+                          {showSimulated ? (
+                            <ScenarioPointDetails
+                              point={hoverPoint}
+                              items={scenario.monthItems?.get(hoverMonth) ?? []}
+                              anchor={scenario.anchorForMonth?.(hoverMonth) ?? null}
+                              formatValue={formatValue}
+                            />
+                          ) : null}
+                          <MilestoneDetails milestones={hoverPoint?.milestones} formatValue={formatValue} />
+                        </>
                       ) : null
                     }
                     promos={hoverPromos}

@@ -155,18 +155,23 @@ export function updateScenarioBlock(block, changes) {
 }
 
 /**
- * Month choices for a block's From / Until: the forecast months, plus the
- * block's own months if they have since had actuals loaded (a saved Oct-Dec
- * block once October closes), so the dropdowns never show blank. Those
- * months are `locked`: they stay as saved but no longer change the line.
+ * Month choices for a block's From / Until: the past months on the chart
+ * (`past`: a block there is a milestone, worked back from the actual,
+ * scenarioMilestones.js) and the forecast months, plus the block's own months
+ * when they are neither (off the chart), so the dropdowns never show blank;
+ * those are `locked`.
  *
  * @param {object} block
  * @param {string[]} months forecastMonths(rows)
+ * @param {string[]} [pastMonths] months on the chart with actual sales
  */
-export function blockMonthOptions(block, months) {
-  const open = new Set(months);
-  const all = new Set([...months, block.startMonth, block.endMonth].filter(Boolean));
-  return [...all].sort().map((month) => ({ month, locked: !open.has(month) }));
+export function blockMonthOptions(block, months, pastMonths = []) {
+  const forecast = new Set(months);
+  const past = new Set(pastMonths);
+  const all = new Set([...pastMonths, ...months, block.startMonth, block.endMonth].filter(Boolean));
+  return [...all]
+    .sort()
+    .map((month) => ({ month, past: past.has(month) && !forecast.has(month), locked: !forecast.has(month) && !past.has(month) }));
 }
 
 /**

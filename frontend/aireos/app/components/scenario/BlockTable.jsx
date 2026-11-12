@@ -259,7 +259,7 @@ export default function BlockTable({
                 <span className="font-semibold text-scenario-ink">{signed(impact.deltaUnits, wholeUnits)} units</span>
               ) : (
                 <span className="text-deep-violet-blue/45">
-                  {!block.isActive ? 'Off' : closedIds.has(block.id) ? 'Months closed' : 'Outside chart filters'}
+                  {!block.isActive ? 'Off' : closedIds.has(block.id) ? 'Milestone' : 'Outside chart filters'}
                 </span>
               )}
             </td>

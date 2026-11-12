@@ -44,6 +44,7 @@ function elsewhereNote(count) {
  *   customerOptions: string[],
  *   skuRangeOptions: string[],
  *   months: string[],
+ *   pastMonths?: string[],            months on the chart with actuals (milestones)
  *   defaultCustomer: string,
  *   defaultSkuRange: string,
  *   impacts: Map<string, { deltaUnits: number, months: string[] }>,
@@ -67,6 +68,7 @@ export default function BuildingBlocksSection({
   customerOptions,
   skuRangeOptions,
   months,
+  pastMonths = [],
   defaultCustomer,
   defaultSkuRange,
   impacts,
@@ -240,6 +242,7 @@ export default function BuildingBlocksSection({
           customerOptions={customerOptions}
           skuRangeOptions={skuRangeOptions}
           months={months}
+          pastMonths={pastMonths}
           impact={impacts.get(selected.id)}
         />
       ) : null}

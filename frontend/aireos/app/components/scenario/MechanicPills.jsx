@@ -11,11 +11,11 @@ export const PROMOTION_SOURCE_LABELS = {
 
 // Filled: ran in the same month last year. Dashed: ran in the recent
 // (run-rate) months. Blue: planned on the Promotions page, the official
-// promotions' colour on the chart (COMPOSITION_LAYERS).
+// promotions' colour on the chart (PART_COLORS.official).
 const PILL_STYLES = {
   lastYear: 'bg-lavander text-deep-violet-blue',
   runRate: 'border border-dashed border-deep-violet-blue/35 bg-white text-deep-violet-blue/75',
-  planned: 'border border-[#5B8DEF]/60 bg-[#5B8DEF]/15 text-deep-violet-blue',
+  planned: 'border border-[#2A78D6]/60 bg-[#2A78D6]/15 text-deep-violet-blue',
 };
 
 const PILL_HINTS = {
