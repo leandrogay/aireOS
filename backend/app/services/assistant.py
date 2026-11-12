@@ -3,7 +3,7 @@ Plain-English business-question assistant.
 
 Gemini (via Vertex AI / Gemini Enterprise) picks which of the read-only
 tools below to call (each a thin wrapper around an existing sellout_service/
-inventory_service/promotion_service function, plus Google Search grounding
+inventory_service/promotion_service/scenario building blocks function, plus Google Search grounding
 for general market data) and, once it has what it needs, must answer in a
 fixed JSON shape (see FINAL_ANSWER_SCHEMA) rather than free text.
 
@@ -61,6 +61,7 @@ from app import config
 from app.config import ConfigError
 from app.schemas.catalog import normalise_name
 from app.services import ai_models, forecast_summary, inventory_calc, inventory_service, promotion_service, sellout_service
+from app.services.scenario import building_blocks as scenario_blocks
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -384,6 +385,39 @@ _FUNCTION_SCHEMAS = [
             "additionalProperties": False,
         },
     },
+    {
+        "name": "list_building_blocks",
+        "description": (
+            "The building blocks staff have SAVED in the Scenario builder: "
+            "what-if adjustments to the sell-out forecast, each with a name, "
+            "customer, product (product_name null means every SKU of that "
+            "customer), explanation, start_month/end_month and the expected "
+            "change -- uplift_mode 'pct' is that % of the Current forecast in "
+            "every month of the block; 'units' is that many units in total, "
+            "spread over the block's months and SKUs (negative values lower "
+            "sales). is_active is whether the block is switched on in the "
+            "Scenario builder. These are plans, not results: no actual sales "
+            "are in this tool. NOT the building_blocks field of the inventory "
+            "tools, which is stock actually recorded as pulled for something "
+            "other than sell-out. Use for \"what building blocks have I "
+            "created\", and as the first step for \"did my building blocks "
+            "make an impact\": then, for each block whose months are already "
+            "past, call compare_periods for that customer (and SKU, if the "
+            "block has one) over the block's months against the same number "
+            "of months just before, and set the change seen against the "
+            "uplift the block expected. A block whose months haven't happened "
+            "yet can't be judged -- say so."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "customer": {"type": "string", "description": "Optional customer name to scope to one customer. Omit to cover every customer (does NOT default to the page's customer)."},
+                "start_month": {"type": "string", "description": "YYYY-MM. Keeps blocks whose months overlap [start_month, end_month] at all. Omit for no lower bound."},
+                "end_month": {"type": "string", "description": "YYYY-MM, inclusive. Omit for no upper bound."},
+            },
+            "additionalProperties": False,
+        },
+    },
 ]
 
 # Gemini rejects mixing custom function tools with Google
@@ -622,6 +656,17 @@ def _run_business_tool(name: str, tool_input: dict, default_customer: str):
                 return (f"Invalid arguments: {e}", True, None)
             except Exception as e:
                 return (f"Unable to reach the inventory database: {e}", True, None)
+        elif name == "list_building_blocks":
+            try:
+                blocks = scenario_blocks.list_building_blocks()
+            except Exception as e:
+                return (f"Unable to reach the building blocks database: {e}", True, None)
+            result = _filter_building_blocks(
+                blocks,
+                customer=tool_input.get("customer"),
+                start_month=_parse_year_month(tool_input.get("start_month")),
+                end_month=_parse_year_month(tool_input.get("end_month")),
+            )
         elif name == "get_demand_forecast":
             try:
                 result = forecast_summary.get_demand_forecast(
@@ -724,6 +769,52 @@ def _filter_promotions(
         and _promotion_matches_sku(promo, sku)
     ]
     return [_trim_promotion(promo) for promo in matches]
+
+
+# ---- Scenario builder building blocks (read-only, filtered in Python like
+# promotions: the table is small and the page lists every block too). ------
+
+def _parse_year_month(value: str | None) -> datetime.date | None:
+    """'2026-04' (or '2026-04-15') -> 1 Apr 2026, the month a block is stored by."""
+
+    if not value:
+        return None
+    try:
+        return datetime.date.fromisoformat(f"{value.strip()[:7]}-01")
+    except ValueError:
+        raise ValueError(f"'{value}' is not a valid YYYY-MM month.")
+
+
+def _filter_building_blocks(
+    blocks: list[dict], customer: str | None, start_month: datetime.date | None, end_month: datetime.date | None
+) -> list[dict]:
+    """Blocks for the customer (if one is named) whose months overlap the range,
+    without the ids and timestamps the model has no use for."""
+
+    needle = _customer_slug(customer) if customer else None
+    matches = []
+    for block in blocks:
+        if needle and needle not in _customer_slug(block["customer_name"]):
+            continue
+        block_start = datetime.date.fromisoformat(block["start_month"])
+        block_end = datetime.date.fromisoformat(block["end_month"])
+        if (start_month and block_end < start_month) or (end_month and block_start > end_month):
+            continue
+        matches.append(
+            {
+                "name": block["name"],
+                "customer_name": block["customer_name"],
+                "sku": block["sku"],
+                "product_name": block["product_name"],
+                "explanation": block["explanation"],
+                "uplift_mode": block["uplift_mode"],
+                "uplift_value": block["uplift_value"],
+                "start_month": block["start_month"],
+                "end_month": block["end_month"],
+                "is_active": block["is_active"],
+            }
+        )
+    return matches
 
 
 def _promotions_starting_or_ending_soon(promotions: list[dict], customer: str | None, days: int = 7) -> list[dict]:
@@ -3261,10 +3352,22 @@ get_at_risk_inventory, get_sell_in_plan, list_inventory_skus -- ending stock,
 days of holding (DOH) against a min/max target band, at-risk SKUs and
 recommended sell-in quantities, no revenue figures either), the sell-out
 forecast (get_demand_forecast -- the same forecast cartons, 80% range and
-confidence the Forecast page shows, plus recent actual cartons), and Google
-Search grounding for general market/competitor information.
+confidence the Forecast page shows, plus recent actual cartons), the
+building blocks saved in the Scenario builder (list_building_blocks --
+what-if forecast adjustments with their months and expected uplift, no
+actual figures), and Google Search grounding for general market/competitor
+information.
 
 Rules:
+- A question about whether past building blocks made an impact starts with
+  list_building_blocks, then compare_periods for each block whose months are
+  past (its customer, its SKU if it has one, its months against the same
+  number of months just before). Answer with data_source="aire_data": name
+  the block, its expected uplift, and the actual change compare_periods
+  returned, and say plainly that this is a before/after comparison, not
+  proof the block caused the change. Name any block whose months are still
+  ahead as too early to judge. If list_building_blocks returns nothing, say
+  no building blocks have been saved (for that customer/period).
 - Future demand questions ("forecast", "expected/projected demand or sales",
   "how many cartons will we sell next month") use get_demand_forecast. In the
   answer:
