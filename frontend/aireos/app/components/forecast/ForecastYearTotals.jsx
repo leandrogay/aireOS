@@ -22,7 +22,7 @@ export const HEADER_RULE = 'border-[#C5CBE0]';
 const CELL_CLASS = 'px-4 py-2.5';
 const NUMBER_CELL_CLASS = 'px-4 py-2.5 text-right tabular-nums';
 
-function formatVolume(value) {
+export function formatVolume(value) {
   if (value == null) return '—';
   return Math.round(value).toLocaleString();
 }
@@ -39,19 +39,16 @@ export function mixCaption(year) {
 /**
  * One row per calendar year under the chart: actual, forecast and the
  * combined total, in cartons (the Forecast page shows volume only), on the
- * shared TableGrid. The next-12-month Current total (each SKU's whole Current
- * line, from the backend's `horizon`) is a footer line under the rows, since
- * it has no actual/forecast split. Year figures come from
+ * shared TableGrid. Year figures come from
  * forecastYearTotals.buildYearlyTotals. Phones get one card per year.
  * Goes inside the page's TableCard.
  *
  * @param {{
  *   years: object[],
  *   loading?: boolean,
- *   horizonVolume?: number | null,
  * }} props
  */
-export default function ForecastYearTotals({ years, loading = false, horizonVolume = null }) {
+export default function ForecastYearTotals({ years, loading = false }) {
   if (!loading && !years.length) return null;
 
   return (
@@ -95,14 +92,6 @@ export default function ForecastYearTotals({ years, loading = false, horizonVolu
           })}
         </TableGrid>
       </div>
-
-      {!loading && (
-        // The footer strip, like TablePagination's: not a year, so not a row.
-        <div className="flex items-center justify-between gap-3 border-t border-lavander px-4 py-3 text-sm text-deep-violet-blue">
-          <span className="text-deep-violet-blue/70">Next 12 months forecast</span>
-          <span className="font-medium tabular-nums">{formatVolume(horizonVolume)}</span>
-        </div>
-      )}
     </div>
   );
 }

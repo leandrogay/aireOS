@@ -9,7 +9,9 @@ import TableCardHeader from '@/components/ui/TableCardHeader';
 import ForecastChart from '@/components/forecast/ForecastChart';
 import ForecastFilters from '@/components/forecast/ForecastFilters';
 import ForecastTable from '@/components/forecast/ForecastTable';
-import ForecastYearTotals from '@/components/forecast/ForecastYearTotals';
+import ForecastYearTotals, { formatVolume } from '@/components/forecast/ForecastYearTotals';
+import { cardClass } from '@/components/ui/formStyles';
+import { cn } from '@/lib/utils';
 import { customerLabel } from '@/app/utils/retailerLabel';
 import {
   FORECAST_TIER_OPTIONS,
@@ -249,8 +251,27 @@ function ForecastView() {
             label="Full-year totals"
             header={<TableCardHeader title="Full-year totals" detail={<>Actual and forecast volume in cartons for each calendar year in view{modelLabel ? ` · ${modelLabel}` : ''}</>} />}
           >
-            <ForecastYearTotals years={yearTotals} loading={yearTotalsBusy} horizonVolume={horizonVolume} />
+            <ForecastYearTotals years={yearTotals} loading={yearTotalsBusy} />
           </TableCard>
+        ) : null}
+
+        {/* Each SKU's whole Current line from the backend's `horizon`: it has
+            no actual/forecast split, so it is a card of its own, not a year row. */}
+        {!yearTotalsBusy && yearTotals.length ? (
+          <section className={cn(cardClass, 'flex items-center justify-between gap-3')}>
+            <div className="min-w-0">
+              <h2 className="text-sm font-medium text-deep-violet-blue">Next 12 months forecast</h2>
+              {/* The 12 months start where the latest run's Current line does,
+                  not today, so the run time anchors them (as "Forecast last updated"). */}
+              <p className="mt-1 text-xs text-deep-violet-blue/70">
+                Forecast volume in cartons{modelLabel ? ` · ${modelLabel}` : ''}
+                {lastRun ? ` · As of the forecast run on ${formatSgtTimestamp(lastRun)}` : ''}
+              </p>
+            </div>
+            <span className="shrink-0 text-sm font-medium tabular-nums text-deep-violet-blue">
+              {formatVolume(horizonVolume)}
+            </span>
+          </section>
         ) : null}
 
         {points.length > 0 && hasTableColumn ? (
