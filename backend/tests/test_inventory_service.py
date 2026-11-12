@@ -2595,3 +2595,18 @@ def test_each_block_says_how_much_sell_out_it_adds_to_the_chart(monkeypatch):
         {"block_id": 1, "name": "New store", "sell_out_change": pytest.approx(61.0)},
         {"block_id": 2, "name": "Elsewhere", "sell_out_change": 0},
     ]
+
+
+# ---- list_customers -------------------------------------------------------------
+
+
+def test_list_customers_carries_each_customers_chart_colour(monkeypatch):
+    rows = [
+        {"customer_id": 1, "customer_name": "FairPrice", "color": "#7A70B8"},
+        {"customer_id": 30, "customer_name": "Giant", "color": None},
+    ]
+    conn = FakeConnection(lambda sql, params: rows)
+    monkeypatch.setattr(inventory_service, "_get_read_engine", lambda: FakeEngine(conn))
+
+    assert inventory_service.list_customers() == rows
+    assert "color" in conn.calls[0][0]

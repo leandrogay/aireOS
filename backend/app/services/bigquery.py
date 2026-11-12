@@ -24,6 +24,17 @@ BQ_MONTHLY_SALES_VIEW = config.BQ_MONTHLY_SALES_VIEW
 # (Inventory, the Assistant, the Scenario builder) use it.
 FORECAST_TIERS = ("tier0", "tier1_basic", "tier1_advanced")
 DEFAULT_FORECAST_TIER = "tier0"
+# The Initial Yearly Forecast is Tier 0's on every model (with_tier0_initial).
+INITIAL_TIER = "tier0"
+INITIAL_COLUMNS = (
+    "forecast_initial",
+    "initial_source_model",
+    "initial_generated_at",
+    "initial_low_80",
+    "initial_high_80",
+    "initial_range_pct",
+    "initial_confidence_band",
+)
 
 # Named explicitly, never SELECT *, so columns the pipeline adds later can't
 # change the API's shape. All from the view except customer_name /
@@ -65,6 +76,8 @@ FORECAST_OUTPUT_COLUMNS = [
     "promo_mix",
     "actual_status",
     "output_built_at",
+    "current_data_month",
+    "previous_data_month",
 ]
 # These come from the catalog joins, not the output table.
 _JOINED_NAME_COLUMNS = ("customer_name", "product_name", "sku_range")
@@ -109,10 +122,20 @@ def run_query(query: str, query_parameters: list | None = None):
     return get_bigquery_client().query(query, job_config=job_config).result()
 
 
+def read_frame(query: str, query_parameters: list | None = None) -> pd.DataFrame:
+    """Run one read and return its rows as a DataFrame, downloaded over REST.
+
+    The forecast reads are small, so the BigQuery Storage API (a separate package
+    and IAM permission) would gain nothing; turning it off also stops the
+    "BigQuery Storage module not found" warning on every query.
+    """
+    return run_query(query, query_parameters).to_dataframe(create_bqstorage_client=False)
+
+
 def _read_output_built_at() -> str | None:
-    df = run_query(
+    df = read_frame(
         f"SELECT MAX(output_built_at) AS output_built_at FROM `{BQ_FORECAST_OUTPUT_VIEW}`"
-    ).to_dataframe()
+    )
     if df.empty:
         return None
     return _iso_stamp(df.iloc[0]["output_built_at"])
@@ -214,6 +237,10 @@ def _forecast_output_row(record: dict) -> dict:
     previous_low = _json_number(record.get("previous_low_80"))
     previous_high = _json_number(record.get("previous_high_80"))
     previous_range_pct, previous_band = month_range(forecast_previous, previous_low, previous_high)
+    forecast_initial = _json_number(record.get("forecast_initial"))
+    initial_low = _json_number(record.get("initial_low_80"))
+    initial_high = _json_number(record.get("initial_high_80"))
+    initial_range_pct, initial_band = month_range(forecast_initial, initial_low, initial_high)
     return {
         "customer_id": _json_int(record.get("customer_id")),
         "customer_name": _json_str(record.get("customer_name")),
@@ -229,13 +256,21 @@ def _forecast_output_row(record: dict) -> dict:
         "is_available": bool(_json_bool(record.get("is_available"))),
         "unavailable_reason": _json_str(record.get("unavailable_reason")),
         "months_of_history": _json_int(record.get("months_of_history")),
-        "forecast_initial": _json_number(record.get("forecast_initial")),
+        "forecast_initial": forecast_initial,
         "initial_source_model": _json_str(record.get("initial_source_model")),
         "initial_generated_at": _iso_stamp(record.get("initial_generated_at")),
-        "initial_low_80": _json_number(record.get("initial_low_80")),
-        "initial_high_80": _json_number(record.get("initial_high_80")),
+        # Initial's 80% range is set when the plan is made (same
+        # aire_forecasting_initial row as forecast_initial), and its band uses
+        # the same cut-offs as Current's and Previous's.
+        "initial_low_80": initial_low,
+        "initial_high_80": initial_high,
+        "initial_range_pct": initial_range_pct,
+        "initial_confidence_band": initial_band,
         "forecast_previous": forecast_previous,
         "previous_source_model": _json_str(record.get("previous_source_model")),
+        # Not shown to users: the pipeline stores the rebuilt Previous at the
+        # Current run's time minus one second. It is only the key for the
+        # Previous range join on aire_forecasting_runs.
         "previous_generated_at": _iso_stamp(record.get("previous_generated_at")),
         # Previous's own 80% range (from its run) and that month's band, the
         # same measures Current gets, so the tooltip can show both.
@@ -262,6 +297,13 @@ def _forecast_output_row(record: dict) -> dict:
         # turned into a number here, so a missing month can't read as 0.
         "actual_status": _json_str(record.get("actual_status")),
         "output_built_at": _iso_stamp(record.get("output_built_at")),
+        # The last sales month each line was trained on, the same on every
+        # row of a customer x SKU x tier: Previous is the same model retrained
+        # with one month less sales (normally current_data_month - 1). NULL
+        # when the tier isn't available; previous_data_month also NULL when
+        # the SKU has no Previous (its first sales month is Current's month).
+        "current_data_month": _iso_date(record.get("current_data_month")),
+        "previous_data_month": _iso_date(record.get("previous_data_month")),
     }
 
 
@@ -357,7 +399,7 @@ def _read_forecast_scope(product_name: str | None, customer_name: str | None, sk
             "WHERE sku_range = @sku_range) AS range_skus"
         )
         query_parameters.append(bigquery.ScalarQueryParameter("sku_range", "STRING", sku_range))
-    df = run_query(f"SELECT {', '.join(parts)}", query_parameters).to_dataframe()
+    df = read_frame(f"SELECT {', '.join(parts)}", query_parameters)
     record = df.iloc[0].to_dict() if not df.empty else {}
     product_skus = {str(value) for value in record.get("skus", [])} if product_name else None
     range_skus = {str(value) for value in record.get("range_skus", [])} if sku_range else None
@@ -438,9 +480,14 @@ def _read_forecast_output_rows(
     scope_clauses, scope_parameters = _scope_filters(scope, "output.")
     where_clauses += scope_clauses
     query_parameters += scope_parameters
-    if tier is not None:
+    if tier == INITIAL_TIER:
         where_clauses.append("output.tier = @tier")
         query_parameters.append(bigquery.ScalarQueryParameter("tier", "STRING", tier))
+    elif tier is not None:
+        # A Tier 1 read still needs Tier 0's rows: they carry its Initial.
+        where_clauses.append("output.tier IN (@tier, @initial_tier)")
+        query_parameters.append(bigquery.ScalarQueryParameter("tier", "STRING", tier))
+        query_parameters.append(bigquery.ScalarQueryParameter("initial_tier", "STRING", INITIAL_TIER))
     query = f"""
         SELECT
           {", ".join(f"output.{column}" for column in _OUTPUT_TABLE_COLUMNS)},
@@ -463,10 +510,35 @@ def _read_forecast_output_rows(
         WHERE {" AND ".join(where_clauses)}
         ORDER BY customer.customer_name, product.product_name, output.tier_order, output.month_year
     """
-    df = run_query(query, query_parameters).to_dataframe()
+    df = read_frame(query, query_parameters)
     if df.empty:
         return []
-    return [_forecast_output_row(record) for record in df.to_dict(orient="records")]
+    rows = with_tier0_initial([_forecast_output_row(record) for record in df.to_dict(orient="records")])
+    return rows if tier is None else [row for row in rows if row["tier"] == tier]
+
+
+def with_tier0_initial(rows: list[dict]) -> list[dict]:
+    """Every tier's Initial Yearly Forecast replaced by Tier 0's for the same
+    customer x SKU x month (None when Tier 0 has none).
+
+    The yearly plan is made with the Tier 0 baseline only, whichever model
+    the page shows: the pipeline also writes a Tier 1 Initial, but switching
+    model must move Previous and Current only, never the plan the year is
+    measured against.
+    """
+    tier0 = {
+        (row["customer_id"], row["sku"], row["month_year"]): row
+        for row in rows
+        if row["tier"] == INITIAL_TIER
+    }
+    result = []
+    for row in rows:
+        if row["tier"] == INITIAL_TIER:
+            result.append(row)
+            continue
+        source = tier0.get((row["customer_id"], row["sku"], row["month_year"]), {})
+        result.append({**row, **{column: source.get(column) for column in INITIAL_COLUMNS}})
+    return result
 
 
 def get_forecast_output_rows(
@@ -693,7 +765,7 @@ def _read_forecast_alternatives(scope: dict, start_date: str | None, end_date: s
           AND alt_forecast_current IS NOT NULL
         ORDER BY customer_name, product_name, month_year
     """
-    df = run_query(query, query_parameters).to_dataframe()
+    df = read_frame(query, query_parameters)
     if df.empty:
         return []
     return [_forecast_alternative_row(record) for record in df.to_dict(orient="records")]
@@ -728,7 +800,7 @@ def _read_current_horizon(scope: dict) -> list[dict]:
         WHERE {" AND ".join(where_clauses)}
         GROUP BY tier, customer_id, sku
     """
-    df = run_query(query, query_parameters).to_dataframe()
+    df = read_frame(query, query_parameters)
     return [
         {
             "tier": _json_str(record.get("tier")),
@@ -778,7 +850,7 @@ def get_realised_prices(
     """
     df = forecast_cache.single_flight(
         ("realised_prices", product_name or None, customer_name or None),
-        lambda: run_query(query, query_parameters).to_dataframe(),
+        lambda: read_frame(query, query_parameters),
     )
 
     prices = {}
@@ -834,7 +906,7 @@ def get_forecast_actuals(
             end_date or None,
             sku_range or None,
         ),
-        lambda: run_query(query, query_parameters).to_dataframe(),
+        lambda: read_frame(query, query_parameters),
     )
     if df.empty:
         return []
@@ -891,7 +963,7 @@ def _read_forecast_options() -> dict:
         FROM options
         GROUP BY product_name, customer_name
     """
-    df = run_query(query).to_dataframe()
+    df = read_frame(query)
     if df.empty:
         return {
             "products": [],
@@ -942,7 +1014,7 @@ def get_sales_loaded_at(customer_name: str | None = None) -> str | None:
     """
     df = forecast_cache.single_flight(
         ("sales_loaded_at", customer_name),
-        lambda: run_query(query, query_parameters).to_dataframe(),
+        lambda: read_frame(query, query_parameters),
     )
     if df.empty:
         return None
@@ -962,7 +1034,7 @@ def get_initial_meta() -> list[dict]:
         FROM `{config.BQ_FORECAST_DATASET}.aire_forecasting_initial_meta`
         ORDER BY forecast_year
     """
-    df = run_query(query).to_dataframe()
+    df = read_frame(query)
     return [
         {
             "forecast_year": int(record["forecast_year"]),

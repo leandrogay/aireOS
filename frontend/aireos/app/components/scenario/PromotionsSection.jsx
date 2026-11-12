@@ -4,6 +4,7 @@ import { Plus, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { primaryButtonClass, secondaryButtonClass } from '@/components/ui/formStyles';
+import { glassNoteClass } from '@/components/ui/surfaceStyles';
 import { formatPctRange, hasUnsavedPromotionChanges, sourceLabel, stackedModelCells, upliftChangedSinceSaved } from '@/app/utils/scenarioPromotions';
 import PromoHowItWorks from './PromoHowItWorks';
 import PromotionEditor from './PromotionEditor';
@@ -39,7 +40,7 @@ export default function PromotionsSection({ editor, plan = 'scenario', customerO
       {months.length && customerOptions.length ? null : <p className="text-[11px] text-deep-violet-blue/60">
         Pick a date range that includes forecast months to add promotions.
       </p>}
-      {notice ? <p role="status" className="rounded-md border border-lavander bg-cream px-2.5 py-2 text-[11px] text-deep-violet-blue">
+      {notice ? <p role="status" className={cn(glassNoteClass, 'px-2.5 py-2 text-[11px] text-deep-violet-blue')}>
         {notice}{' '}<button type="button" onClick={editor.dismissNotice} className="font-medium text-scenario hover:underline">Dismiss</button>
       </p> : null}
       {savedNow ? <p role="status" className="rounded-md border border-violet/40 bg-lavander/40 px-2.5 py-2 text-[11px] text-deep-violet-blue">

@@ -80,7 +80,7 @@ export default function BudgetStartDialog({ open, year, history, entryCount, onC
       <fieldset className="space-y-1">
         <legend className="sr-only">Start from</legend>
         {options.map((option) => (
-          <label key={option.value} className={cn(checkRowClass, 'items-start border border-lavander py-2')}>
+          <label key={option.value} className={cn(checkRowClass, 'items-start border border-deep-violet-blue/15 py-2')}>
             <input type="radio" name={`budget-start-${year}`} checked={selected === option.value}
               onChange={() => setChoice(option.value)} className="mt-0.5 size-4 accent-deep-violet-blue" />
             <span className="min-w-0">

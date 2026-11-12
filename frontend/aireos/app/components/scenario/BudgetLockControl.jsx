@@ -4,12 +4,15 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import StatusPill from '@/components/ui/StatusPill';
-import { checkRowClass, hintClass, inputClass, labelClass } from '@/components/ui/formStyles';
+import Disclosure from '@/components/ui/Disclosure';
+import { cardClass, checkRowClass, hintClass, inputClass, labelClass } from '@/components/ui/formStyles';
+import { glassInsetClass, glassRuleClass } from '@/components/ui/surfaceStyles';
 import BudgetStartDialog from '@/components/scenario/BudgetStartDialog';
 import { deleteBudgetVersion, lockBudget, setOfficialBudget } from '@/app/services/budgetsApi';
 import { MAX_COMPARED_VERSIONS, budgetVersionLabel } from '@/app/utils/budgetPlanning';
 import useBudgets from '@/hooks/useBudgets';
 import { formatDateTime } from '@/lib/formatDate';
+import { cn } from '@/lib/utils';
 
 function units(value) {
   return Math.round(Number(value) || 0).toLocaleString('en-US');
@@ -92,7 +95,7 @@ export default function BudgetLockControl({ year, unsaved, loading, hasInitial, 
   }
 
   return (
-    <div className="space-y-2 rounded-md border border-lavander bg-cream p-3 text-xs text-deep-violet-blue">
+    <section aria-label={`Budget ${year}`} className={cn(cardClass, 'space-y-2 text-xs text-deep-violet-blue')}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p>Budget {year} · Initial Yearly Forecast with saved growth, blocks and promotion replacements.</p>
         <div className="flex flex-wrap gap-2">
@@ -109,9 +112,8 @@ export default function BudgetLockControl({ year, unsaved, loading, hasInitial, 
         {official ? ` now ${budgetVersionLabel(official)}.` : ' the first lock becomes it.'} Compare versions here before choosing.
       </p>
       {history.length ? (
-        <details>
-          <summary className="cursor-pointer">Locked versions ({history.length})</summary>
-          <ul className="mt-1 divide-y divide-lavander">{history.map((item) => {
+        <Disclosure summary={`Locked versions (${history.length})`} className={glassInsetClass}>
+          <ul className={cn('divide-y px-3', glassRuleClass)}>{history.map((item) => {
             const isCompared = compared.some((entry) => entry.version === item.version);
             return (
               <li key={item.snapshot_id} className="flex flex-wrap items-center gap-x-2 gap-y-1 py-1.5">
@@ -136,9 +138,9 @@ export default function BudgetLockControl({ year, unsaved, loading, hasInitial, 
               </li>
             );
           })}</ul>
-          {compared.length >= MAX_COMPARED_VERSIONS ? <p className={hintClass}>Up to {MAX_COMPARED_VERSIONS} versions at once.</p> : null}
-          <p className={hintClass}>The official version can&apos;t be deleted; make another version official first.</p>
-        </details>
+          {compared.length >= MAX_COMPARED_VERSIONS ? <p className={cn(hintClass, 'px-3')}>Up to {MAX_COMPARED_VERSIONS} versions at once.</p> : null}
+          <p className={cn(hintClass, 'px-3 pb-2')}>The official version can&apos;t be deleted; make another version official first.</p>
+        </Disclosure>
       ) : null}
       {budgets.error || error || compareError ? <p role="alert">{error ?? budgets.error ?? `Couldn't load a compared version: ${compareError}`}</p> : null}
       {budgets.error ? <Button variant="outline" size="sm" onClick={budgets.refresh}>Retry budget status</Button> : null}
@@ -169,6 +171,6 @@ export default function BudgetLockControl({ year, unsaved, loading, hasInitial, 
       </ConfirmDialog>
       <BudgetStartDialog open={starting} year={year} history={history} entryCount={entryCount}
         onCancel={() => setStarting(false)} onStarted={() => { setStarting(false); onRestarted?.(); }} />
-    </div>
+    </section>
   );
 }

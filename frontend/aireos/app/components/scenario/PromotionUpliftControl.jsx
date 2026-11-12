@@ -4,6 +4,8 @@ import { useId, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import StatusPill from '@/components/ui/StatusPill';
+import { glassInsetClass } from '@/components/ui/surfaceStyles';
+import { cn } from '@/lib/utils';
 import PromotionUpliftDetails from '@/components/scenario/PromotionUpliftDetails';
 import { formatPct, formatPctRange, MAX_OVERRIDE_PCT, MIN_OVERRIDE_PCT } from '@/app/utils/scenarioPromotions';
 
@@ -28,7 +30,7 @@ export default function PromotionUpliftControl({ state, mechanic, rows, loading,
   }
 
   return (
-    <div className="mt-2 space-y-2 rounded-md border border-lavander bg-cream px-3 py-2">
+    <div className={cn(glassInsetClass, 'mt-2 space-y-2 px-3 py-2')}>
       <div className="flex items-start justify-between gap-2">
         <div>
           <p className="text-xs text-deep-violet-blue/70">Expected uplift for {mechanic || 'this mechanic'}</p>

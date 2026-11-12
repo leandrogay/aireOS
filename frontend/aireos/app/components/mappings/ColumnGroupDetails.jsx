@@ -3,6 +3,7 @@
 import { inputClass } from '@/components/ui/formStyles';
 import Disclosure from '@/components/ui/Disclosure';
 import SelectDropdown from '@/components/ui/SelectDropdown';
+import { glassNoteClass } from '@/components/ui/surfaceStyles';
 import { fieldLabel, periodLabel } from '@/app/utils/mappingReview';
 import { cn } from '@/lib/utils';
 
@@ -53,7 +54,7 @@ export default function ColumnGroupDetails({ group, entry, columns, onSettingsCh
   }
 
   return (
-    <div className="rounded-md bg-cream/60 px-2 py-1.5">
+    <div className={cn(glassNoteClass, 'px-2 py-1.5')}>
       <p className="text-[11px] text-deep-violet-blue">
         One row per {isPeriod ? (periodType === 'week' ? 'week' : 'month') : STORE_KEYS.includes(group.settings.key?.target) ? 'outlet' : 'heading'} from{' '}
         <span className="font-medium">{group.columns.length} columns</span>

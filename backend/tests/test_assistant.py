@@ -3231,6 +3231,114 @@ def test_get_promotions_tool_scoped_by_sku(monkeypatch):
     assert "XL" in function_response[0]["skus"][0]
 
 
+# ---- list_building_blocks --------------------------------------------------
+
+def _sample_block(**overrides):
+    block = {
+        "block_id": 1,
+        "customer_name": "FairPrice",
+        "sku": None,
+        "product_name": None,
+        "name": "CNY push",
+        "explanation": "Chinese New Year display",
+        "uplift_mode": "pct",
+        "uplift_value": 15.0,
+        "start_month": "2026-02-01",
+        "end_month": "2026-03-01",
+        "is_active": True,
+        "created_at": "2026-01-10T09:00:00+08:00",
+        "updated_at": "2026-01-10T09:00:00+08:00",
+    }
+    return {**block, **overrides}
+
+
+def _building_blocks_tool_result(fake_client):
+    tool_result_message = _dump(fake_client.models.calls[1]["contents"][-1])
+    return tool_result_message["parts"][0]["function_response"]["response"]
+
+
+def test_list_building_blocks_tool_filters_by_customer_and_overlapping_months(monkeypatch):
+    blocks = [
+        _sample_block(name="CNY push"),
+        _sample_block(name="Mid-year sale", start_month="2026-06-01", end_month="2026-07-01"),
+        _sample_block(name="Sheng Siong promo", customer_name="Sheng_Shiong"),
+    ]
+    monkeypatch.setattr(assistant.scenario_blocks, "list_building_blocks", lambda: blocks)
+
+    tool_call = _tool_call_response(("tu_1", "list_building_blocks", {"customer": "fairprice", "start_month": "2026-03", "end_month": "2026-04"}))
+    fake_client = _install_fake_client(monkeypatch, [tool_call, _final_answer()])
+
+    assistant.ask("did my building blocks for fairprice in march make an impact?", history=None, customer="fairprice")
+
+    result = json.loads(_building_blocks_tool_result(fake_client)["result"])
+    assert [block["name"] for block in result] == ["CNY push"]
+    assert "block_id" not in result[0] and "created_at" not in result[0]
+    assert result[0]["uplift_mode"] == "pct" and result[0]["uplift_value"] == 15.0
+
+
+def test_list_building_blocks_tool_covers_every_customer_when_none_is_named(monkeypatch):
+    blocks = [_sample_block(), _sample_block(name="Sheng Siong promo", customer_name="Sheng_Shiong")]
+    monkeypatch.setattr(assistant.scenario_blocks, "list_building_blocks", lambda: blocks)
+
+    tool_call = _tool_call_response(("tu_1", "list_building_blocks", {}))
+    fake_client = _install_fake_client(monkeypatch, [tool_call, _final_answer()])
+
+    assistant.ask("has any of my past building blocks made an impact?", history=None, customer="fairprice")
+
+    result = json.loads(_building_blocks_tool_result(fake_client)["result"])
+    assert [block["customer_name"] for block in result] == ["FairPrice", "Sheng_Shiong"]
+
+
+def test_list_building_blocks_finds_sheng_siong_whichever_way_it_is_spelled():
+    blocks = [_sample_block(customer_name="Sheng_Shiong"), _sample_block()]
+
+    result = assistant._filter_building_blocks(blocks, customer="Sheng Siong", start_month=None, end_month=None)
+
+    assert [block["customer_name"] for block in result] == ["Sheng_Shiong"]
+
+
+def test_list_building_blocks_tool_with_nothing_saved_returns_an_empty_list(monkeypatch):
+    monkeypatch.setattr(assistant.scenario_blocks, "list_building_blocks", lambda: [])
+
+    tool_call = _tool_call_response(("tu_1", "list_building_blocks", {}))
+    fake_client = _install_fake_client(
+        monkeypatch, [tool_call, _final_answer(text="No building blocks have been saved yet.")]
+    )
+
+    result = assistant.ask("what building blocks have I created?", history=None, customer="fairprice")
+
+    assert json.loads(_building_blocks_tool_result(fake_client)["result"]) == []
+    assert result["answer"] == "No building blocks have been saved yet."
+    assert result["has_table"] is False
+
+
+def test_list_building_blocks_tool_db_failure_degrades_gracefully(monkeypatch):
+    def _raise():
+        raise RuntimeError("connection refused")
+    monkeypatch.setattr(assistant.scenario_blocks, "list_building_blocks", _raise)
+
+    tool_call = _tool_call_response(("tu_1", "list_building_blocks", {}))
+    fake_client = _install_fake_client(
+        monkeypatch,
+        [tool_call, _final_answer(grounded=True, data_source="none", text="I couldn't reach the building blocks.")],
+    )
+
+    assistant.ask("what building blocks have I created?", history=None, customer="fairprice")
+
+    assert "building blocks database" in _building_blocks_tool_result(fake_client)["error"]
+
+
+def test_list_building_blocks_tool_refuses_an_unreadable_month(monkeypatch):
+    monkeypatch.setattr(assistant.scenario_blocks, "list_building_blocks", lambda: [_sample_block()])
+
+    tool_call = _tool_call_response(("tu_1", "list_building_blocks", {"start_month": "March"}))
+    fake_client = _install_fake_client(monkeypatch, [tool_call, _final_answer()])
+
+    assistant.ask("building blocks since march?", history=None, customer="fairprice")
+
+    assert "not a valid YYYY-MM month" in _building_blocks_tool_result(fake_client)["error"]
+
+
 # ---- generate_digest: pure helpers -------------------------------------------
 
 def test_rank_movers_picks_top_n_by_absolute_delta():

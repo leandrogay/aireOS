@@ -72,52 +72,71 @@ function ItemsBadge({ items }) {
   );
 }
 
+const CELL_CLASS = 'px-4 py-2.5';
+const NUMBER_CELL_CLASS = 'px-4 py-2.5 text-right tabular-nums';
+
+function deltaPercent(row) {
+  return `${row.delta < 0 ? '−' : '+'}${Math.abs((row.delta / row.current) * 100).toFixed(1)}%`;
+}
+
 /**
- * Annual figures use one compact summary row; its change opens the
- * contribution breakdown. Saved/draft pills stay to the right of Simulated.
+ * Scenario builder's comparison table, under the chart, in units: each year
+ * in view and the next 12 months, the base (Current forecast, or Initial in
+ * Budget planning) against Simulated. Its change opens the contribution
+ * breakdown (YearChangeDetails). On the shared TableGrid like
+ * ForecastYearTotals, whose /forecast table it stands in for; nested, since
+ * it sits in the chart card's By year tab.
+ *
+ * Until a switched-on block or promotion changes something in view, it shows
+ * the base only: no Simulated, Δ or Δ% columns.
+ *
  * @param {{ rows: object[], loading?: boolean, baseLabel?: string }} props
  */
 export default function ScenarioYearComparison({ rows, loading = false, baseLabel = 'Current' }) {
   const compare = rows.some((row) => row.items.some((item) => !item.notCounted));
   const columns = [
-    { key: 'period', label: 'Period', width: '15rem' },
-    { key: 'base', label: baseLabel, ...(compare ? { width: '9rem' } : {}) },
+    { key: 'period', label: 'Period' },
+    { key: 'base', label: baseLabel, width: '9rem', align: 'right' },
     ...(compare ? [
-      { key: 'simulated', label: 'Simulated' },
-      { key: 'delta', label: `Δ vs ${baseLabel}`, width: '9rem' },
-      { key: 'deltaPct', label: 'Δ%', width: '8rem' },
+      { key: 'simulated', label: 'Simulated', width: '15rem', align: 'right' },
+      { key: 'delta', label: `Δ vs ${baseLabel}`, width: '9rem', align: 'right' },
+      { key: 'deltaPct', label: 'Δ%', width: '6rem', align: 'right' },
     ] : []),
   ];
-  const cell = 'px-4 py-2.5 text-left align-middle tabular-nums';
   return (
     <section aria-label="Current and simulated totals">
       {compare ? <p className="px-4 pb-3 text-xs text-deep-violet-blue/60">Select a change figure to see its contributions.</p> : null}
-      <TableGrid columns={columns} minWidth={compare ? '56rem' : '28rem'} isLoading={loading} skeletonRows={3}
-        emptyState={!loading && !rows.length ? 'No yearly figures in this period.' : null}>
+      <TableGrid
+        variant="nested"
+        columns={columns}
+        minWidth={compare ? '48rem' : '24rem'}
+        isLoading={loading}
+        skeletonRows={2}
+        emptyState={!loading && !rows.length ? 'No yearly figures in this period.' : null}
+      >
         {!loading && rows.map((row) => {
           const changed = Boolean(row.delta) && row.current != null;
           const hasParts = Object.values(row.parts ?? {}).some((value) => Math.round(value));
+          const changeClass = (shown) => cn(NUMBER_CELL_CLASS, shown ? 'font-semibold text-scenario-ink' : 'text-deep-violet-blue/45');
           return (
-            <TableRow key={row.key} className="h-12">
-              <td className={cell}>
-                <span className="block font-medium">{row.label}</span>
-                {row.caption ? <span className="block text-xs text-deep-violet-blue/50">{row.caption}</span> : null}
+            <TableRow key={row.key} className="border-b border-lavander/80 last:border-b-0">
+              <td className={cn(CELL_CLASS, 'truncate')}>
+                <span className="font-medium">{row.label}</span>
+                {row.caption ? (
+                  <span className="ml-2 text-xs text-deep-violet-blue/55">{row.caption}</span>
+                ) : null}
               </td>
-              <td className={cell}>{formatFigure(row.current)}</td>
+              <td className={NUMBER_CELL_CLASS}>{formatFigure(row.current)}</td>
               {compare ? (
                 <>
-                  <td className={cell}>
-                    <div className="flex items-center gap-3">
-                      <span className="font-semibold">{row.current == null ? '—' : formatFigure(row.current + row.delta)}</span>
-                      {row.items.length ? <ItemsBadge items={row.items} /> : null}
-                    </div>
+                  <td className={NUMBER_CELL_CLASS}>
+                    {row.items.length ? <ItemsBadge items={row.items} /> : null}
+                    {row.current == null ? '—' : formatFigure(row.current + row.delta)}
                   </td>
-                  <td className={cn(cell, changed || hasParts ? 'font-semibold text-scenario-ink' : 'text-deep-violet-blue/45')}>
+                  <td className={changeClass(changed || hasParts)}>
                     {row.current != null && (changed || hasParts) ? <YearChangeDetails row={row} /> : '—'}
                   </td>
-                  <td className={cn(cell, changed ? 'font-semibold text-scenario-ink' : 'text-deep-violet-blue/45')}>
-                    {changed && row.current ? `${row.delta < 0 ? '−' : '+'}${Math.abs((row.delta / row.current) * 100).toFixed(1)}%` : '—'}
-                  </td>
+                  <td className={changeClass(changed)}>{changed && row.current ? deltaPercent(row) : '—'}</td>
                 </>
               ) : null}
             </TableRow>

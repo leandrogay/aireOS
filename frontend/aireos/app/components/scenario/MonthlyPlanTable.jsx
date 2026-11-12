@@ -9,7 +9,8 @@ import { formatMonthLabel } from '@/app/utils/forecastView';
 import useExpandedRows from '@/hooks/useExpandedRows';
 import MonthlyPlanDetails from './MonthlyPlanDetails';
 
-const cellClass = 'px-4 py-2.5 text-left align-middle tabular-nums';
+// As every list table's figures: numbers right-aligned (ForecastYearTotals, ScenarioYearComparison).
+const cellClass = 'px-4 py-2.5 text-right align-middle tabular-nums';
 
 function units(value) {
   return Math.round(value).toLocaleString('en-US');
@@ -39,19 +40,19 @@ export default function MonthlyPlanTable({ rows, lastYearLoading, onOpenItem, sc
   const expanded = useExpandedRows();
   const columns = [
     { key: 'month', label: 'Month', width: '10rem' },
-    { key: 'lastYear', label: 'Last year actual', width: '8rem' },
-    { key: 'base', label: baseLabel, width: '7rem' },
-    { key: 'adjustments', label: <Header label="Adjustments" hint={`Net change on ${baseLabel}. Open the month to see each contribution.`} />, width: '8rem' },
-    { key: 'simulated', label: 'Simulated', width: '8rem' },
-    { key: 'variance', label: <Header label="vs last year" hint="Simulated minus the same month's actual sales last year, in units." />, width: '8rem' },
-    { key: 'variancePct', label: 'vs last year %' },
+    { key: 'lastYear', label: 'Last year actual', width: '8rem', align: 'right' },
+    { key: 'base', label: baseLabel, width: '8rem', align: 'right' },
+    { key: 'adjustments', label: <Header label="Adjustments" hint={`Net change on ${baseLabel}. Open the month to see each contribution.`} />, width: '8rem', align: 'right' },
+    { key: 'simulated', label: 'Simulated', width: '8rem', align: 'right' },
+    { key: 'variance', label: <Header label="vs last year" hint="Simulated minus the same month's actual sales last year, in units." />, width: '8rem', align: 'right' },
+    { key: 'variancePct', label: 'vs last year %', align: 'right' },
   ];
   return (
     <section aria-label="Monthly plan">
       <p className="px-4 pb-3 text-xs text-deep-violet-blue/60">
         <span className="font-medium text-deep-violet-blue">{scope}</span> · Open a month for contributions and {split ? 'its Tier 0 calculation' : 'baseline details'}.
       </p>
-      <TableGrid columns={columns} minWidth="56rem"
+      <TableGrid variant="nested" columns={columns} minWidth="56rem"
         emptyState={!rows.length ? 'No forecast months in this period. Select a period with forecast data.' : null}>
         {rows.map((row) => {
           const label = formatMonthLabel(row.month_year);

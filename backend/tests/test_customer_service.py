@@ -2,7 +2,7 @@ import pytest
 from conftest import FakeConnection, FakeEngine
 
 from app.schemas.catalog import CustomerCreate, CustomerUpdate
-from app.services import customer_service
+from app.services import customer_colors, customer_service
 from app.services.settings import doh
 
 
@@ -24,10 +24,12 @@ def _retailer(in_use=False):
     }
 
 
-def _respond(customer=None, name_taken=False, unlinked=()):
+def _respond(customer=None, name_taken=False, unlinked=(), taken_colors=()):
     """Answers each statement customer_service sends, by its distinctive SQL."""
 
     def respond(sql, params):
+        if "color IS NOT NULL" in sql:
+            return list(taken_colors)
         if "lower(customer_name)" in sql:
             return [(name_taken,)]
         if "FROM customers c" in sql:
@@ -76,7 +78,19 @@ def test_create_inserts_the_name_as_typed_and_returns_the_row(monkeypatch):
 
     assert created == _customer()
     _, params = conn.sql_containing("INSERT INTO customers")[0]
-    assert params == {"customer_name": "Giant"}
+    assert params["customer_name"] == "Giant"
+
+
+def test_create_stores_the_free_colour_farthest_from_the_others(monkeypatch):
+    taken = [{"customer_name": "FairPrice", "color": "#7A70B8"}, {"customer_name": "NHG", "color": "#2E7BA6"}]
+    conn = FakeConnection(_respond(customer=_customer(), taken_colors=taken))
+    _install(monkeypatch, conn)
+
+    customer_service.create_customer(CustomerCreate(customer_name="Giant"))
+
+    _, params = conn.sql_containing("INSERT INTO customers")[0]
+    assert params["color"] == customer_colors.pick_color(["#7A70B8", "#2E7BA6"])
+    assert params["color"] not in ("#7A70B8", "#2E7BA6")
 
 
 def test_create_gives_the_new_customer_default_doh_settings(monkeypatch):
@@ -205,6 +219,41 @@ def test_renaming_a_missing_customer_returns_none(monkeypatch):
 
     assert customer_service.update_customer(3, CustomerUpdate(customer_name="giant")) is None
     assert conn.sql_containing("UPDATE customers") == []
+
+
+# ---- colour --------------------------------------------------------------------
+
+
+def test_a_colour_change_is_saved_and_returns_the_row(monkeypatch):
+    conn = FakeConnection(_respond(customer=_customer()))
+    _install(monkeypatch, conn)
+
+    updated = customer_service.update_customer_color(3, "#CD1D35")
+
+    assert updated == _customer()
+    _, params = conn.sql_containing("SET color = :color")[0]
+    assert params == {"customer_id": 3, "color": "#CD1D35"}
+
+
+def test_a_colour_like_another_customers_is_refused_without_saving(monkeypatch):
+    taken = [{"customer_name": "Sheng_Shiong", "color": "#9A7B00"}]
+    conn = FakeConnection(_respond(customer=_customer(), taken_colors=taken))
+    _install(monkeypatch, conn)
+
+    with pytest.raises(customer_service.CustomerColorError, match="like Sheng Shiong's"):
+        customer_service.update_customer_color(3, "#9A7B00")
+
+    _, params = conn.sql_containing("color IS NOT NULL")[0]
+    assert params == {"exclude_id": 3}
+    assert conn.sql_containing("SET color = :color") == []
+
+
+def test_changing_a_missing_customers_colour_returns_none(monkeypatch):
+    conn = FakeConnection(_respond(customer=None))
+    _install(monkeypatch, conn)
+
+    assert customer_service.update_customer_color(9, "#CD1D35") is None
+    assert conn.sql_containing("SET color = :color") == []
 
 
 # ---- delete --------------------------------------------------------------------

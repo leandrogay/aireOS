@@ -2,7 +2,9 @@
 
 import { useState } from 'react';
 
+import SegmentedControl from '@/components/ui/SegmentedControl';
 import StatusPill from '@/components/ui/StatusPill';
+import { inputClass } from '@/components/ui/formStyles';
 import { cn } from '@/lib/utils';
 import {
   MAX_OVERRIDE_PCT, formatPctRange, promotionCustomers, referencesFor, valuesAcrossSkus,
@@ -39,24 +41,16 @@ export default function PromotionVoucherFields({ promotion, upliftsByCustomer, o
       <span className="mb-0.5 block text-[11px] text-deep-violet-blue/70">
         Voucher{row && !promotion.voucher ? ` · ${formatPctRange(single && settingValues.length ? settingValues : options)}` : ''}
       </span>
-      <div className="flex gap-1" role="group" aria-label="Voucher">
-        {[{ value: true, label: 'Yes' }, { value: false, label: 'No' }].map((option) => (
-          <button key={option.label} type="button" aria-pressed={promotion.voucher === option.value}
-            onClick={() => onUpdate({ voucher: option.value })}
-            className={cn('h-7 flex-1 rounded-md border text-xs', promotion.voucher === option.value
-              ? 'border-deep-violet-blue bg-deep-violet-blue font-medium text-white'
-              : 'border-lavander bg-white text-deep-violet-blue hover:bg-cream')}>
-            {option.label}
-          </button>
-        ))}
-      </div>
+      <SegmentedControl ariaLabel="Voucher" size="sm" fullWidth value={promotion.voucher ? 'yes' : 'no'}
+        onChange={(next) => onUpdate({ voucher: next === 'yes' })}
+        options={[{ value: 'yes', label: 'Yes' }, { value: 'no', label: 'No' }]} />
       {promotion.voucher ? (
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           <label className="text-[11px] text-deep-violet-blue/70" htmlFor="promo-voucher-uplift">Voucher uplift</label>
           <input id="promo-voucher-uplift" type="number" min={0} max={MAX_OVERRIDE_PCT} step={1}
             value={text ?? String(value)} onChange={(event) => setText(event.target.value)} onBlur={commit}
             onKeyDown={(event) => { if (event.key === 'Enter') commit(); }}
-            className="h-8 w-16 rounded-md border border-violet bg-white px-2 text-right text-xs tabular-nums text-deep-violet-blue" />
+            className={cn(inputClass, 'h-8 w-16 px-2 text-right text-xs tabular-nums')} />
           <span className="text-[11px] text-deep-violet-blue/70">%</span>
           {changed ? (
             <>

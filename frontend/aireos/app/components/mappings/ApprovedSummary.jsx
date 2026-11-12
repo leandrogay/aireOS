@@ -6,7 +6,7 @@ import { ArrowRight, CheckCircle2, Database, RefreshCw, Upload } from 'lucide-re
 
 import { Button, buttonVariants } from '@/components/ui/button';
 import Disclosure from '@/components/ui/Disclosure';
-import { glassSurfaceClass } from '@/components/ui/surfaceStyles';
+import { glassInsetClass, glassSurfaceClass } from '@/components/ui/surfaceStyles';
 import LoadConfirmDialog from '@/components/upload/LoadConfirmDialog';
 import { formatDateTime } from '@/lib/formatDate';
 import { customerLabel, vendorLabel } from '@/app/utils/retailerLabel';
@@ -16,7 +16,7 @@ import { filesLabel } from '@/app/utils/uploadFlow';
 const action =
   'inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-deep-violet-blue focus-visible:ring-offset-2';
 const primary = `${action} border-deep-violet-blue bg-deep-violet-blue text-white hover:opacity-90`;
-const secondary = `${action} border-deep-violet-blue/30 bg-white text-deep-violet-blue hover:bg-cream`;
+const secondary = `${action} border-deep-violet-blue/30 bg-white text-deep-violet-blue hover:bg-lavander/50`;
 
 function plural(count, one, many) {
   return `${count.toLocaleString()} ${count === 1 ? one : many}`;
@@ -33,7 +33,7 @@ function loadedWith(file) {
  */
 function LoadableFiles({ title, help, files, detail, buttonLabel, Icon, onLoad }) {
   return (
-    <div className="rounded-md border border-deep-violet-blue/20 border-l-4 border-l-deep-violet-blue bg-cream/40 p-3">
+    <div className="rounded-md border border-deep-violet-blue/20 border-l-4 border-l-deep-violet-blue bg-white/40 p-3">
       <p className="text-sm font-medium text-deep-violet-blue">{title}</p>
       <p className="mt-0.5 text-xs text-deep-violet-blue/75">{help}</p>
       <ul className="mt-2 space-y-0.5 text-xs text-deep-violet-blue">
@@ -90,7 +90,7 @@ export default function ApprovedSummary({ approved }) {
         <div className="min-w-0">
           <h2 className="flex flex-wrap items-center gap-2 font-serif text-xl text-deep-violet-blue">
             Nomenclature approved
-            <span className="rounded-full border border-lavander bg-cream px-2 py-0.5 font-sans text-xs font-medium">
+            <span className="rounded-full border border-deep-violet-blue/15 bg-white/60 px-2 py-0.5 font-sans text-xs font-medium">
               v{version}
             </span>
           </h2>
@@ -157,7 +157,7 @@ export default function ApprovedSummary({ approved }) {
       )}
 
       {!hasNextStep && !loadedHere.length && (
-        <p className="mt-4 rounded-md border border-lavander bg-cream/40 px-3 py-2 text-sm text-deep-violet-blue/80">
+        <p className={`${glassInsetClass} mt-4 px-3 py-2 text-sm text-deep-violet-blue/80`}>
           No uploads are waiting on this nomenclature. Upload a file with these columns to add its sales.
         </p>
       )}

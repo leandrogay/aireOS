@@ -250,7 +250,6 @@ export default function BlockEditor({
           disabled={saving}
           aria-label={`Delete ${block.name}`}
           title="Delete block"
-          className="border-deep-violet-blue/30 bg-white text-deep-violet-blue hover:bg-cream"
         >
           <Trash2 />
         </Button>

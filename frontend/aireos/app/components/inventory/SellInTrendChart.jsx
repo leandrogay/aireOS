@@ -7,24 +7,24 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from '@/components/ui/chart';
+import ChartFrame, { CHART_TOOLTIP_CLASS } from '@/components/ui/ChartFrame';
 
+import { NO_CUSTOMER_COLOR } from '@/app/utils/customerColors';
 import { formatMonth, formatUnits } from '@/app/utils/inventoryForm';
-import { BAR_ANIMATION, chartDataRange, metricYAxisProps, yearAxisProps } from '@/app/utils/trendChart';
+import { AXIS_TICK, BAR_ANIMATION, MAX_BAR_SIZE, chartDataRange, metricYAxisProps, yearAxisProps } from '@/app/utils/trendChart';
 import useChartTransition from '@/hooks/useChartTransition';
 import useMediaQuery from '@/hooks/useMediaQuery';
 
 import { labelledTooltipRow } from './chartTooltip';
 
-const chartConfig = {
-  sell_in: { label: 'Sell-in', color: 'var(--aire-deep-blue)' },
-};
-
 /**
- * Sell-in per month for one customer (backend get_customer_view `trend`).
+ * Sell-in per month for one customer (backend get_customer_view `trend`), in
+ * that customer's colour (utils/customerColors).
  *
- * @param {{ trend: Array<{ month: string, sell_in: number }> }} props
+ * @param {{ trend: Array<{ month: string, sell_in: number }>, color?: string }} props
  */
-export default function SellInTrendChart({ trend }) {
+export default function SellInTrendChart({ trend, color = NO_CUSTOMER_COLOR }) {
+  const chartConfig = { sell_in: { label: 'Sell-in', color } };
   const mobile = useMediaQuery('(max-width: 639px)');
   const rows = trend.map((row) => ({ ...row, label: formatMonth(row.month) }));
   // Fixed nice steps, so a filter change can move the bars and the axis together.
@@ -42,15 +42,16 @@ export default function SellInTrendChart({ trend }) {
   }
 
   return (
-    <div className="overflow-visible rounded-xl border border-lavander bg-white pl-1 pr-3 pt-2">
+    // In the same frame as its skeleton (CustomerInventoryView), so nothing moves when it arrives.
+    <ChartFrame>
       <ChartContainer config={chartConfig} className="aspect-auto h-[280px] w-full">
         <BarChart accessibilityLayer data={transition.rows} margin={{ top: 8, right: 8, left: 0, bottom: 4 }}>
-          <CartesianGrid vertical={false} stroke="var(--aire-lavender)" />
+          <CartesianGrid vertical={false} />
           <XAxis
             dataKey={mobile ? 'month' : 'label'}
             interval={0}
             height={mobile ? 28 : 52}
-            tick={{ fontSize: 9, fill: '#3A4369' }}
+            tick={AXIS_TICK}
             angle={mobile ? 0 : -40}
             textAnchor={mobile ? 'middle' : 'end'}
             tickMargin={6}
@@ -60,20 +61,20 @@ export default function SellInTrendChart({ trend }) {
             domain={transition.domain}
             ticks={transition.ticks}
             width={48}
-            tick={{ fontSize: 10, fill: '#3A4369' }}
+            tick={AXIS_TICK}
             tickFormatter={formatUnits}
           />
           <ChartTooltip
             content={
               <ChartTooltipContent
-                className="border-violet/40 bg-white"
+                className={CHART_TOOLTIP_CLASS}
                 formatter={labelledTooltipRow(chartConfig, (value) => `${formatUnits(value)} units`)}
               />
             }
           />
-          <Bar dataKey="sell_in" fill="var(--color-sell_in)" radius={[2, 2, 0, 0]} {...BAR_ANIMATION} {...transition.seriesAnimation} />
+          <Bar dataKey="sell_in" fill="var(--color-sell_in)" radius={[10, 10, 0, 0]} maxBarSize={MAX_BAR_SIZE} {...BAR_ANIMATION} {...transition.seriesAnimation} />
         </BarChart>
       </ChartContainer>
-    </div>
+    </ChartFrame>
   );
 }

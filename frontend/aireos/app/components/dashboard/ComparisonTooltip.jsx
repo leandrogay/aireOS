@@ -1,9 +1,11 @@
 'use client';
 
 import { changePct, formatChangePct } from '@/app/utils/periodComparison';
-import { formatColor as colorFor, UNNAMED_FORMAT } from '@/app/utils/storeFormats';
+import { UNNAMED_FORMAT } from '@/app/utils/storeFormats';
 import { PeriodSwatch } from '@/components/dashboard/PeriodTexture';
 import { formatMetric } from '@/app/utils/trendChart';
+import { CHART_TOOLTIP_CLASS } from '@/components/ui/ChartFrame';
+import { cn } from '@/lib/utils';
 
 function ChangeCell({ current, baseline }) {
   const pct = current === null ? null : changePct(current, baseline);
@@ -30,9 +32,9 @@ function ChangeCell({ current, baseline }) {
  * Reads the hovered point's `currentLabel`, `baselineLabel`, `currentTotal`,
  * `baselineTotal`, `currentFormats` and `baselineFormats`.
  *
- * @param {{ active?: boolean, payload?: Array<object>, formats: string[], metric: 'revenue' | 'units' }} props
+ * @param {{ active?: boolean, payload?: Array<object>, formats: string[], metric: 'revenue' | 'units', colorFor: (format: string) => string }} props
  */
-export default function ComparisonTooltip({ active, payload, formats, metric }) {
+export default function ComparisonTooltip({ active, payload, formats, metric, colorFor }) {
   if (!active || !payload?.length) return null;
   const row = payload[0].payload;
   const lines = formats.map((format) => ({
@@ -42,7 +44,8 @@ export default function ComparisonTooltip({ active, payload, formats, metric }) 
   }));
 
   return (
-    <div className="rounded-lg border border-lavander bg-white px-2.5 py-1.5 text-xs text-deep-violet-blue shadow-xl">
+    // ChartTooltipContent's box in the shared tooltip look, holding this table.
+    <div className={cn('rounded-lg border px-2.5 py-1.5 text-xs text-deep-violet-blue shadow-xl', CHART_TOOLTIP_CLASS)}>
       <table>
         <thead>
           <tr className="align-bottom">

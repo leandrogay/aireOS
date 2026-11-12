@@ -11,6 +11,7 @@ import { NAV_ITEMS, matchesPath } from '@/components/layout/navItems';
 import RailFlyout from '@/components/layout/RailFlyout';
 import { logout } from '@/app/services/authApi';
 import useMediaQuery from '@/hooks/useMediaQuery';
+import { SIDEBAR } from '@/app/config/transitions';
 import { cn } from '@/lib/utils';
 
 // The nav bar's widths in px, animated by Motion: open (14rem), the icon rail
@@ -19,7 +20,10 @@ import { cn } from '@/lib/utils';
 const OPEN_WIDTH = 224;
 const RAIL_WIDTH = 56;
 const HIDDEN_WIDTH = 48;
-const NAV_TRANSITION = { duration: 0.2, ease: [0.22, 1, 0.36, 1] };
+// On wider screens the bar is one floating sheet, always this far (px) from
+// the window's left, top and bottom edges (left-3 / top-3 below), rail or
+// open. Only its width changes, so it never jumps to the window edge.
+const EDGE_GAP = 12;
 
 // Every page mounts its own Sidebar (PageLayout → AppShell), so whether the
 // bar is collapsed is kept here, at module level, to survive the page change:
@@ -30,18 +34,19 @@ let lastCollapsed = true;
 // Below Tailwind's md breakpoint the navigation opens over the page.
 const NARROW_QUERY = '(max-width: 767px)';
 
-// A tab label fades out as the bar closes to the rail, and back in once it
-// has mostly opened. CSS rather than Motion, so labels don't fade in on every
-// page load.
+// A tab label fades out (and tucks a little left) as the bar closes to the
+// rail, and slides back in once it has mostly opened. CSS rather than Motion,
+// so labels don't fade in on every page load.
 // min-w-0 + overflow-hidden: in the rail's icon-wide tab the label shrinks to
 // nothing rather than spilling past the tab.
-const LABEL_FADE = 'min-w-0 overflow-hidden whitespace-nowrap transition-opacity';
+const LABEL_FADE = 'min-w-0 overflow-hidden whitespace-nowrap transition-[opacity,translate]';
 
 // The logo and tabs fade out fast as the bar closes, and fade in once it has
 // mostly opened, so labels never show squeezed into a half-open bar.
+// Timing in config/transitions.js (SIDEBAR).
 const NAV_CONTENT = {
-  hidden: { opacity: 0, transition: { duration: 0.1 } },
-  shown: { opacity: 1, transition: { duration: 0.15, delay: 0.05 } },
+  hidden: { opacity: 0, transition: SIDEBAR.contentOut },
+  shown: { opacity: 1, transition: SIDEBAR.contentIn },
 };
 
 // The active-tab background. One layoutId for parents and sub-items alike,
@@ -50,16 +55,18 @@ function ActiveHighlight() {
   return (
     <motion.span
       layoutId="nav-active"
-      transition={{ duration: 0.12, ease: 'easeOut' }}
+      transition={SIDEBAR.highlight}
       className="absolute inset-0 -z-10 rounded-xl bg-lavander/85 shadow-sm"
     />
   );
 }
 
 // The classes for a tab label: hidden in the rail, shown (after a short
-// delay, so it isn't squeezed into a half-open bar) otherwise.
+// delay, so it isn't squeezed into a half-open bar) otherwise. The durations
+// are the --motion-* tokens SIDEBAR.contentOut / contentIn use; a tab's own
+// width tween (--motion-panel) keeps pace with SIDEBAR.width.
 function labelClass(rail) {
-  return cn(LABEL_FADE, rail ? 'opacity-0 duration-100' : 'opacity-100 delay-100 duration-200');
+  return cn(LABEL_FADE, rail ? '-translate-x-1.5 opacity-0 duration-(--motion-exit) ease-in' : 'translate-x-0 opacity-100 delay-(--motion-exit) duration-(--motion-control) ease-out');
 }
 
 // Standardized left nav, shared across every app page via AppShell.
@@ -76,8 +83,9 @@ export default function Sidebar() {
   const hidden = narrow && !mobileOpen;
   const showingMobile = narrow && mobileOpen;
   const width = hidden ? HIDDEN_WIDTH : rail ? RAIL_WIDTH : OPEN_WIDTH;
-  // A hover expansion floats over the page without widening the layout.
-  const footprint = narrow ? 0 : collapsed ? RAIL_WIDTH : OPEN_WIDTH;
+  // The room the page leaves for the bar: its pinned width plus the gap to
+  // its left. A hover expansion floats over the page without widening it.
+  const footprint = narrow ? 0 : (collapsed ? RAIL_WIDTH : OPEN_WIDTH) + EDGE_GAP;
   // The label of the rail section whose flyout is open; one at a time.
   const [openFlyout, setOpenFlyout] = useState(null);
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -125,25 +133,34 @@ export default function Sidebar() {
           className="fixed inset-0 z-30 bg-deep-violet-blue/20 md:hidden"
         />
       )}
-      {peeking && !narrow && (
-        <div aria-hidden="true" className="pointer-events-none fixed inset-0 z-30 bg-deep-violet-blue/15" />
-      )}
-      <div className="relative shrink-0 max-md:!w-0" style={{ width: footprint }}>
+      {/* Pinning or unpinning moves the page on the bar's own spring, so the
+          content glides with the glass instead of jumping ahead of it. */}
+      <motion.div
+        aria-hidden="true"
+        initial={false}
+        animate={{ width: footprint }}
+        transition={reduceMotion ? { duration: 0 } : SIDEBAR.width}
+        className="shrink-0 max-md:!w-0"
+      />
       <motion.nav
       initial={false}
       animate={{ width }}
-      transition={reduceMotion ? { duration: 0 } : NAV_TRANSITION}
+      transition={reduceMotion ? { duration: 0 } : SIDEBAR.width}
       onMouseLeave={() => {
         setPeeking(false);
       }}
       className={cn(
-        'flex h-screen shrink-0 flex-col overflow-x-hidden overflow-y-auto border border-transparent py-4 transition-[background-color,box-shadow] duration-200 md:top-2 md:h-[calc(100dvh-1rem)] md:rounded-2xl',
-        // The first server render does not know the viewport width. Keep its
-        // desktop-width nav out of the mobile layout until the media query settles.
-        narrow ? 'fixed inset-y-0 left-0 z-40' : collapsed ? 'fixed left-2 z-40 max-md:invisible' : 'sticky max-md:invisible',
-        (showingMobile || peeking) && 'shadow-2xl shadow-deep-violet-blue/15',
-        rail || hidden ? 'px-2' : 'px-3',
+        // px-2 in every state: the icons stay in one column while the bar
+        // opens, and the glass edge uncovers labels already in place.
+        'flex h-screen shrink-0 flex-col overflow-x-hidden overflow-y-auto border border-transparent px-2 py-4 transition-[background-color,box-shadow] duration-(--motion-panel) md:top-3 md:h-[calc(100dvh-1.5rem)] md:rounded-[1.25rem]',
+        // Fixed in every state. The first server render does not know the
+        // viewport width; keep its desktop nav out of the mobile layout until
+        // the media query settles.
+        narrow ? 'fixed inset-y-0 left-0 z-40' : 'fixed left-3 z-40 max-md:invisible',
         hidden ? 'pointer-events-none bg-transparent' : 'aire-glass-float bg-card/35 shadow-md shadow-deep-violet-blue/5',
+        // A hover peek (or the phone drawer) lifts off the page with a deeper
+        // shadow and thicker glass rather than dimming what's behind it.
+        (showingMobile || peeking) && 'bg-card/70 shadow-2xl shadow-deep-violet-blue/20',
       )}
     >
       <div className="relative mb-2 flex h-9 items-center md:mt-2">
@@ -202,7 +219,7 @@ export default function Sidebar() {
               initial="hidden"
               animate="shown"
               exit="hidden"
-              className="w-50 shrink-0 space-y-0.5"
+              className="w-52 shrink-0 space-y-0.5"
             >
               {NAV_ITEMS.map((item) => {
                 const childActive =
@@ -219,7 +236,7 @@ export default function Sidebar() {
                 // here: it would clip the highlight while it slides in from another
                 // tab, so the label clips itself instead (labelClass).
                 const tabClass = cn(
-                  'group/nav-item relative isolate flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 text-sm text-deep-violet-blue transition-[width,background-color,box-shadow] duration-200 ease-out hover:bg-card/80 hover:shadow-sm focus-visible:outline-2 focus-visible:outline-violet',
+                  'group/nav-item relative isolate flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 text-sm text-deep-violet-blue transition-[width,background-color,box-shadow] ease-out [transition-duration:var(--motion-panel),var(--motion-control),var(--motion-control)] hover:bg-card/80 hover:shadow-sm focus-visible:outline-2 focus-visible:outline-violet',
                   rail ? 'w-10' : 'w-full',
                   (isActive || childActive) && 'font-medium',
                 );
@@ -306,7 +323,7 @@ export default function Sidebar() {
             initial="hidden"
             animate="shown"
             exit="hidden"
-            className="mt-auto w-50 shrink-0 pt-1"
+            className="mt-auto w-52 shrink-0 pt-1"
           >
             <button
               type="button"
@@ -314,11 +331,12 @@ export default function Sidebar() {
               disabled={isSigningOut}
               title={rail ? 'Sign out' : undefined}
               className={cn(
-                'flex cursor-pointer items-center gap-3 overflow-hidden rounded-lg px-3 py-2 text-sm text-deep-violet-blue/75 transition-[width,background-color,color] duration-200 hover:bg-lavander/85 hover:text-deep-violet-blue disabled:cursor-wait disabled:opacity-60',
+                // Same hover as the nav tabs above: a lifted card tint and a growing icon.
+                'group/sign-out flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 text-sm text-deep-violet-blue/75 transition-[width,background-color,box-shadow,color] ease-out [transition-duration:var(--motion-panel),var(--motion-control),var(--motion-control),var(--motion-control)] hover:bg-card/80 hover:text-deep-violet-blue hover:shadow-sm focus-visible:outline-2 focus-visible:outline-violet disabled:cursor-wait disabled:opacity-60',
                 rail ? 'w-10' : 'w-full',
               )}
             >
-              {isSigningOut ? <LoaderCircle className="size-4 shrink-0 animate-spin motion-reduce:animate-none" /> : <LogOut className="size-4 shrink-0" />}
+              {isSigningOut ? <LoaderCircle className="size-4 shrink-0 animate-spin motion-reduce:animate-none" /> : <LogOut className="size-4 shrink-0 transition-transform duration-200 group-hover/sign-out:scale-125 motion-reduce:transform-none" />}
               <span className={labelClass(rail)}>
                 {isSigningOut ? 'Signing out...' : 'Sign out'}
               </span>
@@ -332,7 +350,6 @@ export default function Sidebar() {
         )}
       </AnimatePresence>
       </motion.nav>
-      </div>
     </>
   );
 }

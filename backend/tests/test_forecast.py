@@ -13,7 +13,7 @@ class FakeQueryJob:
     def result(self, timeout=None):
         return self
 
-    def to_dataframe(self):
+    def to_dataframe(self, create_bqstorage_client=True):
         return self._df
 
 
@@ -79,6 +79,8 @@ def _output_record(**overrides):
         "promo_mix": "monthly_only",
         "actual_status": "not_yet",
         "output_built_at": pd.Timestamp("2026-11-08 03:00:00", tz="UTC"),
+        "current_data_month": datetime.date(2026, 10, 1),
+        "previous_data_month": datetime.date(2026, 9, 1),
     }
     record.update(overrides)
     return record
@@ -260,6 +262,8 @@ def test_forecast_output_row_keeps_blank_lines_as_none(monkeypatch):
             "initial_generated_at": None,
             "initial_low_80": None,
             "initial_high_80": None,
+            "initial_range_pct": None,
+            "initial_confidence_band": None,
             "forecast_previous": None,
             "previous_source_model": None,
             "previous_generated_at": None,
@@ -281,6 +285,8 @@ def test_forecast_output_row_keeps_blank_lines_as_none(monkeypatch):
             "promo_mix": "monthly_only",
             "actual_status": "not_yet",
             "output_built_at": "2026-11-08T03:00:00Z",
+            "current_data_month": "2026-10-01",
+            "previous_data_month": "2026-09-01",
         }
     ]
 
@@ -300,10 +306,63 @@ def test_forecast_output_rows_return_every_tier_without_a_tier_filter(monkeypatc
 def test_forecast_output_rows_bind_one_tier_as_a_parameter(monkeypatch):
     fake = _install_fake_client(monkeypatch, pd.DataFrame())
 
-    bigquery.get_forecast_output_rows(tier="tier1_basic")
+    bigquery.get_forecast_output_rows(tier="tier0")
 
     assert "tier = @tier" in fake.last_query
-    assert _params_by_name(fake.last_job_config)["tier"].value == "tier1_basic"
+    assert _params_by_name(fake.last_job_config)["tier"].value == "tier0"
+
+
+def test_a_tier_1_read_also_reads_tier_0_for_its_initial(monkeypatch):
+    fake = _install_fake_client(monkeypatch, pd.DataFrame())
+
+    bigquery.get_forecast_output_rows(tier="tier1_basic")
+
+    assert "output.tier IN (@tier, @initial_tier)" in fake.last_query
+    params = _params_by_name(fake.last_job_config)
+    assert (params["tier"].value, params["initial_tier"].value) == ("tier1_basic", "tier0")
+
+
+# ---- Initial Yearly Forecast is Tier 0's on every model ----
+
+
+def _initial_records():
+    tier0 = _output_record(tier="tier0", forecast_initial=200.0, initial_low_80=40.0, initial_high_80=360.0,
+                           initial_source_model="tier0_legacy")
+    tier1 = _output_record(tier="tier1_basic", tier_order=1, forecast_initial=999.0, initial_low_80=1.0,
+                           initial_high_80=2000.0, initial_source_model="ARIMA_PLUS")
+    return [tier0, tier1]
+
+
+def test_tier_1_rows_carry_tier_0s_initial_not_their_own(monkeypatch):
+    _install_fake_client(monkeypatch, pd.DataFrame(_initial_records()))
+
+    rows = {row["tier"]: row for row in bigquery.get_forecast_output_rows()}
+
+    tier0, tier1 = rows["tier0"], rows["tier1_basic"]
+    for column in bigquery.INITIAL_COLUMNS:
+        assert tier1[column] == tier0[column]
+    assert tier1["forecast_initial"] == 200.0
+    assert tier1["initial_source_model"] == "tier0_legacy"
+    assert tier1["forecast_current"] == 540.0
+
+
+def test_a_single_tier_1_read_returns_only_that_tier_with_tier_0s_initial(monkeypatch):
+    _install_fake_client(monkeypatch, pd.DataFrame(_initial_records()))
+
+    rows = bigquery.get_forecast_output_rows(tier="tier1_basic")
+
+    assert [row["tier"] for row in rows] == ["tier1_basic"]
+    assert rows[0]["forecast_initial"] == 200.0
+
+
+def test_a_tier_1_month_without_a_tier_0_initial_has_no_initial():
+    rows = [{"customer_id": 1, "sku": "A", "month_year": "2027-01-01", "tier": "tier1_basic",
+             "forecast_initial": 50.0, "initial_low_80": 1.0}]
+
+    [row] = bigquery.with_tier0_initial(rows)
+
+    assert row["forecast_initial"] is None
+    assert row["initial_low_80"] is None
 
 
 def test_unknown_tier_raises_without_querying(monkeypatch):
@@ -330,9 +389,11 @@ def test_previous_range_comes_from_its_own_run_row(monkeypatch):
 
 
 def test_previous_month_gets_a_range_and_band_like_current(monkeypatch):
+    # The rebuilt Previous is stored one second before the Current run; the
+    # join keys on previous_generated_at, so its bounds still come through.
     record = _output_record(
         forecast_previous=400.0,
-        previous_generated_at=pd.Timestamp("2026-08-31 16:00:00", tz="UTC"),
+        previous_generated_at=pd.Timestamp("2026-09-30 16:28:10", tz="UTC"),
         previous_low_80=300.0,
         previous_high_80=580.0,
     )
@@ -346,13 +407,98 @@ def test_previous_month_gets_a_range_and_band_like_current(monkeypatch):
     assert row["previous_confidence_band"] == "medium"
 
 
+# ---- Data months (what each line was trained on) ----
+
+
+def test_both_data_months_come_back_per_tier(monkeypatch):
+    records = [
+        _output_record(tier="tier0"),
+        _output_record(
+            tier="tier1_basic",
+            current_data_month=datetime.date(2026, 10, 1),
+            previous_data_month=datetime.date(2026, 9, 1),
+        ),
+    ]
+    _install_fake_client(monkeypatch, pd.DataFrame(records))
+
+    rows = bigquery.get_forecast_output_rows()
+
+    assert [(row["tier"], row["current_data_month"], row["previous_data_month"]) for row in rows] == [
+        ("tier0", "2026-10-01", "2026-09-01"),
+        ("tier1_basic", "2026-10-01", "2026-09-01"),
+    ]
+
+
+def test_data_months_are_none_when_the_tier_is_unavailable(monkeypatch):
+    record = _output_record(
+        tier="tier1_advanced",
+        is_available=False,
+        unavailable_reason="not_enough_history",
+        forecast_current=None,
+        current_data_month=pd.NaT,
+        previous_data_month=pd.NaT,
+    )
+    _install_fake_client(monkeypatch, pd.DataFrame([record]))
+
+    [row] = bigquery.get_forecast_output_rows()
+
+    assert row["current_data_month"] is None
+    assert row["previous_data_month"] is None
+
+
+def test_customers_on_different_months_keep_their_own_data_months(monkeypatch):
+    records = [
+        _output_record(customer_id=1, customer_name="fairprice"),
+        _output_record(
+            customer_id=2,
+            customer_name="nhg",
+            current_data_month=datetime.date(2026, 9, 1),
+            previous_data_month=datetime.date(2026, 8, 1),
+        ),
+    ]
+    _install_fake_client(monkeypatch, pd.DataFrame(records))
+
+    rows = bigquery.get_forecast_output_rows()
+
+    assert {row["customer_name"]: row["previous_data_month"] for row in rows} == {
+        "fairprice": "2026-09-01",
+        "nhg": "2026-08-01",
+    }
+
+
+def test_initial_month_gets_a_range_and_band_from_its_own_bounds(monkeypatch):
+    # The output view carries Initial's bounds itself; no run join is needed.
+    record = _output_record(forecast_initial=200.0, initial_low_80=40.0, initial_high_80=360.0)
+    _install_fake_client(monkeypatch, pd.DataFrame([record]))
+
+    [row] = bigquery.get_forecast_output_rows()
+
+    assert row["initial_low_80"] == 40.0
+    assert row["initial_high_80"] == 360.0
+    assert row["initial_range_pct"] == 80.0
+    assert row["initial_confidence_band"] == "low"
+
+
+def test_month_without_an_initial_has_no_initial_band(monkeypatch):
+    _install_fake_client(monkeypatch, pd.DataFrame([_output_record()]))
+
+    [row] = bigquery.get_forecast_output_rows()
+
+    assert row["initial_range_pct"] is None
+    assert row["initial_confidence_band"] is None
+
+
 @pytest.mark.parametrize(
     ("value", "low", "high", "expected"),
     [
         (100.0, 90.0, 110.0, (10.0, "high")),
         (100.0, 80.0, 120.0, (20.0, "high")),
+        (100.0, 79.8, 120.2, (20.2, "medium")),
         (100.0, 50.0, 150.0, (50.0, "medium")),
         (100.0, 20.0, 180.0, (80.0, "low")),
+        # ARIMA lower bounds can go below 0 for a small SKU; the range still counts.
+        (10.0, -4.0, 24.0, (140.0, "low")),
+        (0.0, 0.0, 5.0, (None, "unknown")),
         (100.0, None, 120.0, (None, "unknown")),
         (None, 80.0, 120.0, (None, None)),
     ],

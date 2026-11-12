@@ -155,13 +155,26 @@ def _fetch_customers(conn: Connection) -> dict[int, str]:
 
 
 def list_customers() -> list[dict]:
+    """Every customer with its chart colour (customers.color, migration 018),
+    which every page draws that customer in (frontend utils/customerColors)."""
     with _read_connection() as conn:
-        customers = _fetch_customers(conn)
+        rows = conn.execute(
+            text(
+                """
+                SELECT
+                    customer_id,
+                    customer_name,
+                    color
 
-    return [
-        {"customer_id": customer_id, "customer_name": name}
-        for customer_id, name in customers.items()
-    ]
+                FROM customers
+
+                ORDER BY
+                    customer_name ASC
+                """
+            )
+        ).mappings().all()
+
+    return [dict(row) for row in rows]
 
 
 def _require_customers(customers: dict[int, str], customer_ids: list[int]) -> None:

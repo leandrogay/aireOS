@@ -43,20 +43,39 @@ export function skusInRows(rows) {
  * @param {string} tier
  * @returns {{ available: boolean, reason: string }}
  */
-export function tierStatus(availability, skus, tier) {
+export function tierStatus(availability, skus, tier, { monthsOfHistory = null } = {}) {
   if (tier === DEFAULT_TIER) return { available: true, reason: '' };
   const reasons = skus.flatMap((sku) => {
     const entry = availability?.[sku]?.[tier];
     if (!entry) return ['no_forecast'];
     return entry.is_available ? [] : [entry.unavailable_reason ?? null];
   });
-  return { available: reasons.length === 0, reason: tierUnavailableText({ reasons, total: skus.length }) };
+  return {
+    available: reasons.length === 0,
+    reason: tierUnavailableText({ reasons, total: skus.length, monthsOfHistory }),
+  };
+}
+
+/**
+ * Months of sales the model counted for the one SKU in scope on `tier`
+ * (months_of_history), for "this product has 8"; the fewest across its
+ * customers, since that is the one holding the model back. Null with
+ * several SKUs or none known.
+ */
+export function monthsOfHistory(rows, skus, tier) {
+  if (skus.length !== 1) return null;
+  const months = (rows ?? [])
+    .filter((row) => row.tier === tier && row.sku === skus[0] && row.months_of_history != null)
+    .map((row) => row.months_of_history);
+  return months.length ? Math.min(...months) : null;
 }
 
 /** Model dropdown options in tier_order: each disabled, with its reason, unless every SKU in scope has it. */
-export function modelOptions(availability, skus) {
+export function modelOptions(availability, skus, rows = []) {
   return FORECAST_TIER_OPTIONS.map((option) => {
-    const status = tierStatus(availability, skus, option.value);
+    const status = tierStatus(availability, skus, option.value, {
+      monthsOfHistory: monthsOfHistory(rows, skus, option.value),
+    });
     return status.available
       ? option
       : { ...option, disabled: true, description: status.reason };
@@ -86,7 +105,7 @@ export function forecastModelView({ rows, availability, requestedTier }) {
     tier,
     rows: rowsForTier(rows, tier),
     skus,
-    options: modelOptions(availability, skus),
+    options: modelOptions(availability, skus, rows),
   };
 }
 
@@ -104,26 +123,36 @@ export function pastAccuracy(rows) {
 }
 
 /**
- * One SKU's confidence for a month's tooltip, or null on a month with
- * neither a Current nor a Previous forecast (actual-only months show no
- * confidence). `low` / `high` (Current) and `previousLow` / `previousHigh`
- * are the 80% bounds in cartons.
+ * One SKU's confidence for a month's tooltip, or null on a month with no
+ * Current, Previous or Initial forecast (actual-only months show no
+ * confidence). `low` / `high` (Current), `previousLow` / `previousHigh` and
+ * `initialLow` / `initialHigh` are the 80% bounds in cartons.
  * `key` is the customer x SKU, so two customers' rows for one SKU (All
  * customers) stay apart; the tooltip names the customer when they differ.
  *
- * Current and Previous each get this month's band and range (the backend
- * reads Previous's from its own run, bigquery.month_range). Past accuracy is
+ * Current, Previous and Initial each get this month's band and range (the
+ * backend works out Previous's and Initial's with bigquery.month_range;
+ * Initial's was set when the yearly plan was made). Past accuracy is
  * the model's backtest for the series, one score for both lines (Previous
  * comes from the same model); `past` passes it in for a month with no
  * Current row to read it from (pastAccuracy).
  */
 export function confidenceEntry(
   row,
-  { low = null, high = null, previousLow = null, previousHigh = null, past = null } = {}
+  {
+    low = null,
+    high = null,
+    previousLow = null,
+    previousHigh = null,
+    initialLow = null,
+    initialHigh = null,
+    past = null,
+  } = {}
 ) {
   const hasCurrent = row?.forecast_current != null;
   const hasPrevious = row?.forecast_previous != null;
-  if (!hasCurrent && !hasPrevious) return null;
+  const hasInitial = row?.forecast_initial != null;
+  if (!hasCurrent && !hasPrevious && !hasInitial) return null;
   return {
     key: `${row.customer_id}|${row.sku}`,
     sku: row.sku,
@@ -142,11 +171,16 @@ export function confidenceEntry(
           high: previousHigh,
         }
       : null,
+    initial: hasInitial
+      ? {
+          band: confidenceBand(row.initial_confidence_band),
+          rangePct: row.initial_range_pct ?? null,
+          low: initialLow,
+          high: initialHigh,
+        }
+      : null,
     pastBand: hasCurrent ? confidenceBand(row.current_confidence_band) : (past?.band ?? 'unknown'),
     smape: row.current_backtest_smape ?? past?.smape ?? null,
     typicalPromo: hasCurrent && row.tier === 'tier1_advanced' && Boolean(row.xreg_used_typical_promo),
   };
 }
-
-// Rows past this in the several-SKU tooltip become "+N more".
-export const CONFIDENCE_ROW_LIMIT = 6;

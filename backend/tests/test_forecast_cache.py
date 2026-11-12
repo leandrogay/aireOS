@@ -125,7 +125,7 @@ class RecordingClient:
     def result(self, timeout=None):
         return self
 
-    def to_dataframe(self):
+    def to_dataframe(self, create_bqstorage_client=True):
         return pd.DataFrame()
 
 

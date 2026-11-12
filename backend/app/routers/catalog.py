@@ -7,6 +7,7 @@ from app.auth import require_user
 from app.services import catalog_service, customer_service
 from app.services.settings.common import CustomerNotFoundError
 from app.schemas.catalog import (
+    CustomerColorUpdate,
     CustomerCreate,
     CustomerUpdate,
     RetailerCreate,
@@ -38,6 +39,7 @@ router = APIRouter(
 
 
 _CUSTOMER_NAME_TAKEN = "A customer with this name already exists."
+_CUSTOMER_COLOR_TAKEN = "Another customer already has this colour."
 _RETAILER_NAME_TAKEN = "A retailer with this name already exists."
 
 
@@ -124,6 +126,47 @@ def update_customer(customer_id: int, customer: CustomerUpdate):
             status_code=500,
             detail=(
                 f"Failed to update customer: "
+                f"{type(e).__name__}: {e}"
+            ),
+        )
+
+
+@router.put("/customers/{customer_id}/color")
+def update_customer_color(customer_id: int, body: CustomerColorUpdate):
+    try:
+        updated = customer_service.update_customer_color(
+            customer_id,
+            body.color,
+        )
+
+        if updated is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Customer not found",
+            )
+
+        return updated
+
+    except HTTPException:
+        raise
+
+    except customer_service.CustomerColorError as e:
+        raise HTTPException(
+            status_code=409,
+            detail=str(e),
+        )
+
+    except IntegrityError:
+        raise HTTPException(
+            status_code=409,
+            detail=_CUSTOMER_COLOR_TAKEN,
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"Failed to update customer colour: "
                 f"{type(e).__name__}: {e}"
             ),
         )

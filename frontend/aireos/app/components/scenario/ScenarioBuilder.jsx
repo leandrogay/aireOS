@@ -21,6 +21,7 @@ import ScenarioTotals from '@/components/scenario/ScenarioTotals';
 import ScenarioYearComparison from '@/components/scenario/ScenarioYearComparison';
 import FrozenBaselinePanel, { COMPOSITION_LAYERS } from '@/components/scenario/FrozenBaselinePanel';
 import Tier0Details from '@/components/scenario/Tier0Details';
+import { customerColor, customerPalette, NO_CUSTOMER_COLOR } from '@/app/utils/customerColors';
 import { FORECAST_TIER_OPTIONS } from '@/app/utils/forecastLineText';
 import { DEFAULT_TIER } from '@/app/utils/forecastTiers';
 import { customerLabel, customersLabel } from '@/app/utils/retailerLabel';
@@ -68,6 +69,7 @@ import {
 } from '@/app/utils/scenarioBlocks';
 import { growthYears, isGrowthBlock } from '@/app/utils/scenarioGrowth';
 import { SCENARIO_SOURCES } from '@/app/utils/scenarioSources';
+import useAllCustomers from '@/hooks/useAllCustomers';
 import useForecastFilters from '@/hooks/useForecastFilters';
 import useForecastView from '@/hooks/useForecastView';
 import useForecastYearTotals from '@/hooks/useForecastYearTotals';
@@ -190,6 +192,9 @@ export default function ScenarioBuilder({ plan = 'scenario', budgetYear, onBudge
   const months = forecastMonths(rows);
   const promotions = budget ? [] : view.data.promotions;
   const { freshness } = view.data;
+  // The Actual line in the picked customer's colour, as on /forecast.
+  const { customers: allCustomers } = useAllCustomers();
+  const actualColor = customerName ? customerColor(customerName, customerPalette(allCustomers)) : NO_CUSTOMER_COLOR;
   const initialBasis = new Map([...new Set(fullInitial.map((row) => row.customer_name))].map((name) =>
     [name, { startMonth: `${budgetYear}-01-01`, endMonth: `${budgetYear}-12-01`, rows: fullInitial.filter((row) => row.customer_name === name) }]));
   // Budget planning works on one year's entries.
@@ -573,6 +578,7 @@ export default function ScenarioBuilder({ plan = 'scenario', budgetYear, onBudge
             endDate={endDate}
             metric="units"
             singleSeries={singleSeries}
+            actualColor={actualColor}
             // SKU and customer are in the toolbar's filters; the model isn't.
             scopeTags={[{ label: 'Model', value: MODEL_LABEL }]}
             toolbar={

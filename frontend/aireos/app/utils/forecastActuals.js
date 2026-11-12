@@ -20,9 +20,11 @@
 
 import {
   ACTUAL_MISSING_TEXT,
+  CURRENT_DETAIL_LABEL,
+  PREVIOUS_DETAIL_LABEL,
   actualPartialMissingText,
   actualsStillForecastText,
-  previousMadeLines,
+  dataMonthLines,
 } from './forecastLineText.js';
 
 export const ACTUAL_STATUS = {
@@ -179,25 +181,74 @@ export function lineCoverage(rows, column) {
   return { withLine: covered.size, total: all.size };
 }
 
+// The data-month column behind each forecast line (GET /api/forecast rows).
+// Not previous_generated_at: the rebuilt Previous is stored at Current's run
+// time minus one second, so it never says when Previous was made.
+export const DATA_MONTH_COLUMNS = {
+  current: { value: 'forecast_current', month: 'current_data_month' },
+  previous: { value: 'forecast_previous', month: 'previous_data_month' },
+};
+
+function dataMonthEntry(row, month) {
+  return {
+    productName: row.product_name ?? row.sku ?? '',
+    customerName: row.customer_name ?? '',
+    month,
+  };
+}
+
 /**
- * When each month's Previous values were made: one entry per customer x SKU
- * with a Previous that month. Previous is chosen per SKU, so the dates can
- * differ between SKUs.
+ * The last sales month a line ('current' / 'previous') was made with, one
+ * entry per customer x SKU that has the line anywhere in `rows` (the month
+ * is the same on every row of a series). Read fresh from each response, so
+ * a retrain's new months show without anything else changing.
  *
- * @returns {Map<string, { productName: string, customerName: string, at: string }[]>}
+ * @returns {{ productName: string, customerName: string, month: string }[]}
  */
-export function previousMadeByMonth(rows) {
+export function dataMonthEntries(rows, line) {
+  const { value, month } = DATA_MONTH_COLUMNS[line];
+  const bySeries = new Map();
+  for (const row of rows ?? []) {
+    if (row[value] == null || !row[month]) continue;
+    const key = seriesKey(row);
+    if (!bySeries.has(key)) bySeries.set(key, dataMonthEntry(row, row[month]));
+  }
+  return [...bySeries.values()];
+}
+
+/**
+ * dataMonthEntries per chart month: only the customer x SKUs with the line
+ * in that month, so the hover card describes the values it adds up.
+ *
+ * @returns {Map<string, { productName: string, customerName: string, month: string }[]>}
+ */
+export function dataMonthsByMonth(rows, line) {
+  const { value, month } = DATA_MONTH_COLUMNS[line];
   const byMonth = new Map();
   for (const row of rows ?? []) {
-    if (!row.month_year || row.forecast_previous == null || !row.previous_generated_at) continue;
+    if (!row.month_year || row[value] == null || !row[month]) continue;
     if (!byMonth.has(row.month_year)) byMonth.set(row.month_year, []);
-    byMonth.get(row.month_year).push({
-      productName: row.product_name ?? row.sku ?? '',
-      customerName: row.customer_name ?? '',
-      at: row.previous_generated_at,
-    });
+    byMonth.get(row.month_year).push(dataMonthEntry(row, row[month]));
   }
   return byMonth;
+}
+
+/**
+ * How far a month's Initial Yearly Forecast was from its Actual:
+ * `diff` = Initial - Actual in cartons, `pct` = diff as a % of the Actual
+ * (null when the Actual is 0). Null unless the comparison is like for like:
+ * every series in scope reported (actualKind 'full') and every one of them
+ * has an Initial, so the two sums cover the same customer x SKUs.
+ *
+ * @param {{ actual?: number | null, actualKind?: string | null, actualCoverage?: object | null, initial?: number | null, initialSeries?: number }} point
+ * @returns {{ diff: number, pct: number | null } | null}
+ */
+export function initialVsActual(point) {
+  if (!point || point.actual == null || point.initial == null) return null;
+  if (point.actualKind !== 'full') return null;
+  if (point.initialSeries !== point.actualCoverage?.reported.length) return null;
+  const diff = point.initial - point.actual;
+  return { diff, pct: point.actual === 0 ? null : (diff / point.actual) * 100 };
 }
 
 const MONTH_NAME = new Intl.DateTimeFormat('en-US', { month: 'short', timeZone: 'UTC' });
@@ -207,15 +258,16 @@ function monthName(monthYear) {
 }
 
 /**
- * The tooltip lines about a month's Actual and Previous. `formatCustomer`
- * shows a customer name (customerLabel), `formatStamp` a Previous time
- * (Singapore time). Empty when there is nothing to explain.
+ * The tooltip lines about a month's Actual, and what its Current and
+ * Previous values were made with (the last sales month each was trained on,
+ * dataMonthsByMonth). `formatCustomer` shows a customer name (customerLabel).
+ * Empty when there is nothing to explain.
  *
- * @param {{ month_year: string, actualKind?: string | null, actualCoverage?: object | null, previousMade?: object[], previous?: number | null }} point
- * @param {{ formatCustomer: (name: string) => string, formatStamp: (stamp: string) => string, showPrevious?: boolean }} options
+ * @param {{ month_year: string, actualKind?: string | null, actualCoverage?: object | null, currentData?: object[], previousData?: object[], current?: number | null, previous?: number | null }} point
+ * @param {{ formatCustomer: (name: string) => string, showCurrent?: boolean, showPrevious?: boolean }} options
  * @returns {{ label: string, value: string }[]}
  */
-export function monthNotes(point, { formatCustomer, formatStamp, showPrevious = true }) {
+export function monthNotes(point, { formatCustomer, showCurrent = true, showPrevious = true }) {
   if (!point) return [];
   const notes = [];
   const coverage = point.actualCoverage;
@@ -237,9 +289,14 @@ export function monthNotes(point, { formatCustomer, formatStamp, showPrevious = 
       });
     }
   }
-  if (showPrevious && point.previous != null && point.previousMade?.length) {
-    for (const value of previousMadeLines(point.previousMade, formatStamp)) {
-      notes.push({ label: 'Previous', value });
+  if (showCurrent && point.current != null && point.currentData?.length) {
+    for (const value of dataMonthLines(point.currentData, formatCustomer)) {
+      notes.push({ label: CURRENT_DETAIL_LABEL, value });
+    }
+  }
+  if (showPrevious && point.previous != null && point.previousData?.length) {
+    for (const value of dataMonthLines(point.previousData, formatCustomer)) {
+      notes.push({ label: PREVIOUS_DETAIL_LABEL, value });
     }
   }
   return notes;

@@ -36,7 +36,7 @@ def _view_select() -> str:
 
 
 def _query(sql: str) -> pd.DataFrame:
-    return get_bigquery_client().query(sql, location=LOCATION).result().to_dataframe()
+    return get_bigquery_client().query(sql, location=LOCATION).result().to_dataframe(create_bqstorage_client=False)
 
 
 def _history() -> pd.DataFrame:

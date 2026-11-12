@@ -25,6 +25,17 @@ export async function updateCustomer(customerId, payload) {
   });
 }
 
+/**
+ * PUT /api/catalog/customers/{customerId}/color -- the customer's chart colour
+ * (#RRGGBB). 409 with the reason when it looks like another customer's colour.
+ */
+export async function updateCustomerColor(customerId, color) {
+  return request(`/api/catalog/customers/${encodeURIComponent(customerId)}/color`, {
+    method: 'PUT',
+    body: { color },
+  });
+}
+
 /** DELETE /api/catalog/customers/{customerId}. */
 export async function deleteCustomer(customerId) {
   return request(`/api/catalog/customers/${encodeURIComponent(customerId)}`, {

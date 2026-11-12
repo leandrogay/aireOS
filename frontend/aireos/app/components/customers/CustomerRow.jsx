@@ -1,15 +1,15 @@
 'use client';
 
-import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { Palette, Pencil, Plus, Trash2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import ExpandableRow from '@/components/ui/ExpandableRow';
 import RowActions from '@/components/ui/RowActions';
-import { EXPANDED_ROW_INSET } from '@/components/ui/TableGrid';
 import { customerLabel } from '@/app/utils/retailerLabel';
 import { customerDeleteBlockReason, retailerBlockReason } from '@/app/utils/customerForm';
 
 import { CUSTOMER_COLUMNS } from './columns';
+import CustomerSwatch from './CustomerSwatch';
 import RetailerTable from './RetailerTable';
 import UsageStatus from './UsageStatus';
 
@@ -24,12 +24,13 @@ import UsageStatus from './UsageStatus';
  *   onToggle: () => void,
  *   onEdit: (customer: object) => void,
  *   onDelete: (customer: object) => void,
+ *   onColor: (customer: object) => void,
  *   onAddRetailer: (customer: object) => void,
  *   onEditRetailer: (retailer: object, customer: object) => void,
  *   onDeleteRetailer: (retailer: object, customer: object) => void,
  * }} props
  */
-export function customerRowActions(customer, onEdit, onDelete, onAddRetailer) {
+export function customerRowActions(customer, onEdit, onDelete, onAddRetailer, onColor) {
   return [
     {
       key: 'edit',
@@ -37,6 +38,7 @@ export function customerRowActions(customer, onEdit, onDelete, onAddRetailer) {
       icon: Pencil,
       onSelect: () => onEdit(customer),
     },
+    { key: 'color', label: 'Change colour', icon: Palette, onSelect: () => onColor(customer) },
     { key: 'add-retailer', label: 'Add retailer', icon: Plus, onSelect: () => onAddRetailer(customer) },
     {
       key: 'delete',
@@ -71,13 +73,14 @@ export default function CustomerRow({
   onToggle,
   onEdit,
   onDelete,
+  onColor,
   onAddRetailer,
   onEditRetailer,
   onDeleteRetailer,
 }) {
   const name = customerLabel(customer.customer_name);
 
-  const customerActions = customerRowActions(customer, onEdit, onDelete, onAddRetailer);
+  const customerActions = customerRowActions(customer, onEdit, onDelete, onAddRetailer, onColor);
 
   const retailerActions = (retailer) => retailerRowActions(retailer, customer, onEditRetailer, onDeleteRetailer);
 
@@ -87,14 +90,21 @@ export default function CustomerRow({
       isOpen={isOpen}
       onToggle={onToggle}
       highlight={isNew ? 'new' : null}
-      primary={name}
+      primary={(
+        <>
+          <CustomerSwatch color={customer.color} className="mr-2" />
+          {name}
+        </>
+      )}
       title={name}
       toggleLabel={isOpen ? `Hide retailers for ${name}` : `Show retailers for ${name}`}
       actions={<RowActions label={`Actions for customer ${name}`} actions={customerActions} />}
       details={
         <div className="grid gap-2">
           {customer.retailers.length > 0 ? (
-            <RetailerTable retailers={customer.retailers} inset={EXPANDED_ROW_INSET} customerName={customer.customer_name} actionsFor={retailerActions} />
+            <div className="-mx-3">
+              <RetailerTable retailers={customer.retailers} inset="0.25rem + 1px" customerName={customer.customer_name} actionsFor={retailerActions} />
+            </div>
           ) : (
             <p className="text-sm text-deep-violet-blue/70">{name} has no retailers yet.</p>
           )}

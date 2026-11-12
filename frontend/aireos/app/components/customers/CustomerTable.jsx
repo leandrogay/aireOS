@@ -8,6 +8,7 @@ import MobileRecordCard from '@/components/ui/MobileRecordCard';
 import RecordCardList from '@/components/ui/RecordCardList';
 import RowActions from '@/components/ui/RowActions';
 import { detailsMotionProps } from '@/components/ui/rowMotion';
+import CustomerSwatch from './CustomerSwatch';
 import UsageStatus from './UsageStatus';
 import { customerLabel, retailerLabel } from '@/app/utils/retailerLabel';
 
@@ -60,9 +61,14 @@ export default function CustomerTable({
             return (
               <MobileRecordCard
                 key={customer.customer_id}
-                title={name}
+                title={(
+                  <>
+                    <CustomerSwatch color={customer.color} className="mr-2" />
+                    {name}
+                  </>
+                )}
                 badge={<UsageStatus inUse={customer.in_use} />}
-                actions={<RowActions label={`Actions for customer ${name}`} actions={customerRowActions(customer, rowHandlers.onEdit, rowHandlers.onDelete, rowHandlers.onAddRetailer)} />}
+                actions={<RowActions label={`Actions for customer ${name}`} actions={customerRowActions(customer, rowHandlers.onEdit, rowHandlers.onDelete, rowHandlers.onAddRetailer, rowHandlers.onColor)} />}
               >
                 <Button variant="link" size="sm" aria-expanded={open} onClick={() => onToggle(customer.customer_id)} className="mt-2 h-auto px-0 text-xs text-deep-violet-blue">
                   {open ? 'Hide retailers' : `View retailers (${customer.retailers.length})`}

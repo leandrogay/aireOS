@@ -213,6 +213,56 @@ def test_a_unique_violation_on_create_is_409(monkeypatch):
     assert response.status_code == 409
 
 
+def test_a_colour_change_is_200_and_sends_the_colour_uppercase(monkeypatch):
+    calls = []
+
+    def fake(customer_id, color):
+        calls.append((customer_id, color))
+        return {**CUSTOMER, "color": color}
+
+    monkeypatch.setattr(customer_service, "update_customer_color", fake)
+
+    response = client.put("/api/catalog/customers/3/color", json={"color": "#cd1d35"})
+
+    assert response.status_code == 200
+    assert calls == [(3, "#CD1D35")]
+
+
+def test_a_colour_that_is_not_hex_is_422_without_calling_the_service(monkeypatch):
+    monkeypatch.setattr(customer_service, "update_customer_color", _no_call_allowed)
+
+    response = client.put("/api/catalog/customers/3/color", json={"color": "red"})
+
+    assert response.status_code == 422
+
+
+def test_a_refused_colour_is_409_with_the_reason(monkeypatch):
+    reason = "This colour looks too much like FairPrice's. Pick another one."
+    monkeypatch.setattr(customer_service, "update_customer_color", _raises(customer_service.CustomerColorError(reason)))
+
+    response = client.put("/api/catalog/customers/3/color", json={"color": "#0D9488"})
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == reason
+
+
+def test_a_colour_another_customer_just_took_is_409(monkeypatch):
+    monkeypatch.setattr(customer_service, "update_customer_color", _raises(_integrity_error()))
+
+    response = client.put("/api/catalog/customers/3/color", json={"color": "#CD1D35"})
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Another customer already has this colour."
+
+
+def test_changing_a_missing_customers_colour_is_404(monkeypatch):
+    monkeypatch.setattr(customer_service, "update_customer_color", lambda customer_id, color: None)
+
+    response = client.put("/api/catalog/customers/9/color", json={"color": "#CD1D35"})
+
+    assert response.status_code == 404
+
+
 def test_renaming_a_missing_customer_is_404(monkeypatch):
     monkeypatch.setattr(customer_service, "update_customer", lambda customer_id, customer: None)
 

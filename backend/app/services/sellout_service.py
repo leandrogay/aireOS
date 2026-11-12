@@ -1112,15 +1112,16 @@ def get_customer_options() -> list[dict]:
     # The value stays the family slug (it builds the retailer names every
     # dashboard read filters on); the label is the owning customer's name.
     # customer_id is that customer record (customer_retailers), or None when
-    # no customer owns the family: the dashboard orders customer colours by
-    # it, so a renamed customer (fairprice -> "FairPrice") keeps its colour
-    # rather than being matched by name. The id and the label come from the
+    # no customer owns the family, and `color` is that customer's chart colour
+    # (customers.color): the dashboard colours a customer by it, never by
+    # name, so a renamed customer (fairprice -> "FairPrice") keeps its colour.
+    # The id, label and colour come from the
     # same linked retailer, the first by name (offline before online), so
     # they can't disagree if a family's channels were linked to different
     # customers.
     query = text(
         """
-        SELECT DISTINCT r.retailer_name, cr.customer_id, c.customer_name
+        SELECT DISTINCT r.retailer_name, cr.customer_id, c.customer_name, c.color
         FROM sellout s
         JOIN retailers r ON r.retailer_id = s.retailer_id
         LEFT JOIN customer_retailers cr ON cr.retailer_id = r.retailer_id
@@ -1139,6 +1140,8 @@ def get_customer_options() -> list[dict]:
             "value": family,
             "label": _customer_label(family, row["customer_name"] if row else None),
             "customer_id": row["customer_id"] if row else None,
+            # The customer's chart colour (customers.color), or None.
+            "color": row["color"] if row else None,
         }
         for family, row in sorted(linked.items())
     ]

@@ -1,7 +1,7 @@
 // The cross-customer chart (CustomerTrendChart): each ticked customer per
 // week or month, from backend get_customer_trends. Pure functions, no React.
 
-import { customerColor } from '@/app/utils/storeFormats';
+import { customerColor } from '@/app/utils/customerColors';
 import { bucketLabel, exactBucketLabel } from '@/app/utils/trendChart';
 
 // Any number of customers can be ticked; bars or lines is decided from
@@ -13,15 +13,15 @@ import { bucketLabel, exactBucketLabel } from '@/app/utils/trendChart';
  *
  * @param {Array<object>} customers get_customer_trends rows
  * @param {'offline' | 'online'} mode
- * @param {string[]} colorOrder from customerColorOrder
+ * @param {{ byName: Map<string, string> }} palette from customerPalette
  * @returns {Array<{ key: string, label: string, color: string }>}
  */
-export function trendSeries(customers, mode, colorOrder) {
+export function trendSeries(customers, mode, palette) {
   const shown = customers.filter((customer) => (mode === 'online' ? customer.has_online : customer.has_offline));
   return shown.map((customer) => ({
     key: customer.customer,
     label: customer.label,
-    color: customerColor(customer.customer, colorOrder),
+    color: customerColor(customer.customer, palette),
   }));
 }
 

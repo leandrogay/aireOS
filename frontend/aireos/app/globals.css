@@ -39,6 +39,12 @@
   --color-scenario: var(--aire-scenario);
   --color-scenario-soft: var(--aire-scenario-soft);
   --color-scenario-ink: var(--aire-scenario-ink);
+  --color-switch-on: var(--aire-switch-on);
+  --color-switch-on-scenario: var(--aire-switch-on-scenario);
+  --color-switch-off: var(--aire-switch-off);
+  --color-switch-off-edge: var(--aire-switch-off-edge);
+  --color-switch-thumb-on: var(--aire-switch-thumb-on);
+  --color-switch-thumb-off: var(--aire-switch-thumb-off);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -142,6 +148,13 @@
   --aire-glass-edge: color-mix(in srgb, var(--aire-lavender) 65%, white);
   --aire-glass-sheen: rgb(255 255 255 / 65%);
   --aire-glass-shadow: rgb(58 67 105 / 13%);
+  /* How much glass tint each surface tier keeps (the rest shows the page
+     through): outer cards, floating popups, dropdown lists (near-solid so
+     long option lists stay readable), and outer cards in dark mode. */
+  --aire-glass-alpha-card: 60%;
+  --aire-glass-alpha-card-dark: 70%;
+  --aire-glass-alpha-float: 80%;
+  --aire-glass-alpha-dropdown: 80%;
   --aire-row-base: white;
   --aire-row-alt: color-mix(in srgb, var(--aire-cream) 17%, white);
   --aire-row-hover: color-mix(in srgb, var(--aire-lavender) 28%, white);
@@ -153,9 +166,18 @@
   /* Shared table header (ui/TableGrid): a cool lavender tint that sits with
      the glass cards, rather than the warm cream canvas. */
   --aire-table-head: color-mix(in srgb, var(--aire-lavender) 60%, white);
-  --motion-quick: 120ms;
-  --motion-control: 200ms;
-  --motion-enter: 280ms;
+  /* Solid panel under every chart (ui/chart ChartContainer): the glass card
+     behind it is translucent lavender, which washes out pale series colours. */
+  --aire-chart-surface: color-mix(in srgb, var(--aire-lavender) 20%, white);
+  /* Motion timing for CSS transitions and tw-animate popups. MOTION in
+     app/config/transitions.js is the same scale, in seconds, for Motion
+     (motion/react); change a step in both places. Use them as
+     `duration-(--motion-enter)`, `delay-(--motion-exit)`, ... */
+  --motion-quick: 120ms;   /* opacity ramps under a spring */
+  --motion-exit: 150ms;    /* things leaving: rows, popups, panels closing */
+  --motion-control: 200ms; /* hover, press, colour and toggle changes */
+  --motion-enter: 300ms;   /* things arriving: popups, dialogs, toasts, panel moves */
+  --motion-panel: 350ms;   /* the side bar opening and closing */
   --motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
   /* Scenario builder: the Simulated line and everything that belongs to a
      draft (pins, tinted rows, pitch card), kept apart from the committed
@@ -163,6 +185,17 @@
   --aire-scenario: #D23F74;
   --aire-scenario-soft: #FBEAF0;
   --aire-scenario-ink: #8E1F4A;
+  /* Switch (ui/switch.jsx), an iOS-style pill. Every track keeps 3:1 against
+     the card, lavender, cream, selected-row and scenario-tint surfaces, and
+     the thumb keeps 3:1 against its track (WCAG 1.4.11), so the state reads
+     on glass. Off is a filled slate (70% deep blue), not the old pale
+     lavender that vanished into the cards. */
+  --aire-switch-on: var(--aire-deep-blue);
+  --aire-switch-on-scenario: var(--aire-scenario);
+  --aire-switch-off: color-mix(in srgb, var(--aire-deep-blue) 70%, white);
+  --aire-switch-off-edge: var(--aire-switch-off);
+  --aire-switch-thumb-on: #ffffff;
+  --aire-switch-thumb-off: #ffffff;
 
   /* Scrollbar thumb on every scrolling area (set on html, inherited). */
   --scrollbar-thumb: oklch(0.75 0 0);
@@ -184,7 +217,17 @@
   --aire-row-selected: #414D70;
   --aire-row-segment: #2D3654;
   --aire-row-segment-hover: #3B4769;
+  /* Dark switch: a lit lavender (or pink) track with a dark thumb when on;
+     an outlined dark track with a light thumb when off. The outline carries
+     the 3:1 edge even on the lightest selected row. */
+  --aire-switch-on: var(--aire-accent);
+  --aire-switch-on-scenario: #F08AB0;
+  --aire-switch-off: var(--aire-soft);
+  --aire-switch-off-edge: #A3ABCB;
+  --aire-switch-thumb-on: var(--aire-canvas);
+  --aire-switch-thumb-off: #DDE1EF;
   --aire-table-head: #2C3450;
+  --aire-chart-surface: #1B2034;
   --background: var(--aire-canvas);
   --foreground: var(--aire-ink);
   --card: #232A40;
@@ -236,9 +279,10 @@
     /* Keep the scrollbar's space even when the page doesn't scroll, so a
        table growing past the fold doesn't narrow the page and shift every card. */
     scrollbar-gutter: stable;
-    /* The gutter shows the root background, not <main>'s. Paint it the page
-       cream (PageLayout) so the reserved strip doesn't read as a white bar. */
-    background-color: var(--aire-cream);
+    /* The gutter shows the root background, not <main>'s. Paint it the
+       wallpaper's base (aire-glass-scene) so the reserved strip doesn't read
+       as a white bar. */
+    background-color: var(--aire-lavender);
   }
   /* Recharts draws axis ticks as SVG text, out of reach of a className.
      Fixed-width digits keep the value axis ("$1.2k" / "$11.8k") evenly set
@@ -259,25 +303,44 @@
   }
 }
 
-/* AIRE colours behind the shared translucent page cards. Tables keep their
-   solid headers and rows. */
+/* The AIRE wallpaper behind the shared translucent page cards: layered
+   lavender/violet waves (public/wallpapers), after the macOS stock wallpapers.
+   It sits in a fixed layer so it stays put while the page scrolls -- a
+   background-attachment: fixed would repaint on every scroll on mobile.
+   isolation keeps the z-index:-1 layer above the html background. Tables keep
+   their solid headers and rows. */
 .aire-glass-scene {
+  position: relative;
+  isolation: isolate;
   background-color: var(--aire-canvas);
-  background-image:
-    radial-gradient(ellipse at 4% 8%, color-mix(in srgb, var(--aire-soft) 75%, transparent), transparent 60%),
-    radial-gradient(ellipse at 92% 12%, color-mix(in srgb, var(--aire-accent) 18%, transparent), transparent 55%),
-    radial-gradient(ellipse at 54% 88%, color-mix(in srgb, var(--aire-celest) 20%, transparent), transparent 58%);
+}
+.aire-glass-scene::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--aire-lavender) url('/wallpapers/aire-waves-lavender-light.svg') center / cover no-repeat;
+}
+html.dark { background-color: var(--aire-canvas); }
+.dark .aire-glass-scene::before {
+  background: var(--aire-canvas) url('/wallpapers/aire-waves-lavender-dark.svg') center / cover no-repeat;
 }
 
-/* Outer content cards get a glass edge and depth without blurring a large
-   scrolling area. The solid background remains the fallback. */
+/* Outer content cards are frosted glass over the wallpaper. The solid card
+   colour is the fallback where backdrop-filter is unsupported or the user
+   asks for less transparency (see prefers-reduced-transparency below). */
 .aire-glass-surface {
   background-color: var(--card);
-  background-color: color-mix(in srgb, var(--aire-glass-tint) 80%, transparent);
   background-image: linear-gradient(145deg, color-mix(in srgb, var(--aire-glass-edge) 28%, transparent), transparent 48%);
   border-color: var(--aire-glass-edge);
   box-shadow: inset 0 1px 0 var(--aire-glass-sheen), 0 18px 38px -22px var(--aire-glass-shadow);
-  backdrop-filter: none;
+}
+@supports (backdrop-filter: blur(1px)) {
+  .aire-glass-surface {
+    background-color: color-mix(in srgb, var(--aire-glass-tint) var(--aire-glass-alpha-card), transparent);
+    backdrop-filter: blur(24px) saturate(1.5);
+  }
 }
 
 .aire-glass-float {
@@ -298,8 +361,6 @@
   box-shadow: inset 0 1px 0 var(--aire-glass-sheen), 0 5px 14px -10px var(--aire-glass-shadow);
 }
 .aire-glass-control:not(:disabled):active { opacity: 0.84; }
-.aire-glass-float[data-open] { animation-duration: var(--motion-enter); }
-.aire-glass-float[data-closed] { animation-duration: var(--motion-control); }
 .aire-theme-toggle { min-height: 2.5rem; }
 
 /* Legacy white and dark-blue utility classes remain intact for callers and
@@ -323,22 +384,25 @@
 .dark [class~="bg-violet"] { background-color: #625B90; }
 .dark [class~="text-lavander"] { color: var(--aire-accent); }
 .dark [class~="bg-white"][class*="hover:bg-cream"]:hover,
-.dark [class~="bg-white"][class*="aria-expanded:bg-cream"][aria-expanded="true"] {
+.dark [class~="bg-white"][class*="aria-expanded:bg-cream"][aria-expanded="true"],
+.dark [class~="bg-white"][class*="hover:bg-lavander"]:hover,
+.dark [class~="bg-white/70"][class*="hover:bg-lavander"]:hover,
+.dark [class~="bg-white/70"][class*="aria-expanded:bg-lavander"][aria-expanded="true"] {
   background-color: var(--aire-soft);
 }
 .dark .aire-glass-surface[class~="bg-white"] {
-  background-color: color-mix(in srgb, var(--aire-glass-tint) 86%, transparent);
+  background-color: color-mix(in srgb, var(--aire-glass-tint) var(--aire-glass-alpha-card-dark), transparent);
 }
 .dark .aire-brand-mark { filter: brightness(0) invert(0.94); }
 .dark .recharts-cartesian-axis-tick-value { fill: var(--aire-ink); }
 
 @supports (backdrop-filter: blur(1px)) {
   .aire-glass-float {
-    background-color: color-mix(in srgb, var(--aire-glass-tint) 82%, transparent);
+    background-color: color-mix(in srgb, var(--aire-glass-tint) var(--aire-glass-alpha-float), transparent);
     backdrop-filter: blur(10px) saturate(1.12);
   }
   .aire-glass-float.aire-glass-dropdown-panel {
-    background-color: color-mix(in srgb, var(--aire-glass-tint) 96%, transparent);
+    background-color: color-mix(in srgb, var(--aire-glass-tint) var(--aire-glass-alpha-dropdown), transparent);
   }
 }
 
@@ -496,6 +560,12 @@
 
   .aire-table-grid tbody > tr[data-highlight='editing']:not(:has(> td[colspan])) {
     --aire-row-background: var(--aire-row-selected);
+  }
+
+  /* A month a switched-on building block changes (scenario MonthlyPlanTable);
+     mixed into the row colour so it holds in both themes. */
+  .aire-table-grid tbody > tr[data-highlight='scenario']:not(:has(> td[colspan])) {
+    --aire-row-background: color-mix(in srgb, var(--aire-scenario) 9%, var(--aire-row-base));
   }
 
   :is(.aire-table-grid, .aire-table-rows) tbody > tr:not(:has(> td[colspan])):hover > td:first-child {

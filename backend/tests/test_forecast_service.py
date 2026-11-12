@@ -14,7 +14,7 @@ class FakeJob:
     def result(self, timeout=None):
         return self
 
-    def to_dataframe(self):
+    def to_dataframe(self, create_bqstorage_client=True):
         return self._df
 
 
@@ -366,7 +366,10 @@ def test_get_forecast_view_combines_rows_actuals_and_promos(monkeypatch):
     assert result["tiers"] == [{"tier": "tier0", "tier_label": "Tier 0 · Baseline", "tier_order": 0}]
     assert result["availability"] == {
         "13271338": {
-            "tier0": {"is_available": True, "unavailable_reason": None, "has_initial": False, "has_previous": False}
+            "tier0": {
+                "is_available": True, "unavailable_reason": None, "has_initial": False, "has_previous": False,
+                "current_data_month": None, "previous_data_month": None,
+            }
         }
     }
 
@@ -413,8 +416,19 @@ def test_forecast_stamps_take_the_latest_run_per_line():
     stamps = forecast_service.forecast_stamps_from_rows(rows)
 
     assert stamps["current_generated_at"] == "2026-10-01T03:15:00Z"
-    assert stamps["previous_generated_at"] is None
     assert stamps["initial_generated_at"] == "2026-10-01T02:00:00Z"
+
+
+def test_forecast_stamps_leave_out_the_previous_run_time():
+    # The rebuilt Previous is stored at Current's time minus one second, so
+    # it isn't when Previous was made and must never reach the page.
+    rows = [{"tier": "tier0", "current_generated_at": "2026-10-01T03:15:00Z",
+             "previous_generated_at": "2026-10-01T03:14:59Z"}]
+
+    stamps = forecast_service.forecast_stamps_from_rows(rows)
+
+    assert "previous_generated_at" not in stamps
+    assert "previous_generated_at" not in stamps["by_tier"]["tier0"]
 
 
 def test_forecast_stamps_are_kept_per_tier():
@@ -445,7 +459,6 @@ def test_forecast_stamps_are_blank_without_rows():
     stamps = forecast_service.forecast_stamps_from_rows([])
 
     assert stamps["current_generated_at"] is None
-    assert stamps["previous_generated_at"] is None
     assert stamps["initial_generated_at"] is None
     assert set(stamps["by_tier"]) == {"tier0", "tier1_basic", "tier1_advanced"}
 
@@ -480,9 +493,11 @@ def test_availability_is_per_sku_and_tier_with_its_reason():
 
     assert availability["A"]["tier0"] == {
         "is_available": True, "unavailable_reason": None, "has_initial": True, "has_previous": False,
+        "current_data_month": None, "previous_data_month": None,
     }
     assert availability["A"]["tier1_basic"] == {
         "is_available": False, "unavailable_reason": "not_enough_history", "has_initial": False, "has_previous": False,
+        "current_data_month": None, "previous_data_month": None,
     }
 
 
@@ -512,7 +527,40 @@ def test_a_tier_0_sku_launched_after_the_plan_has_no_initial_but_is_available():
 
     entry = forecast_service.forecast_availability(rows)["NEW"]["tier0"]
 
-    assert entry == {"is_available": True, "unavailable_reason": None, "has_initial": False, "has_previous": False}
+    assert entry == {
+        "is_available": True, "unavailable_reason": None, "has_initial": False, "has_previous": False,
+        "current_data_month": None, "previous_data_month": None,
+    }
+
+
+def test_availability_carries_each_tiers_data_months():
+    rows = [
+        _tier_row("A", "tier0", current_data_month="2026-10-01", previous_data_month="2026-09-01"),
+        _tier_row("A", "tier1_basic", current_data_month="2026-10-01", previous_data_month=None),
+        _tier_row("A", "tier1_advanced", is_available=False, current_data_month=None, previous_data_month=None),
+    ]
+
+    availability = forecast_service.forecast_availability(rows)["A"]
+
+    assert (availability["tier0"]["current_data_month"], availability["tier0"]["previous_data_month"]) == (
+        "2026-10-01", "2026-09-01",
+    )
+    assert availability["tier1_basic"]["previous_data_month"] is None
+    assert availability["tier1_advanced"]["current_data_month"] is None
+
+
+def test_availability_takes_the_latest_data_month_across_customers():
+    # FairPrice is on October, NHG on September: the map keeps the latest;
+    # each row keeps its own customer's month for the per-customer text.
+    rows = [
+        _tier_row("A", "tier0", customer_id=2, current_data_month="2026-09-01", previous_data_month="2026-08-01"),
+        _tier_row("A", "tier0", customer_id=1, current_data_month="2026-10-01", previous_data_month="2026-09-01"),
+    ]
+
+    entry = forecast_service.forecast_availability(rows)["A"]["tier0"]
+
+    assert entry["current_data_month"] == "2026-10-01"
+    assert entry["previous_data_month"] == "2026-09-01"
 
 
 def test_a_tier_missing_for_one_customer_is_unavailable_for_the_sku():

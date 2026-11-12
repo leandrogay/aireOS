@@ -2,6 +2,7 @@
 
 import Disclosure from '@/components/ui/Disclosure';
 import SelectDropdown from '@/components/ui/SelectDropdown';
+import { glassInsetClass } from '@/components/ui/surfaceStyles';
 import { MEASURE_FIELDS, fieldLabel, groupChoices, groupOptionLabel } from '@/app/utils/mappingReview';
 
 /**
@@ -31,7 +32,7 @@ export default function UnusedColumns({ rows, unusedGroups, mapping, groups, ope
 
   return (
     <Disclosure
-      className="mt-2 rounded-md border border-lavander"
+      className={`${glassInsetClass} mt-2 overflow-hidden`}
       summary={
         <>
           Ignored columns ({count})
@@ -43,7 +44,7 @@ export default function UnusedColumns({ rows, unusedGroups, mapping, groups, ope
         {unusedGroups.map((entry) => (
           <li
             key={entry.id}
-            className="grid gap-2 border-t border-lavander px-2 py-2 sm:grid-cols-[minmax(0,1fr)_14rem] sm:items-center"
+            className="grid gap-2 border-t border-deep-violet-blue/10 px-2 py-2 sm:grid-cols-[minmax(0,1fr)_14rem] sm:items-center"
           >
             <div className="min-w-0">
               <p className="font-mono text-xs text-deep-violet-blue">{groupOptionLabel(entry)}</p>
@@ -68,7 +69,7 @@ export default function UnusedColumns({ rows, unusedGroups, mapping, groups, ope
         {rows.map((row) => (
           <li
             key={row.column}
-            className="grid gap-2 border-t border-lavander px-2 py-2 sm:grid-cols-[minmax(0,1fr)_14rem] sm:items-center"
+            className="grid gap-2 border-t border-deep-violet-blue/10 px-2 py-2 sm:grid-cols-[minmax(0,1fr)_14rem] sm:items-center"
           >
             <div className="min-w-0">
               <p className="font-mono text-xs text-deep-violet-blue">{row.column}</p>

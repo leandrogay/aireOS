@@ -5,6 +5,7 @@ import { CircleAlert, Info, Loader2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { glassNoteClass } from '@/components/ui/surfaceStyles';
 import {
   checkRowClass,
   errorClass,
@@ -97,8 +98,9 @@ function NewCustomerForm({ defaults, customers, unlinked, onCreated, onCancel, o
   const shownNameError = submitAttempted ? nameError : '';
   const shownChannelError = submitAttempted || owned.length ? channelError : '';
 
+  // The dialog's frosted glass (ui/dialog) is the surface; no card of its own.
   return (
-    <form noValidate onSubmit={handleSubmit} className="relative rounded-lg border border-lavander bg-white shadow-sm">
+    <form noValidate onSubmit={handleSubmit} className="relative">
       {submitting && (
         <div
           role="status"
@@ -111,7 +113,7 @@ function NewCustomerForm({ defaults, customers, unlinked, onCreated, onCancel, o
       )}
 
       {/* ==== Header ==== */}
-      <div className="border-b border-lavander py-3 pl-4 pr-12">
+      <div className="border-b border-deep-violet-blue/10 py-3 pl-4 pr-12">
         <h2 className="font-serif text-xl text-deep-violet-blue">New customer</h2>
         <p className="mt-0.5 text-xs text-deep-violet-blue/65">
           Creates the customer and its retailers, the same as on the Customers page.
@@ -162,7 +164,7 @@ function NewCustomerForm({ defaults, customers, unlinked, onCreated, onCancel, o
           </p>
           <div className="grid gap-1 sm:grid-cols-2">
             {CHANNELS.map((channel) => (
-              <label key={channel.value} className={cn(checkRowClass, 'border border-lavander')}>
+              <label key={channel.value} className={cn(checkRowClass, 'border border-deep-violet-blue/15 bg-white/40')}>
                 <input
                   type="checkbox"
                   checked={channels.includes(channel.value)}
@@ -185,7 +187,7 @@ function NewCustomerForm({ defaults, customers, unlinked, onCreated, onCancel, o
         </div>
 
         {planned.length > 0 && !owned.length && (
-          <div className="rounded-md border border-lavander bg-cream/60 p-2 text-xs text-deep-violet-blue">
+          <div className={cn(glassNoteClass, 'p-2 text-xs text-deep-violet-blue')}>
             <p className="font-medium">Retailers this creates</p>
             <ul className="mt-1 space-y-0.5">
               {planned.map((item) => (
@@ -212,7 +214,7 @@ function NewCustomerForm({ defaults, customers, unlinked, onCreated, onCancel, o
       </fieldset>
 
       {/* ==== Actions ==== */}
-      <div className="flex items-center justify-end gap-2 rounded-b-lg border-t border-lavander bg-cream/40 px-4 py-3">
+      <div className="flex items-center justify-end gap-2 rounded-b-xl border-t border-deep-violet-blue/10 bg-white/40 px-4 py-3">
         <Button type="button" variant="outline" disabled={submitting} onClick={onCancel} className={secondaryButtonClass}>
           Cancel
         </Button>
@@ -254,7 +256,7 @@ export default function NewCustomerDialog({ open, defaults, customers, unlinked,
         if (!next) close();
       }}
     >
-      <DialogContent aria-label="New customer" className="bg-transparent p-0 ring-0 sm:max-w-md">
+      <DialogContent aria-label="New customer" className="p-0 sm:max-w-md">
         {open && (
           <NewCustomerForm
             defaults={defaults}

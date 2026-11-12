@@ -34,7 +34,7 @@ export default function PromotionList({ items, selectedId, onSelect, onToggle, i
           </button>
           <Switch checked={promotion.isActive} disabled={disabled} onCheckedChange={(checked) => onToggle(promotion, checked)}
             aria-label={`${promotion.isActive ? 'Make inactive' : 'Make active'}: ${promotion.mechanicLabel || 'promotion'}`}
-            className="data-checked:bg-scenario" />
+            className="data-checked:bg-switch-on-scenario" />
         </li>
       ))}
     </ul>

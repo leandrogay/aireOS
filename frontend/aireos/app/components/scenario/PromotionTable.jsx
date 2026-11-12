@@ -138,7 +138,7 @@ export default function PromotionTable({ items, editor, impacts, monthsByItem, l
                   onCheckedChange={(checked) => editor.toggleSaved(promotion, checked)}
                   title={dirty ? 'Save or discard edits in the sidebar first.' : undefined}
                   aria-label={`${promotion.isActive ? 'Take off' : 'Show on'} the Simulated line: ${promotion.mechanicLabel}`}
-                  className="data-checked:bg-scenario" />
+                  className="data-checked:bg-switch-on-scenario" />
               </td>
             </ExpandableRow>
           );

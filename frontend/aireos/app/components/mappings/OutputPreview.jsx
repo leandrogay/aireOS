@@ -1,5 +1,7 @@
 'use client';
 
+import { glassTableFrameClass, glassTableHeadClass } from '@/components/ui/surfaceStyles';
+
 import { fieldLabel } from '../../utils/mappingReview';
 
 /**
@@ -34,9 +36,9 @@ export default function OutputPreview({ preview, fields, total = preview.rows_to
 
   return (
     <div>
-      <div className="overflow-x-auto rounded-md border border-lavander">
-        <table className="min-w-full text-left text-xs">
-          <thead className="bg-cream text-[11px] text-deep-violet-blue/70">
+      <div className={glassTableFrameClass}>
+        <table className="aire-table-rows min-w-full text-left text-xs">
+          <thead className={`${glassTableHeadClass} [&>tr>th]:shadow-[inset_0_-1px_0_var(--color-lavander)]`}>
             <tr>
               {columns.map((column) => (
                 <th key={column} className="whitespace-nowrap px-2 py-1.5 font-medium">
@@ -47,7 +49,7 @@ export default function OutputPreview({ preview, fields, total = preview.rows_to
           </thead>
           <tbody className="text-deep-violet-blue">
             {rows.map((row, index) => (
-              <tr key={index} className="border-t border-lavander">
+              <tr key={index} className="border-t border-lavander/80">
                 {columns.map((column) => (
                   <td key={column} className="whitespace-nowrap px-2 py-1.5">
                     {formatCell(row[column])}

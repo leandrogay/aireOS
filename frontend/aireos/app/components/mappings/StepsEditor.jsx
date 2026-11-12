@@ -4,6 +4,7 @@ import { ArrowDown, ArrowUp, CircleAlert, Plus, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import SelectDropdown from '@/components/ui/SelectDropdown';
+import { glassTableFrameClass, glassTableHeadClass } from '@/components/ui/surfaceStyles';
 import { newStep, runSamples, stepHelp, stepLabel, stepMenu, stepProblem } from '@/app/utils/transformSteps';
 
 import StepByExample from './StepByExample';
@@ -34,16 +35,16 @@ function StepOutput({ samples, steps, index }) {
 function SampleRun({ samples, steps }) {
   if (!samples.length) {
     return (
-      <p className="rounded-md border border-dashed border-lavander px-2 py-3 text-center text-[11px] text-deep-violet-blue/55">
+      <p className="rounded-lg border border-dashed border-deep-violet-blue/20 bg-white/40 px-2 py-3 text-center text-[11px] text-deep-violet-blue/55">
         Choose where the value comes from to see what it becomes.
       </p>
     );
   }
   const rows = runSamples(samples, steps);
   return (
-    <div className="rounded-md border border-lavander bg-white">
+    <div className={glassTableFrameClass}>
       <table className="w-full text-left text-[11px] text-deep-violet-blue">
-        <thead className="bg-cream text-deep-violet-blue/60">
+        <thead className={glassTableHeadClass}>
           <tr>
             <th className="px-2 py-1 font-medium">In the file</th>
             <th className="px-2 py-1 font-medium">Becomes</th>
@@ -51,7 +52,7 @@ function SampleRun({ samples, steps }) {
         </thead>
         <tbody>
           {rows.map((row, index) => (
-            <tr key={index} className="border-t border-lavander align-top">
+            <tr key={index} className="border-t border-lavander/80 align-top">
               <td className="max-w-32 truncate px-2 py-1 font-mono" title={row.before}>
                 {row.before}
               </td>
@@ -65,7 +66,7 @@ function SampleRun({ samples, steps }) {
           ))}
         </tbody>
       </table>
-      <p className="border-t border-lavander px-2 py-1 text-[11px] text-deep-violet-blue/50">
+      <p className="border-t border-deep-violet-blue/10 px-2 py-1 text-[11px] text-deep-violet-blue/50">
         A quick look at a few values. Test the nomenclature to run it on the whole file.
       </p>
     </div>
@@ -113,7 +114,7 @@ export default function StepsEditor({ steps, onChange, columns, samples = [], fi
             {steps.map((step, index) => {
               const problem = stepProblem(step, columns);
               return (
-                <li key={index} className="rounded-md border border-lavander bg-white p-2">
+                <li key={index} className="rounded-lg border border-deep-violet-blue/15 bg-white/60 p-2">
                   <div className="flex items-start gap-2">
                     <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full bg-lavander text-[10px] font-medium text-deep-violet-blue">
                       {index + 1}

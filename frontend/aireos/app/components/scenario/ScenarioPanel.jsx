@@ -3,6 +3,7 @@
 import { ChevronsLeft, ChevronsRight } from 'lucide-react';
 
 import TabTransition from '@/components/ui/TabTransition';
+import { Button } from '@/components/ui/button';
 import { glassSurfaceClass } from '@/components/ui/surfaceStyles';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
@@ -55,14 +56,10 @@ export default function ScenarioPanel({
         aria-label={budget ? 'Budget planning' : 'Scenario builder'}
         className={`${glassSurfaceClass} flex items-center justify-center gap-3 py-3 min-[1100px]:flex-col`}
       >
-        <button
-          type="button"
-          onClick={() => onCollapsedChange(false)}
-          aria-label={`Expand ${selected.label.toLowerCase()}`}
-          className="flex size-8 items-center justify-center rounded-md border border-lavander text-deep-violet-blue hover:bg-cream"
-        >
-          <ChevronsLeft className="size-4" />
-        </button>
+        <Button type="button" variant="outline" size="icon" onClick={() => onCollapsedChange(false)}
+          aria-label={`Expand ${selected.label.toLowerCase()}`}>
+          <ChevronsLeft />
+        </Button>
         <span className="text-xs font-semibold text-deep-violet-blue/70 min-[1100px]:rotate-180 min-[1100px]:[writing-mode:vertical-rl]">
           {selected.label}
         </span>
@@ -82,14 +79,10 @@ export default function ScenarioPanel({
             {budget ? 'Adjustments to the Initial Yearly Forecast' : 'What-ifs on top of the Current forecast'}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => onCollapsedChange(true)}
-          aria-label={`Collapse ${selected.label.toLowerCase()}`}
-          className="flex size-8 shrink-0 items-center justify-center rounded-md border border-lavander hover:bg-cream"
-        >
-          <ChevronsRight className="size-4" />
-        </button>
+        <Button type="button" variant="outline" size="icon" className="shrink-0" onClick={() => onCollapsedChange(true)}
+          aria-label={`Collapse ${selected.label.toLowerCase()}`}>
+          <ChevronsRight />
+        </Button>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">

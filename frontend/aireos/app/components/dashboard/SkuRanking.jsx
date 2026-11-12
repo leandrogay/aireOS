@@ -78,7 +78,7 @@ export default function SkuRanking({
   customerRows = [],
   customerRowsLoading = false,
   customerRowsError = null,
-  customerColorOrder = [],
+  customerPalette,
   // The page is still loading (page.js pageStatus): placeholder rows, not
   // "No SKU data available yet."
   loading = false,
@@ -172,7 +172,7 @@ export default function SkuRanking({
   // not the previous result, so the skeleton has the columns the data will.
   const showChange = !noCustomers && !showCustomers && (productLoading ? Boolean(comparisonStart && comparisonEnd) : baselineBySku !== null);
   const customersRanked = showCustomers
-    ? rankCustomers(customerRows, mode, metric, order, customerColorOrder)
+    ? rankCustomers(customerRows, mode, metric, order, customerPalette)
     : [];
   // `loading` (the page's first load) wins over an empty selection: until the
   // customer list loads, no customer is ticked yet, and the table should show

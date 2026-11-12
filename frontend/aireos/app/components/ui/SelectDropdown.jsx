@@ -91,7 +91,7 @@ export default function SelectDropdown({
             close();
             action.onSelect(query.trim());
           }}
-          className="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-sm font-medium text-deep-violet-blue outline-none hover:bg-cream focus-visible:bg-cream"
+          className="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-sm font-medium text-deep-violet-blue outline-none hover:bg-lavander/50 focus-visible:bg-lavander/50"
         >
           <Plus aria-hidden="true" className="size-3.5 shrink-0" />
           <span className="min-w-0 truncate">
@@ -130,7 +130,7 @@ export default function SelectDropdown({
                     if (!selected) onChange(option.value);
                   }}
                   className={cn(
-                    'flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-sm text-deep-violet-blue outline-none hover:bg-cream focus-visible:bg-cream disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent',
+                    'flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-sm text-deep-violet-blue outline-none hover:bg-lavander/50 focus-visible:bg-lavander/50 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent',
                     selected && 'font-medium',
                   )}
                 >

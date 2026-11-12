@@ -1,18 +1,15 @@
 'use client';
 
 import { customerLabel } from '@/app/utils/retailerLabel';
-import { cn } from '@/lib/utils';
+import SelectDropdown from '@/components/ui/SelectDropdown';
 
-import { formFieldClass, formLabelClass } from './InventoryChrome';
-import { errorClass, invalidInputClass } from '@/components/ui/formStyles';
+import { formLabelClass } from './InventoryChrome';
+import { errorClass } from '@/components/ui/formStyles';
 
 /**
  * Customer picker, shared by the create form, the edit picker and temporary
- * sell-in. A plain single-select -- the backend still takes `customer_ids`
- * as a list, so this always sends either [] or exactly one id. The error
- * renders inside this label, like every other field, so a grid-layout parent
- * never has to add or remove a sibling grid item (and shift every field
- * after it) when the error toggles.
+ * sell-in. The backend still takes `customer_ids` as a list, so this sends
+ * either [] or exactly one id.
  *
  * @param {object} props
  * @param {Array<{ customer_id: number, customer_name: string }>} props.customers
@@ -21,30 +18,24 @@ import { errorClass, invalidInputClass } from '@/components/ui/formStyles';
  * @param {string} [props.error] shown under the field after a failed submit
  */
 export default function CustomerDropdown({ customers, customerIds, onChange, error = '' }) {
-  const invalid = Boolean(error);
-
   return (
-    <label>
-      <span className={formLabelClass}>
+    <div>
+      <label htmlFor="inventory-customer" className={formLabelClass}>
         Customer<span className="text-red-700"> *</span>
-      </span>
-      <select
-        value={customerIds[0] ?? ''}
-        onChange={(e) => onChange(e.target.value ? [Number(e.target.value)] : [])}
-        aria-invalid={invalid}
-        className={cn(formFieldClass, 'cursor-pointer', invalid && invalidInputClass)}
-      >
-        {/* Shown while nothing is chosen. Hidden so it is not a selectable option. */}
-        <option value="" disabled hidden>
-          Select a customer…
-        </option>
-        {customers.map((customer) => (
-          <option key={customer.customer_id} value={customer.customer_id}>
-            {customerLabel(customer.customer_name)}
-          </option>
-        ))}
-      </select>
+      </label>
+      <SelectDropdown
+        id="inventory-customer"
+        value={String(customerIds[0] ?? '')}
+        onChange={(value) => onChange(value ? [Number(value)] : [])}
+        options={customers.map((customer) => ({
+          value: String(customer.customer_id),
+          label: customerLabel(customer.customer_name),
+        }))}
+        placeholder="Select a customer…"
+        ariaLabel="Customer"
+        invalid={Boolean(error)}
+      />
       {error && <p className={errorClass} role="alert">{error}</p>}
-    </label>
+    </div>
   );
 }
