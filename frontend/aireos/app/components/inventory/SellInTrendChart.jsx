@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/chart';
 
 import { formatMonth, formatUnits } from '@/app/utils/inventoryForm';
-import { AXIS_TICK, BAR_ANIMATION, chartDataRange, metricYAxisProps, yearAxisProps } from '@/app/utils/trendChart';
+import { AXIS_TICK, BAR_ANIMATION, MAX_BAR_SIZE, chartDataRange, metricYAxisProps, yearAxisProps } from '@/app/utils/trendChart';
 import useChartTransition from '@/hooks/useChartTransition';
 import useMediaQuery from '@/hooks/useMediaQuery';
 
@@ -71,7 +71,7 @@ export default function SellInTrendChart({ trend }) {
               />
             }
           />
-          <Bar dataKey="sell_in" fill="var(--color-sell_in)" radius={[2, 2, 0, 0]} {...BAR_ANIMATION} {...transition.seriesAnimation} />
+          <Bar dataKey="sell_in" fill="var(--color-sell_in)" radius={[10, 10, 0, 0]} maxBarSize={MAX_BAR_SIZE} {...BAR_ANIMATION} {...transition.seriesAnimation} />
         </BarChart>
       </ChartContainer>
     </div>

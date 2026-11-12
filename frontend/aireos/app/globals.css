@@ -152,6 +152,10 @@
   --aire-row-alt: color-mix(in srgb, var(--aire-cream) 17%, white);
   --aire-row-hover: color-mix(in srgb, var(--aire-lavender) 28%, white);
   --aire-row-selected: color-mix(in srgb, var(--aire-lavender) 45%, white);
+  /* A segment of child rows under an opened row (PromoAnchorTable's SKU
+     ranges): its own panel colour, and a deeper one on hover. */
+  --aire-row-segment: color-mix(in srgb, var(--aire-lavender) 32%, white);
+  --aire-row-segment-hover: color-mix(in srgb, var(--aire-lavender) 52%, white);
   /* Shared table header (ui/TableGrid): a cool lavender tint that sits with
      the glass cards, rather than the warm cream canvas. */
   --aire-table-head: color-mix(in srgb, var(--aire-lavender) 60%, white);
@@ -204,6 +208,8 @@
   --aire-row-alt: #293149;
   --aire-row-hover: #374363;
   --aire-row-selected: #414D70;
+  --aire-row-segment: #2D3654;
+  --aire-row-segment-hover: #3B4769;
   /* Dark switch: a lit lavender (or pink) track with a dark thumb when on;
      an outlined dark track with a light thumb when off. The outline carries
      the 3:1 edge even on the lightest selected row. */

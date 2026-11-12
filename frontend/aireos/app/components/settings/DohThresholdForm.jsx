@@ -131,7 +131,7 @@ export default function DohThresholdForm({ settings, onSaved, onCancel }) {
       {/* The cursor goes to the first field (Min DOH) on open. */}
       <DialogContent
         initialFocus={firstInputRef}
-        className="max-h-[90vh] overflow-y-auto sm:max-w-2xl"
+        className="max-h-[90vh] overflow-y-auto sm:max-w-[38rem]"
       >
         {/* Sits above the disabled fieldset while the request is in flight. */}
         {submitting && (
@@ -149,7 +149,7 @@ export default function DohThresholdForm({ settings, onSaved, onCancel }) {
         <DialogHeader className="pr-8">
           <div className="flex flex-wrap items-center gap-2">
             <DialogTitle className="font-serif text-xl font-normal leading-tight text-deep-violet-blue">
-              Edit DOH thresholds — {customerLabel(settings.customer_name)}
+              Edit DOH thresholds for {customerLabel(settings.customer_name)}
             </DialogTitle>
             <span className="rounded-full border border-violet bg-lavander px-2.5 py-0.5 text-[11px] font-medium text-deep-violet-blue">
               {settings.is_global_default ? 'Global Default' : 'Custom thresholds'}
@@ -236,7 +236,7 @@ export default function DohThresholdForm({ settings, onSaved, onCancel }) {
           {/* ==== Actions ==== */}
           <DialogFooter className="mt-4 flex-wrap items-center gap-3 sm:justify-between">
             <div className="flex min-w-0 flex-wrap items-center gap-3">
-              {/* Secondary action on the left, away from Save. */}
+              {/* Restore stays separate from the save actions. */}
               <Button
                 type="button"
                 variant="ghost"

@@ -796,7 +796,7 @@ export default function ForecastChart({
                 pastAccuracy={pastAccuracy}
                 updatingBadge={updatingBadge}
                 notes={[...initialNotes, ...notes]}
-                className="-mt-6 px-3 pb-1 pt-0"
+                className="mt-3 px-3 pb-1"
               />
             </div>
             {summary}

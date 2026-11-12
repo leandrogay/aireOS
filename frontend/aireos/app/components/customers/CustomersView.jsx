@@ -223,7 +223,7 @@ export default function CustomersView() {
           onDelete={(retailer) => deletion.request({ retailer, customer: null })}
         />
 
-        <p className="mt-1 px-1 text-xs text-deep-violet-blue/60">
+        <p className="mt-1 px-1 text-xs text-white drop-shadow-sm">
           A retailer that already has sales can&apos;t be renamed or deleted: dashboards, uploads and
           promotions find it by its name. A customer can always be renamed, but one with sales or
           inventory data can&apos;t be deleted.
