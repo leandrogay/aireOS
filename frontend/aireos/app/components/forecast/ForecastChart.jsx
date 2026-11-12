@@ -4,9 +4,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Area, ComposedChart, Line, ReferenceArea, ReferenceDot, ReferenceLine, XAxis, YAxis } from 'recharts';
 
 import { cn } from '@/lib/utils';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { glassInsetClass, glassSurfaceClass } from '@/components/ui/surfaceStyles';
+import { glassInsetClass } from '@/components/ui/surfaceStyles';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
+import ChartCard from '@/components/ui/ChartCard';
+import ChartFrame, { CHART_FRAME_CLASS, CHART_TOOLTIP_CLASS } from '@/components/ui/ChartFrame';
 import ChartLoading from '@/components/ui/ChartLoading';
 import LineChartSkeleton from '@/components/ui/LineChartSkeleton';
 import LineToggle from '@/components/ui/LineToggle';
@@ -470,22 +471,18 @@ export default function ForecastChart({
     // stacking context, so the tooltip and promotion panel can't out-rank the
     // cards below from inside; lifting the whole card lets them overlap the
     // year-totals card instead of going under it.
-    <Card className={cn(glassSurfaceClass, 'relative z-10 min-w-0 max-w-full overflow-visible text-deep-violet-blue')}>
-      <CardHeader className="flex flex-row items-start justify-between gap-3 pb-1">
-        <div className="min-w-0 space-y-1.5">
-          <CardTitle className="font-serif text-base font-normal text-deep-violet-blue group-data-[size=sm]/card:text-base">
-            Monthly forecast
-          </CardTitle>
-          {scopeTags.length ? (
-            <div className="flex flex-wrap gap-1.5">
-              {scopeTags.map((tag) => (
-                <ScopeTag key={tag.label} label={tag.label} value={tag.value} />
-              ))}
-            </div>
-          ) : null}
+    <ChartCard
+      title="Monthly forecast"
+      detail={scopeTags.length ? (
+        <div className="mt-1 flex flex-wrap gap-1.5">
+          {scopeTags.map((tag) => (
+            <ScopeTag key={tag.label} label={tag.label} value={tag.value} />
+          ))}
         </div>
-      </CardHeader>
-      <CardContent className="min-w-0 space-y-3">
+      ) : null}
+      className="relative z-10 max-w-full"
+    >
+      <div className="min-w-0 space-y-3">
         {toolbar}
         <div className={cn(glassInsetClass, 'flex flex-wrap items-center justify-between gap-3 px-3 py-2')}>
           <LineToggle
@@ -508,21 +505,23 @@ export default function ForecastChart({
         ) : firstLoad.pending || !hasData ? (
           // Rows start empty, so without this the first load would briefly
           // claim there is no data. Same box as the loaded chart below (its
-          // pl-1 pr-3 pt-2 wrapper, 34vh / min 220px ChartContainer with the
-          // 48px tilted month axis, then the legend footer line), one line per
-          // series switched on and one point per month in the date range.
+          // ChartFrame, 34vh / min 220px ChartContainer with the 48px tilted
+          // month axis, then the legend footer line), one line per series
+          // switched on and one point per month in the date range.
           // A refetch keeps the old chart under the overlay instead.
           firstLoad.pending ? (
-            <div className={`pl-1 pr-3 pt-2 ${firstLoad.placeholderClass}`}>
-              <LineChartSkeleton
-                points={chartPoints.length}
-                lines={visibleKeys.length}
-                height={220}
-                fill
-                tiltXTicks
-                label="Loading forecast…"
-                className="h-[34vh]"
-              />
+            <div className={firstLoad.placeholderClass}>
+              <div className={CHART_FRAME_CLASS}>
+                <LineChartSkeleton
+                  points={chartPoints.length}
+                  lines={visibleKeys.length}
+                  height={220}
+                  fill
+                  tiltXTicks
+                  label="Loading forecast…"
+                  className="h-[34vh]"
+                />
+              </div>
               <div className="mt-1 flex justify-center px-3 pb-1">
                 <Skeleton className="h-3 w-72 max-w-full rounded bg-lavander motion-reduce:animate-none" />
               </div>
@@ -533,262 +532,266 @@ export default function ForecastChart({
         ) : (
           <>
             <div className="overflow-visible">
-              <div
-                ref={chartWrapRef}
-                className="relative z-20 overflow-visible pl-1 pr-3 pt-2"
-                onMouseMoveCapture={rememberPointerX}
-                onMouseLeave={(event) => {
-                  const next = event.relatedTarget;
-                  if (next instanceof Node && chartWrapRef.current?.contains(next)) return;
-                  clearHover();
-                }}
-              >
-              <ChartContainer config={config} className="aspect-auto h-[34vh] min-h-[220px] w-full">
-                <ComposedChart
-                  accessibilityLayer
-                  data={transition.rows}
-                  margin={{ top: 8, right: 18, left: 0, bottom: 28 }}
+              {/* The frame draws the panel; chartWrapRef inside it is what the
+                  pointer, tick and promotion-panel positions are measured from. */}
+              <ChartFrame>
+                <div
+                  ref={chartWrapRef}
+                  className="relative z-20 overflow-visible"
+                  onMouseMoveCapture={rememberPointerX}
+                  onMouseLeave={(event) => {
+                    const next = event.relatedTarget;
+                    if (next instanceof Node && chartWrapRef.current?.contains(next)) return;
+                    clearHover();
+                  }}
                 >
-                  <OverlayDefs bands={overlayBands} />
-                  <XAxis
-                    dataKey="x"
-                    type="number"
-                    domain={[0, lastIndex + 1]}
-                    ticks={ticks}
-                    interval={0}
-                    height={mobile ? 28 : 48}
-                    tick={AXIS_TICK}
-                    tickFormatter={(index) => mobile
-                      ? formatMobileYear(plotData[index]?.month_year)
-                      : (plotData[index]?.label ?? '')}
-                    angle={mobile ? 0 : -40}
-                    textAnchor={mobile ? 'middle' : 'end'}
-                    tickMargin={8}
-                  />
-                  <YAxis
-                    width={Y_AXIS_WIDTH}
-                    domain={transition.domain}
-                    ticks={transition.ticks}
-                    allowDataOverflow
-                    tick={AXIS_TICK}
-                    tickFormatter={(value) => formatAxisValue(value, 'units')}
-                  />
-                  <ChartTooltip
-                    wrapperStyle={{ zIndex: 30, pointerEvents: 'none' }}
-                    content={(props) => {
-                      const point = props.payload?.[0]?.payload;
-                      if (hoverPromos.length) return null;
-                      if (!props.active || !point?.label || point.axisOnly) return null;
-                      return (
-                        <ChartTooltipContent
-                          {...props}
-                          className="border-violet/40 bg-white"
-                          labelFormatter={(_value, payload) => payload?.[0]?.payload?.label ?? ''}
-                          valueFormatter={formatValue}
-                          footer={
-                            <>
-                              {showSimulated ? (
-                                <ScenarioPointDetails
-                                  point={point}
-                                  items={scenario.monthItems?.get(point.month_year) ?? []}
+                <ChartContainer config={config} className="aspect-auto h-[34vh] min-h-[220px] w-full">
+                  <ComposedChart
+                    accessibilityLayer
+                    data={transition.rows}
+                    margin={{ top: 8, right: 18, left: 0, bottom: 28 }}
+                  >
+                    <OverlayDefs bands={overlayBands} />
+                    <XAxis
+                      dataKey="x"
+                      type="number"
+                      domain={[0, lastIndex + 1]}
+                      ticks={ticks}
+                      interval={0}
+                      height={mobile ? 28 : 48}
+                      tick={AXIS_TICK}
+                      tickFormatter={(index) => mobile
+                        ? formatMobileYear(plotData[index]?.month_year)
+                        : (plotData[index]?.label ?? '')}
+                      angle={mobile ? 0 : -40}
+                      textAnchor={mobile ? 'middle' : 'end'}
+                      tickMargin={8}
+                    />
+                    <YAxis
+                      width={Y_AXIS_WIDTH}
+                      domain={transition.domain}
+                      ticks={transition.ticks}
+                      allowDataOverflow
+                      tick={AXIS_TICK}
+                      tickFormatter={(value) => formatAxisValue(value, 'units')}
+                    />
+                    <ChartTooltip
+                      wrapperStyle={{ zIndex: 30, pointerEvents: 'none' }}
+                      content={(props) => {
+                        const point = props.payload?.[0]?.payload;
+                        if (hoverPromos.length) return null;
+                        if (!props.active || !point?.label || point.axisOnly) return null;
+                        return (
+                          <ChartTooltipContent
+                            {...props}
+                            className={CHART_TOOLTIP_CLASS}
+                            labelFormatter={(_value, payload) => payload?.[0]?.payload?.label ?? ''}
+                            valueFormatter={formatValue}
+                            footer={
+                              <>
+                                {showSimulated ? (
+                                  <ScenarioPointDetails
+                                    point={point}
+                                    items={scenario.monthItems?.get(point.month_year) ?? []}
+                                    formatValue={formatValue}
+                                    className="mt-1 border-t border-lavander pt-1.5"
+                                  />
+                                ) : null}
+                                <ForecastConfidenceDetails
+                                  entries={point.confidence}
                                   formatValue={formatValue}
+                                  dotSymbols={confidenceDots}
+                                  showPrevious={Boolean(shownSeries.previous)}
                                   className="mt-1 border-t border-lavander pt-1.5"
                                 />
-                              ) : null}
-                              <ForecastConfidenceDetails
-                                entries={point.confidence}
-                                formatValue={formatValue}
-                                dotSymbols={confidenceDots}
-                                showPrevious={Boolean(shownSeries.previous)}
-                                className="mt-1 border-t border-lavander pt-1.5"
-                              />
-                              <ForecastPointDetails
-                                details={forecastPointDetails(point, { showPrevious: shownSeries.previous })}
-                                className="mt-1 border-t border-lavander pt-1.5"
-                              />
-                            </>
-                          }
-                        />
-                      );
-                    }}
-                  />
-                  <PromoBands bands={overlayBands} span={lastIndex + 1} />
-                  {dividerXs.map((x) => (
-                    <ReferenceLine
-                      key={`promo-divider-${x}`}
-                      x={x}
-                      stroke="#3A4369"
-                      strokeOpacity={0.16}
-                      strokeWidth={1}
-                      ifOverflow="visible"
-                    />
-                  ))}
-                  {selectedBand && selectedBand.x1 >= -0.5 && selectedBand.x2 > 0 ? (
-                    <ReferenceArea
-                      x1={Math.max(selectedBand.x1, 0)}
-                      x2={selectedBand.x2}
-                      fill="var(--color-scenario-soft)"
-                      fillOpacity={0.9}
-                      stroke="none"
-                      ifOverflow="visible"
-                      label={{
-                        value: selectedBand.label,
-                        position: 'insideTop',
-                        fontSize: 10,
-                        fontWeight: 600,
-                        fill: 'var(--color-scenario-ink)',
+                                <ForecastPointDetails
+                                  details={forecastPointDetails(point, { showPrevious: shownSeries.previous })}
+                                  className="mt-1 border-t border-lavander pt-1.5"
+                                />
+                              </>
+                            }
+                          />
+                        );
                       }}
                     />
-                  ) : null}
-                  {scenarioBands.map((band) => (
-                    <ReferenceArea
-                      key={band.key}
-                      x1={band.x1}
-                      x2={band.x2}
-                      fill="none"
-                      stroke={band.color}
-                      strokeDasharray="4 3"
-                      strokeWidth={1.5}
-                      ifOverflow="visible"
-                    />
-                  ))}
-                  {scenario?.seasonalAverage != null && visibleSeries.simulated ? (
-                    <ReferenceLine
-                      y={scenario.seasonalAverage}
-                      stroke="#A8741A"
-                      strokeDasharray="4 4"
-                      strokeWidth={1.4}
-                      ifOverflow="extendDomain"
-                      label={{
-                        value: `Seasonal avg ${formatAxisValue(Math.round(scenario.seasonalAverage), 'units')}`,
-                        position: 'insideTopRight',
-                        fontSize: 10,
-                        fill: '#A8741A',
-                      }}
-                    />
-                  ) : null}
-                  {showSimulated ? (
-                    <Area
-                      dataKey="simulatedGap"
-                      type="monotone"
-                      stroke="none"
-                      fill={simulatedSeries.color}
-                      fillOpacity={0.3}
-                      tooltipType="none"
-                      legendType="none"
-                      activeDot={false}
-                      isAnimationActive={false}
-                    />
-                  ) : null}
-                  {allSeries.filter((series) => shownSeries[series.key]).map((series) => (
-                    <Line
-                      key={series.key}
-                      dataKey={series.key}
-                      name={series.label}
-                      type="monotone"
-                      stroke={series.color}
-                      strokeWidth={series.strokeWidth ?? 2.4}
-                      strokeOpacity={series.strokeOpacity ?? 1}
-                      strokeDasharray={series.dash}
-                      dot={(props) => (
-                        <SeriesDot
-                          cx={props.cx}
-                          cy={props.cy}
-                          color={series.color}
-                          shape={series.shape}
-                          fill={dotFill(series.key, props.payload, confidenceDots)}
-                          delay={dotRevealDelay(lineTimings[series.key], props.points, props.cx)}
-                        />
-                      )}
-                      activeDot={{ r: 5, fill: series.color }}
-                      connectNulls={series.connectNulls ?? true}
-                      {...lineTimings[series.key]}
-                      {...transition.seriesAnimation}
-                    />
-                  ))}
-                  {/* Dashed joins across months with no actual (a missing file),
-                      under the Actual line; never a point, never in the tooltip. */}
-                  {shownSeries.actual
-                    ? actualBridges.keys.map((key) => (
-                        <Line
-                          key={key}
-                          dataKey={key}
-                          type="linear"
-                          stroke={ACTUAL_COLOR}
-                          strokeWidth={1.6}
-                          strokeOpacity={0.7}
-                          strokeDasharray="4 4"
-                          dot={false}
-                          activeDot={false}
-                          connectNulls
-                          tooltipType="none"
-                          legendType="none"
-                          isAnimationActive={false}
-                        />
-                      ))
-                    : null}
-                  {scenarioMarkers.map((marker) => (
-                    <ReferenceDot
-                      key={`marker-${marker.key}`}
-                      x={marker.x}
-                      /* From the moving rows, so a marker rides its line through a change. */
-                      y={transition.rows[marker.x].simulated}
-                      r={6}
-                      fill={simulatedSeries.color}
-                      stroke="#fff"
-                      strokeWidth={2}
-                      ifOverflow="visible"
-                    />
-                  ))}
-                </ComposedChart>
-              </ChartContainer>
-              {loading && <ChartLoading overlay label="Updating forecast…" />}
-              {/* Hidden while loading so it can't open over the overlay with old values. */}
-              {!loading && hoverPromos.length ? (
-                <div
-                  data-promo-panel="true"
-                  className="absolute z-50"
-                  style={{ top: 86, left: panelLeft }}
-                  onMouseEnter={() => {
-                    overPanelRef.current = true;
-                  }}
-                  onMouseLeave={() => {
-                    overPanelRef.current = false;
-                  }}
-                >
-                  <ForecastPromoPanel
-                    monthLabel={hoverPoint?.label ?? formatMonthLabel(hoverMonth)}
-                    seriesValues={seriesValues}
-                    details={forecastPointDetails(hoverPoint, { showPrevious: shownSeries.previous })}
-                    formatValue={formatValue}
-                    confidenceDetails={
-                      <ForecastConfidenceDetails
-                        entries={hoverPoint?.confidence}
-                        formatValue={formatValue}
-                        dotSymbols={confidenceDots}
-                        showPrevious={Boolean(shownSeries.previous)}
-                        interactive
+                    <PromoBands bands={overlayBands} span={lastIndex + 1} />
+                    {dividerXs.map((x) => (
+                      <ReferenceLine
+                        key={`promo-divider-${x}`}
+                        x={x}
+                        stroke="#3A4369"
+                        strokeOpacity={0.16}
+                        strokeWidth={1}
+                        ifOverflow="visible"
                       />
-                    }
-                    scenarioDetails={
-                      showSimulated ? (
-                        <ScenarioPointDetails
-                          point={hoverPoint}
-                          items={scenario.monthItems?.get(hoverMonth) ?? []}
+                    ))}
+                    {selectedBand && selectedBand.x1 >= -0.5 && selectedBand.x2 > 0 ? (
+                      <ReferenceArea
+                        x1={Math.max(selectedBand.x1, 0)}
+                        x2={selectedBand.x2}
+                        fill="var(--color-scenario-soft)"
+                        fillOpacity={0.9}
+                        stroke="none"
+                        ifOverflow="visible"
+                        label={{
+                          value: selectedBand.label,
+                          position: 'insideTop',
+                          fontSize: 10,
+                          fontWeight: 600,
+                          fill: 'var(--color-scenario-ink)',
+                        }}
+                      />
+                    ) : null}
+                    {scenarioBands.map((band) => (
+                      <ReferenceArea
+                        key={band.key}
+                        x1={band.x1}
+                        x2={band.x2}
+                        fill="none"
+                        stroke={band.color}
+                        strokeDasharray="4 3"
+                        strokeWidth={1.5}
+                        ifOverflow="visible"
+                      />
+                    ))}
+                    {scenario?.seasonalAverage != null && visibleSeries.simulated ? (
+                      <ReferenceLine
+                        y={scenario.seasonalAverage}
+                        stroke="#A8741A"
+                        strokeDasharray="4 4"
+                        strokeWidth={1.4}
+                        ifOverflow="extendDomain"
+                        label={{
+                          value: `Seasonal avg ${formatAxisValue(Math.round(scenario.seasonalAverage), 'units')}`,
+                          position: 'insideTopRight',
+                          fontSize: 10,
+                          fill: '#A8741A',
+                        }}
+                      />
+                    ) : null}
+                    {showSimulated ? (
+                      <Area
+                        dataKey="simulatedGap"
+                        type="monotone"
+                        stroke="none"
+                        fill={simulatedSeries.color}
+                        fillOpacity={0.3}
+                        tooltipType="none"
+                        legendType="none"
+                        activeDot={false}
+                        isAnimationActive={false}
+                      />
+                    ) : null}
+                    {allSeries.filter((series) => shownSeries[series.key]).map((series) => (
+                      <Line
+                        key={series.key}
+                        dataKey={series.key}
+                        name={series.label}
+                        type="monotone"
+                        stroke={series.color}
+                        strokeWidth={series.strokeWidth ?? 2.4}
+                        strokeOpacity={series.strokeOpacity ?? 1}
+                        strokeDasharray={series.dash}
+                        dot={(props) => (
+                          <SeriesDot
+                            cx={props.cx}
+                            cy={props.cy}
+                            color={series.color}
+                            shape={series.shape}
+                            fill={dotFill(series.key, props.payload, confidenceDots)}
+                            delay={dotRevealDelay(lineTimings[series.key], props.points, props.cx)}
+                          />
+                        )}
+                        activeDot={{ r: 5, fill: series.color }}
+                        connectNulls={series.connectNulls ?? true}
+                        {...lineTimings[series.key]}
+                        {...transition.seriesAnimation}
+                      />
+                    ))}
+                    {/* Dashed joins across months with no actual (a missing file),
+                        under the Actual line; never a point, never in the tooltip. */}
+                    {shownSeries.actual
+                      ? actualBridges.keys.map((key) => (
+                          <Line
+                            key={key}
+                            dataKey={key}
+                            type="linear"
+                            stroke={ACTUAL_COLOR}
+                            strokeWidth={1.6}
+                            strokeOpacity={0.7}
+                            strokeDasharray="4 4"
+                            dot={false}
+                            activeDot={false}
+                            connectNulls
+                            tooltipType="none"
+                            legendType="none"
+                            isAnimationActive={false}
+                          />
+                        ))
+                      : null}
+                    {scenarioMarkers.map((marker) => (
+                      <ReferenceDot
+                        key={`marker-${marker.key}`}
+                        x={marker.x}
+                        /* From the moving rows, so a marker rides its line through a change. */
+                        y={transition.rows[marker.x].simulated}
+                        r={6}
+                        fill={simulatedSeries.color}
+                        stroke="#fff"
+                        strokeWidth={2}
+                        ifOverflow="visible"
+                      />
+                    ))}
+                  </ComposedChart>
+                </ChartContainer>
+                {loading && <ChartLoading overlay label="Updating forecast…" />}
+                {/* Hidden while loading so it can't open over the overlay with old values. */}
+                {!loading && hoverPromos.length ? (
+                  <div
+                    data-promo-panel="true"
+                    className="absolute z-50"
+                    style={{ top: 86, left: panelLeft }}
+                    onMouseEnter={() => {
+                      overPanelRef.current = true;
+                    }}
+                    onMouseLeave={() => {
+                      overPanelRef.current = false;
+                    }}
+                  >
+                    <ForecastPromoPanel
+                      monthLabel={hoverPoint?.label ?? formatMonthLabel(hoverMonth)}
+                      seriesValues={seriesValues}
+                      details={forecastPointDetails(hoverPoint, { showPrevious: shownSeries.previous })}
+                      formatValue={formatValue}
+                      confidenceDetails={
+                        <ForecastConfidenceDetails
+                          entries={hoverPoint?.confidence}
                           formatValue={formatValue}
-                          hasEntered={scenario.stacksOnEntered}
+                          dotSymbols={confidenceDots}
+                          showPrevious={Boolean(shownSeries.previous)}
+                          interactive
                         />
-                      ) : null
-                    }
-                    promos={hoverPromos}
-                    openPromoId={openPromoId}
-                    onTogglePromo={(key) =>
-                      setOpenPromoId((current) => (current === key ? null : key))
-                    }
-                  />
+                      }
+                      scenarioDetails={
+                        showSimulated ? (
+                          <ScenarioPointDetails
+                            point={hoverPoint}
+                            items={scenario.monthItems?.get(hoverMonth) ?? []}
+                            formatValue={formatValue}
+                            hasEntered={scenario.stacksOnEntered}
+                          />
+                        ) : null
+                      }
+                      promos={hoverPromos}
+                      openPromoId={openPromoId}
+                      onTogglePromo={(key) =>
+                        setOpenPromoId((current) => (current === key ? null : key))
+                      }
+                    />
+                  </div>
+                ) : null}
                 </div>
-              ) : null}
-              </div>
+              </ChartFrame>
               <ForecastLegendFooter
                 lastRun={lastRun}
                 salesLabel={salesLabel}
@@ -803,7 +806,7 @@ export default function ForecastChart({
             {yearTable}
           </>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </ChartCard>
   );
 }
