@@ -17,6 +17,7 @@ figures into its own JSON.
 
 import io
 import re
+import csv
 import json
 import copy
 import base64
@@ -83,6 +84,10 @@ class AssistantConfigError(Exception):
 
 class AssistantLoopError(Exception):
     """The model never settled on a final answer within MAX_TOOL_ITERATIONS."""
+
+
+class NothingToExportError(ValueError):
+    """A CSV was asked for an answer with no chart or table: a CSV holds only figures."""
 
 
 _client: genai.Client | None = None
@@ -2371,6 +2376,47 @@ def _build_excel(answer_text: str, chart: dict, chart_style: dict | None = None)
     return buf.getvalue()
 
 
+# Figures as the chat shows them ("$5,473.15", "-1.0%", "+22.5%"): left alone by the formula guard.
+_CSV_FIGURE_RE = re.compile(r"[-+]?[\d,.$%\s]+")
+
+
+def _csv_cell(value: object) -> object:
+    """A cell as written to the CSV. Text starting with = + - or @ that isn't a
+    figure gets a leading ' so a spreadsheet shows it rather than running it as a
+    formula (a product or store name comes from uploaded files)."""
+    if value is None:
+        return ""
+    if isinstance(value, str) and len(value) > 1 and value[0] in "=+-@\t\r" and not _CSV_FIGURE_RE.fullmatch(value):
+        return "'" + value
+    return value
+
+
+def _has_csv_data(chart: dict) -> bool:
+    return bool(chart.get("has_table") or chart.get("has_chart"))
+
+
+def _build_csv(chart: dict) -> bytes:
+    """The answer's figures as one plain table: the table when the answer has one
+    (it holds the chart's figures and the detail behind them), otherwise the
+    chart's figures, one row per period and one column per series. The answer
+    text and the table note stay out, so the file opens straight into a
+    spreadsheet or another tool. UTF-8 with a BOM so Excel reads "—" and "–"."""
+    if not _has_csv_data(chart):
+        raise NothingToExportError("This answer has no chart or table to export as CSV")
+    buf = io.StringIO()
+    writer = csv.writer(buf, lineterminator="\r\n")
+    if chart.get("has_table"):
+        writer.writerow([_table_heading(column) for column in chart["table_columns"]])
+        writer.writerows([_csv_cell(value) for value in row] for row in chart["table_rows"])
+    else:
+        all_series = chart["chart_series"]
+        writer.writerow(["Period", *(series["label"] for series in all_series)])
+        for i, category in enumerate(chart["chart_categories"]):
+            values = [series["values"][i] if i < len(series["values"]) else None for series in all_series]
+            writer.writerow([_csv_cell(str(category)), *(_csv_cell(value) for value in values)])
+    return buf.getvalue().encode("utf-8-sig")
+
+
 # The AIRE logo at the top right of every exported page: a copy of the frontend's
 # public/aire-logo.png, kept here because the backend's image doesn't include the frontend.
 _LOGO_PATH = Path(__file__).resolve().parent.parent / "assets" / "aire-logo.png"
@@ -2891,7 +2937,7 @@ def generate_export_file(
     Public entry point (unlike the _build_* builders): used both by
     _build_download below (the model-driven export_format path, embedded
     as base64 in the chat response) and directly by the router's stateless
-    /export endpoint (the always-available PDF/PowerPoint button, which returns
+    /export endpoint (the always-available PDF/PowerPoint/CSV buttons, which return
     the file as the HTTP response body instead). Raises ValueError for an
     unsupported format, or whatever the underlying builder raises on a
     genuine generation failure -- callers decide how to handle that.
@@ -2917,6 +2963,8 @@ def generate_export_file(
             "application/vnd.openxmlformats-officedocument.presentationml.presentation",
             "aireos-report.pptx",
         )
+    if export_format == "csv":
+        return _build_csv(chart), "text/csv", "aireos-report.csv"
     raise ValueError(f"Unsupported export format: {export_format}")
 
 
@@ -2927,7 +2975,9 @@ def _build_download(
     chart_style: dict | None = None,
     trend_values: list[float] | None = None,
 ) -> dict:
-    if export_format not in ("pdf", "pptx", "excel"):
+    if export_format not in ("pdf", "pptx", "excel", "csv"):
+        return _empty_download()
+    if export_format == "csv" and not _has_csv_data(chart):
         return _empty_download()
 
     try:
@@ -3178,8 +3228,8 @@ FINAL_ANSWER_SCHEMA = {
         },
         "export_format": {
             "type": "string",
-            "enum": ["none", "pdf", "pptx", "excel"],
-            "description": "\"pdf\"/\"excel\"/\"pptx\" if this message asks for a downloadable report/spreadsheet/presentation of the answer; \"none\" otherwise. Note: PDF and Excel are also always available via a button under every answer with a chart/table, without needing to ask.",
+            "enum": ["none", "pdf", "pptx", "excel", "csv"],
+            "description": "\"pdf\"/\"excel\"/\"pptx\"/\"csv\" if this message asks for a downloadable report/spreadsheet/presentation/CSV of the answer; \"none\" otherwise. Note: PDF, PowerPoint and CSV are also always available via a button under every answer with a chart/table, without needing to ask.",
         },
         "chart_style": {
             "type": "object",
@@ -3489,11 +3539,12 @@ Rules:
   (typically 2-5). A single, simple analysis question with only one
   insight can still just be answered in a sentence or two, no bullet
   needed.
-- Set export_format to "pdf"/"pptx"/"excel" when the current message
-  explicitly asks for a downloadable report/presentation/spreadsheet (e.g.
-  "export this as PDF", "make a slide for this"); "none" for every other
-  message -- PDF/PowerPoint are already offered as a button under every
-  answer, so this is only for explicit requests (including excel, which
+- Set export_format to "pdf"/"pptx"/"excel"/"csv" when the current message
+  explicitly asks for a downloadable report/presentation/spreadsheet/CSV (e.g.
+  "export this as PDF", "make a slide for this", "give me this as a CSV");
+  "none" for every other message -- PDF/PowerPoint/CSV are already offered
+  as a button under every answer, so this is only for explicit requests
+  (including excel, which
   has no button) or ones phrased as a question rather than a button click.
   If this is a follow-up asking to export an earlier answer, re-fetch the relevant
   data tool again first if you can, so the export includes a chart rather
