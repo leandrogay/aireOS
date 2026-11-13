@@ -320,7 +320,14 @@ function triggerDownload(base64, mimeType, filename) {
   URL.revokeObjectURL(url);
 }
 
-// PDF/PowerPoint are always offered under any chart/table answer -- unlike
+// The formats POST /api/assistant/export accepts (backend generate_export_file names the file the same).
+const EXPORT_FORMATS = [
+  { format: 'pdf', label: 'PDF', filename: 'aireos-report.pdf' },
+  { format: 'pptx', label: 'PowerPoint', filename: 'aireos-report.pptx' },
+  { format: 'csv', label: 'CSV', filename: 'aireos-report.csv' },
+];
+
+// PDF/PowerPoint/CSV are always offered under any chart/table answer -- unlike
 // triggerDownload above (the model-driven "export this as..." path, which
 // embeds the file as base64 in the chat response), this hits a dedicated
 // stateless /export endpoint with data the frontend already has from the
@@ -328,7 +335,7 @@ function triggerDownload(base64, mimeType, filename) {
 function ExportButtons({ message }) {
   const [pending, setPending] = useState(null);
 
-  async function handleExport(format) {
+  async function handleExport({ format, filename }) {
     setPending(format);
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/assistant/export`, {
@@ -355,7 +362,7 @@ function ExportButtons({ message }) {
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = format === 'pdf' ? 'aireos-report.pdf' : 'aireos-report.pptx';
+      link.download = filename;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -369,17 +376,17 @@ function ExportButtons({ message }) {
 
   return (
     <div className="mt-2 flex gap-1">
-      {['pdf', 'pptx'].map((format) => (
+      {EXPORT_FORMATS.map((option) => (
         <Button
-          key={format}
+          key={option.format}
           type="button"
           variant="outline"
           size="xs"
-          onClick={() => handleExport(format)}
+          onClick={() => handleExport(option)}
           disabled={pending !== null}
           className={DOWNLOAD_BUTTON_CLASS}
         >
-          ⬇ {pending === format ? 'Generating…' : format === 'pdf' ? 'PDF' : 'PowerPoint'}
+          ⬇ {pending === option.format ? 'Generating…' : option.label}
         </Button>
       ))}
     </div>

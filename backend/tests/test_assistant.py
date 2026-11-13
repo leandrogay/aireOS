@@ -1412,6 +1412,51 @@ def test_forecast_export_excel_has_the_chart_data_and_the_table():
     assert len(sheet._charts) == 1
 
 
+# ---- CSV export ---------------------------------------------------------------
+
+def _csv_rows(csv_bytes):
+    import csv
+
+    return list(csv.reader(io.StringIO(csv_bytes.decode("utf-8-sig"))))
+
+
+def test_csv_export_writes_the_table_with_readable_headings():
+    chart = assistant._table_chart(["rank", "product_name", "range_80"], [["1", "Aire Ultra Tape L", "34 to 139"]])
+
+    csv_bytes, mime_type, filename = assistant.generate_export_file("csv", "Top seller.", chart)
+
+    assert (mime_type, filename) == ("text/csv", "aireos-report.csv")
+    assert csv_bytes.startswith(b"\xef\xbb\xbf")  # BOM, so Excel reads it as UTF-8
+    assert _csv_rows(csv_bytes) == [["Rank", "Product name", "80% range"], ["1", "Aire Ultra Tape L", "34 to 139"]]
+
+
+def test_csv_export_of_a_chart_alone_has_one_row_per_period_and_a_column_per_series():
+    chart = {
+        **assistant._empty_chart(),
+        "has_chart": True,
+        "chart_type": "bar",
+        "chart_categories": ["Aug 2026", "Sep 2026"],
+        "chart_series": [{"label": "FairPrice", "values": [5473.15, 6120.0]}, {"label": "NHG", "values": [812.5]}],
+    }
+
+    rows = _csv_rows(assistant.generate_export_file("csv", "Sales by month.", chart)[0])
+
+    assert rows == [["Period", "FairPrice", "NHG"], ["Aug 2026", "5473.15", "812.5"], ["Sep 2026", "6120.0", ""]]
+
+
+def test_csv_export_keeps_figures_but_stops_text_running_as_a_formula():
+    chart = assistant._table_chart(["product_name", "change"], [["=HYPERLINK(\"x\")", "-1.0%"], ["@SUM(A1)", "+$400.00"]])
+
+    rows = _csv_rows(assistant.generate_export_file("csv", "a", chart)[0])
+
+    assert rows[1:] == [["'=HYPERLINK(\"x\")", "-1.0%"], ["'@SUM(A1)", "+$400.00"]]
+
+
+def test_csv_export_with_no_chart_or_table_raises():
+    with pytest.raises(assistant.NothingToExportError):
+        assistant.generate_export_file("csv", "We have data for FairPrice.", assistant._empty_chart())
+
+
 # ---- PowerPoint layout: neat, and nothing lost --------------------------------
 
 def _deck(answer, chart=None, style=None, trend_values=None):
@@ -1718,6 +1763,30 @@ def test_export_endpoint_passes_the_table_note_to_the_file(monkeypatch):
 
     assert response.status_code == 200
     assert seen["chart"]["table_note"] == "Forecast run: 5 Oct 2026"
+
+
+def test_export_endpoint_returns_a_csv_file():
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    response = TestClient(app).post("/api/assistant/export", json={
+        "format": "csv", "answer": "a", "has_table": True, "table_columns": ["sku"], "table_rows": [["13271338"]],
+    })
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/csv")
+    assert response.headers["content-disposition"] == 'attachment; filename="aireos-report.csv"'
+    assert response.content.decode("utf-8-sig").splitlines() == ["SKU", "13271338"]
+
+
+def test_export_endpoint_rejects_a_csv_with_nothing_to_put_in_it():
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    response = TestClient(app).post("/api/assistant/export", json={"format": "csv", "answer": "Just text."})
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "This answer has no chart or table to export as CSV"
 
 
 def _priced_forecast_result():
@@ -2124,6 +2193,31 @@ def test_export_with_table_instead_of_chart_still_produces_a_file(monkeypatch):
     assert result["has_download"] is True
     decoded = base64.b64decode(result["download_base64"])
     assert decoded[:4] == b"%PDF"
+
+
+def test_export_csv_on_request_produces_the_table_as_csv(monkeypatch):
+    df = pd.DataFrame([{"sku": "A", "product_name": "Widget", "volume": 10, "value": 100.0, "rank": 1}])
+    monkeypatch.setattr(sellout_service, "get_sku_ranking", lambda **kwargs: df)
+
+    tool_call = _tool_call_response(("tu_1", "rank_skus", {"metric": "value"}))
+    _install_fake_client(monkeypatch, [tool_call, _final_answer(text="Widget is the top seller.", export_format="csv")])
+
+    result = assistant.ask("give me our best sellers as a csv", history=None, customer="fairprice")
+
+    assert result["download_filename"] == "aireos-report.csv"
+    assert result["download_mime_type"] == "text/csv"
+    decoded = base64.b64decode(result["download_base64"]).decode("utf-8-sig")
+    assert decoded.splitlines()[0] == "Rank,Product name,Volume,Value"
+    assert "Widget" in decoded
+
+
+def test_export_csv_with_no_chart_or_table_produces_no_download(monkeypatch):
+    # Unlike a PDF, a CSV of the answer text alone would be an empty table.
+    _install_fake_client(monkeypatch, [_final_answer(text="We currently have data for Fairprice.", export_format="csv")])
+
+    result = assistant.ask("export that as csv", history=None, customer="fairprice")
+
+    assert result["has_download"] is False
 
 
 def test_export_with_no_chart_or_table_still_produces_text_only_file(monkeypatch):
