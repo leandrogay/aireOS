@@ -26,7 +26,7 @@ class DigestRequest(BaseModel):
 
 class ExportRequest(BaseModel):
     """
-    The always-available PDF/PowerPoint button under any chart/table answer --
+    The always-available PDF/PowerPoint/CSV buttons under any chart/table answer --
     unlike /ask, this is stateless and never touches the model: the
     frontend already has this exact data from the last ask() response, so
     it's just posted straight to the file builders.
@@ -99,8 +99,8 @@ def digest(payload: DigestRequest):
 
 @router.post("/export")
 def export(payload: ExportRequest):
-    if payload.format not in ("pdf", "pptx"):
-        raise HTTPException(status_code=400, detail="format must be 'pdf' or 'pptx'")
+    if payload.format not in ("pdf", "pptx", "csv"):
+        raise HTTPException(status_code=400, detail="format must be 'pdf', 'pptx' or 'csv'")
 
     chart = {
         "has_chart": payload.has_chart,
@@ -116,6 +116,8 @@ def export(payload: ExportRequest):
         file_bytes, media_type, filename = assistant.generate_export_file(
             payload.format, payload.answer, chart, payload.chart_style, payload.chart_trend_values
         )
+    except assistant.NothingToExportError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Could not generate the file: {e}")
 
