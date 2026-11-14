@@ -25,11 +25,19 @@ test('a range whose SKUs agree shows one value, and one that differs shows the s
   assert.equal(upliftText(version(null, null)), '—');
 });
 
-test('the next anchor version is the second line', () => {
+test('a version that changes the uplift is the second line', () => {
   const row = { versions: [version(4, 4), version(6, 6, '2027-06-01')] };
 
-  assert.equal(upcomingText(row), 'from Jun 2027: +6%');
+  assert.equal(upcomingText(row), 'Upcoming uplift from Jun 2027: +6%');
   assert.equal(upcomingText({ versions: [version(4, 4)] }), null);
+});
+
+test('a later version with the same uplift adds no line, and the first one that changes it shows', () => {
+  const same = { versions: [version(4, 4), version(4, 4, '2027-08-01')] };
+  const changesLater = { versions: [version(-19, -2), version(-19, -2, '2027-08-01'), version(3, 5, '2027-10-01')] };
+
+  assert.equal(upcomingText(same), null);
+  assert.equal(upcomingText(changesLater), 'Upcoming uplift from Oct 2027: +3% to +5%');
 });
 
 test('a row opens to its SKUs only when they differ', () => {

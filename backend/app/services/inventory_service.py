@@ -154,6 +154,22 @@ def _fetch_customers(conn: Connection) -> dict[int, str]:
     return {row["customer_id"]: row["customer_name"] for row in rows}
 
 
+def _fetch_customer_colors(conn: Connection) -> dict[int, str | None]:
+    rows = conn.execute(
+        text(
+            """
+            SELECT
+                customer_id,
+                color
+
+            FROM customers
+            """
+        )
+    ).mappings().all()
+
+    return {row["customer_id"]: row["color"] for row in rows}
+
+
 def list_customers() -> list[dict]:
     """Every customer with its chart colour (customers.color, migration 018),
     which every page draws that customer in (frontend utils/customerColors)."""
@@ -541,6 +557,7 @@ def get_overview(
 
     with _read_connection() as conn:
         customers = _fetch_customers(conn)
+        colors = _fetch_customer_colors(conn)
         metrics = _fetch_actuals(conn, customer_ids)
 
     at_risk = (
@@ -582,8 +599,10 @@ def get_overview(
     ]
 
     return {
+        # With each customer's chart colour, so the Ending stock chart draws
+        # every customer in the colour it has on every other page.
         "customers": [
-            {"customer_id": customer_id, "customer_name": name}
+            {"customer_id": customer_id, "customer_name": name, "color": colors.get(customer_id)}
             for customer_id, name in customers.items()
         ],
         "monthly": monthly,

@@ -92,14 +92,18 @@ export function versionAnchorText(anchor) {
 }
 
 /**
- * The second line under a row's value: the next version, "from Jun 2027:
- * +6%", or null with none.
+ * The second line under a row's value: the first later version whose uplift
+ * differs from this month's, "Upcoming uplift from Jun 2027: +6%", or null
+ * when none does. A new anchor version that leaves the uplift as it is (the
+ * placeholder rule often gives the same value) adds no line.
  *
  * @param {{ versions: object[] }} row
  */
 export function upcomingText(row) {
-  const next = row.versions[1];
-  return next ? `from ${monthText(next.effective_from)}: ${upliftText(next)}` : null;
+  const [current, ...later] = row.versions;
+  if (!current) return null;
+  const next = later.find((version) => upliftText(version) !== upliftText(current));
+  return next ? `Upcoming uplift from ${monthText(next.effective_from)}: ${upliftText(next)}` : null;
 }
 
 /**

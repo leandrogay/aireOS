@@ -5,8 +5,9 @@ import BackLink from "@/components/ui/BackLink";
 import { cn } from "@/lib/utils";
 
 /**
- * Standard content page: sidebar shell, AIRE glass background, a max-w-6xl
- * centred column and the page heading. Keeps the heading position and
+ * Standard content page: sidebar shell, AIRE glass background, a centred
+ * column up to 1440px and the page heading. Every page shares that width, so
+ * closing the side bar widens them all alike, not only the dashboards. Keeps the heading position and
  * gutters identical across pages. The notification bell sits at the right
  * end of every page's heading row.
  *
@@ -20,11 +21,9 @@ import { cn } from "@/lib/utils";
  * its card. On mobile the page grows with its cards instead, leaving scroll
  * room below pagination for the floating assistant button.
  *
- * `wide` lets a dense dashboard use a wider content column.
- *
- * @param {{ title: import('react').ReactNode, headerExtra?: import('react').ReactNode, back?: { href: string, label: string }, fitScreen?: boolean, wide?: boolean, children: import('react').ReactNode }} props
+ * @param {{ title: import('react').ReactNode, headerExtra?: import('react').ReactNode, back?: { href: string, label: string }, fitScreen?: boolean, children: import('react').ReactNode }} props
  */
-export default function PageLayout({ title, headerExtra, back, fitScreen = false, wide = false, children }) {
+export default function PageLayout({ title, headerExtra, back, fitScreen = false, children }) {
   return (
     <AppShell>
       {/* Room after the last card for the assistant's floating button
@@ -38,8 +37,7 @@ export default function PageLayout({ title, headerExtra, back, fitScreen = false
         {/* The column springs in on navigation (PageTransition); the sidebar
             outside it stays still. */}
         <PageTransition className={cn(
-          "mx-auto w-full min-w-0 max-w-6xl",
-          wide && 'max-w-[1440px]',
+          "mx-auto w-full min-w-0 max-w-[1440px]",
           fitScreen && "flex min-h-0 flex-col sm:flex-1",
         )}>
           {/* data-page-heading: NotificationBell measures this row, as wide

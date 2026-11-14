@@ -92,16 +92,6 @@ export function recommendedAnchorLabel(anchor, windowMonths) {
 }
 
 /**
- * Who made a change, for display: the migration's starting rows are
- * recorded as 'seed', which means nobody has changed them yet.
- *
- * @param {string | null} changedBy
- */
-export function changedByLabel(changedBy) {
-  return changedBy === 'seed' ? 'Starting value' : changedBy ?? '';
-}
-
-/**
  * Before/after of every placeholder mechanic when an anchor moves, for the
  * anchor form's preview. Rows that do not follow the anchor are left out.
  *

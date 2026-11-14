@@ -32,7 +32,7 @@ SKUS = [
 
 
 def _customers(*names):
-    return [{"customer_id": i, "customer_name": n} for i, n in enumerate(names, start=1)]
+    return [{"customer_id": i, "customer_name": n, "color": None} for i, n in enumerate(names, start=1)]
 
 
 def _metric(customer_id, sku, month, name, value):
@@ -192,6 +192,15 @@ def test_overview_totals_each_customers_ending_stock_by_month(monkeypatch):
         {"customer_id": 1, "customer_name": "fairprice", "month": "2026-01-01", "ending_stock": 90.0},
         {"customer_id": 1, "customer_name": "fairprice", "month": "2026-02-01", "ending_stock": 80.0},
     ]
+
+
+def test_overview_customers_carry_their_chart_colour(monkeypatch):
+    customers = [{"customer_id": 1, "customer_name": "fairprice", "color": "#7C6FB0"}]
+    _install(monkeypatch, _router(customers, _two_month_metrics()))
+
+    overview = inventory_service.get_overview()
+
+    assert overview["customers"] == [{"customer_id": 1, "customer_name": "fairprice", "color": "#7C6FB0"}]
 
 
 def test_overview_rows_carry_sku_details_and_chained_stock(monkeypatch):

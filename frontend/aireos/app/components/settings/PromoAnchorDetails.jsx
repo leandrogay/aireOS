@@ -20,22 +20,21 @@ import {
   anchorLabel,
   anchorSourceLabel,
   sourceTone,
-  changedByLabel,
   recommendedAnchorLabel,
   upcomingAnchorText,
 } from '@/app/utils/promoUpliftSettings';
 import { formatDateTime } from '@/lib/formatDate';
 
+// No fixed widths and no minimum table width: the table fits the dialog
+// rather than scrolling sideways (its first column is sticky, so a scrolled
+// table slides Anchor over From). The anchor, its pill and Saved wrap
+// instead; From and the source pill stay on one line.
 const HISTORY_COLUMNS = [
-  { key: 'anchor', label: 'Anchor', width: '16rem' },
-  { key: 'from', label: 'From', width: '7rem' },
+  { key: 'anchor', label: 'Anchor' },
+  { key: 'from', label: 'From' },
   { key: 'source', label: 'Source' },
-  { key: 'when', label: 'Saved', width: '15rem' },
+  { key: 'when', label: 'Saved' },
 ];
-
-function changedLabel(row) {
-  return row.changed_at ? `${formatDateTime(row.changed_at)} · ${changedByLabel(row.changed_by)}` : changedByLabel(row.changed_by);
-}
 
 /**
  * One anchor clicked open (the SKU catalogue's SkuDetails is the model): a
@@ -107,12 +106,12 @@ export default function PromoAnchorDetails({ target, windowMonths, readOnly, onE
             <p className="text-sm text-muted-foreground">No versions saved yet.</p>
           ) : null}
           {history.rows.length ? (
-            <TableGrid variant="nested" columns={HISTORY_COLUMNS} minWidth="42rem">
+            <TableGrid variant="nested" columns={HISTORY_COLUMNS}>
               {history.rows.map((entry) => (
                 <TableRow key={entry.id} className="h-11 border-b border-lavander/80 last:border-b-0">
-                  <td className="px-4 py-2 tabular-nums">
-                    <span className="inline-flex max-w-full items-center gap-1.5">
-                      <span className="truncate font-medium" title={anchorLabel(entry)}>{anchorLabel(entry)}</span>
+                  <td className="whitespace-normal px-4 py-2 tabular-nums">
+                    <span className="flex flex-wrap items-center gap-1.5">
+                      <span className="font-medium">{anchorLabel(entry)}</span>
                       {entry.is_current ? (
                         <span className="shrink-0">
                           <StatusPill tone="success">Current</StatusPill>
@@ -131,7 +130,7 @@ export default function PromoAnchorDetails({ target, windowMonths, readOnly, onE
                   <td className="whitespace-nowrap px-4 py-2">
                     <StatusPill tone={sourceTone(entry.source)}>{anchorSourceLabel(entry.source)}</StatusPill>
                   </td>
-                  <td className="px-4 py-2 text-muted-foreground">{changedLabel(entry)}</td>
+                  <td className="whitespace-normal px-4 py-2 text-muted-foreground">{entry.changed_at ? formatDateTime(entry.changed_at) : '—'}</td>
                 </TableRow>
               ))}
             </TableGrid>

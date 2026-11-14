@@ -2,7 +2,7 @@ import { ACTIONS_COLUMN } from '@/components/ui/TableGrid';
 
 // The saved building blocks table's columns. Every column but Explanation
 // has a fixed width for its longest usual value, and together they stay
-// well under the page's 72rem (max-w-6xl), so Explanation always keeps room
+// well under the page's 1440px column (PageLayout), so Explanation always keeps room
 // of its own and the Actions menu never slides off the right edge.
 // Explanation truncates (full text in the expanded row). Customer and SKU share a column; the customer
 // part stays visible when the saved list includes records outside the chart.
