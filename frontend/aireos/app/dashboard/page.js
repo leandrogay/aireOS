@@ -404,10 +404,7 @@ export default function DashboardPage() {
   ].filter(Boolean);
 
   return (
-    <PageLayout
-      title="Sales Dashboard"
-      wide
-    >
+    <PageLayout title="Sales Dashboard">
       {(pageStatus === 'failed' || pageStatus === 'empty') ? (
         <DashboardStatus kind={pageStatus} error={customerOptionsError || dateRangeError} />
       ) : (

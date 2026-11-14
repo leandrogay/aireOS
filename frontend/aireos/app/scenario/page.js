@@ -18,7 +18,7 @@ const sandboxBadge = (
 // building-block state live in the client tree under ScenarioBuilder.
 export default function ScenarioBuilderPage() {
   return (
-    <PageLayout title="Scenario builder" headerExtra={sandboxBadge} wide>
+    <PageLayout title="Scenario builder" headerExtra={sandboxBadge}>
       <ScenarioWorkspace />
     </PageLayout>
   );
