@@ -36,7 +36,8 @@ export default function ScenarioTotals({ singleSeries, yearTable, monthlyPlan })
           <span className="text-xs text-deep-violet-blue/60">Units · cartons</span>
         </div>
       )}>
-        <TabTransition value={tab}>
+        {/* pt-3: the tab's caption (or table) clears the white header band. */}
+        <TabTransition value={tab} className="pt-3">
           <TabsContent value="year" className="mt-0">{yearTable}</TabsContent>
           <TabsContent value="month" className="mt-0">
             {tab === 'month' ? monthlyPlan : null}
