@@ -91,80 +91,126 @@ export default function PromoUpliftSettingsView() {
   return (
     <PageLayout title="Promotion uplift settings">
       <div className="grid grid-cols-1 gap-3">
-        <TableCard
-          variant="glass"
-          label="Ordinary-month discount by customer"
-          header={
-            <TableCardHeader
-              title="Ordinary-month discount by customer"
-              detail={anchors ? `${anchors.customers.length} customer${anchors.customers.length === 1 ? '' : 's'}` : 'Loading customers…'}
-              actions={
-                <>
-                  {calculated.data ? (
-                    <span className="inline-flex items-center gap-1">
-                      <StatusPill tone={status.tone}>{status.label}</StatusPill>
-                      {status.error ? (
-                        <InfoTooltip label="Why the last run failed">{status.error}</InfoTooltip>
-                      ) : null}
-                    </span>
-                  ) : null}
-                  {readOnly ? null : (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleRecalculate}
-                      disabled={recalculating}
+        {/* Wide screens: the anchors and, beside them, the mechanic discounts
+            as a narrow reference card. The row is as tall as the anchors card;
+            the discounts card fills that height (absolute, so its own rows
+            never make the row taller) and its list scrolls inside, at least
+            24rem tall while the anchors are short. Stacked below 1440px, where the
+            anchors table (52rem at least) would have to scroll sideways. */}
+        <div className="grid grid-cols-1 gap-3 min-[1440px]:grid-cols-[minmax(0,1fr)_24rem]">
+          <TableCard
+            variant="glass"
+            label="Ordinary-month discount by customer"
+            header={
+              <TableCardHeader
+                title="Ordinary-month discount by customer"
+                detail={anchors ? `${anchors.customers.length} customer${anchors.customers.length === 1 ? '' : 's'}` : 'Loading customers…'}
+                actions={
+                  <>
+                    {calculated.data ? (
+                      <span className="inline-flex items-center gap-1">
+                        <StatusPill tone={status.tone}>{status.label}</StatusPill>
+                        {status.error ? (
+                          <InfoTooltip label="Why the last run failed">{status.error}</InfoTooltip>
+                        ) : null}
+                      </span>
+                    ) : null}
+                    {readOnly ? null : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleRecalculate}
+                        disabled={recalculating}
+                        className={TABLE_HEADER_BUTTON_CLASS}
+                      >
+                        <RefreshCw data-icon="inline-start" className={recalculating ? 'animate-spin' : undefined} />
+                        {recalculating ? 'Recalculating…' : 'Recalculate'}
+                      </Button>
+                    )}
+                    <RefreshButton
+                      onClick={refresh}
+                      isRefreshing={loading}
+                      label="Refresh promotion uplift settings"
                       className={TABLE_HEADER_BUTTON_CLASS}
-                    >
-                      <RefreshCw data-icon="inline-start" className={recalculating ? 'animate-spin' : undefined} />
-                      {recalculating ? 'Recalculating…' : 'Recalculate'}
-                    </Button>
-                  )}
-                  <RefreshButton
-                    onClick={refresh}
-                    isRefreshing={loading}
-                    label="Refresh promotion uplift settings"
-                    className={TABLE_HEADER_BUTTON_CLASS}
-                  />
-                </>
+                    />
+                  </>
+                }
+              />
+            }
+          >
+            {error ? (
+              <p className="px-4 pb-3 text-sm text-red-600" role="alert">
+                {error}
+              </p>
+            ) : null}
+            {anchors ? (
+              <PromoAnchorTable
+                anchors={anchors}
+                editingKey={anchorTarget?.key ?? null}
+                readOnly={readOnly}
+                onView={setAnchorDetails}
+                onEdit={setAnchorTarget}
+                onAdopt={handleAnchorAdopt}
+              />
+            ) : (
+              !error && <p className="px-4 pb-3 text-sm text-deep-violet-blue/70">Loading…</p>
+            )}
+            {fallback ? (
+              <div className="flex flex-wrap items-center gap-2 border-t border-lavander/80 px-4 py-3 text-sm text-deep-violet-blue">
+                <span className="inline-flex items-center gap-1">
+                  If nothing is set: <span className="font-medium">{fallback.anchor_pct}% off</span>
+                  {fallback.effective_from ? ` · from ${monthText(fallback.effective_from)}` : null}
+                  <InfoTooltip label="About the fallback anchor">
+                    A SKU range with no anchor uses its customer&apos;s; a customer with none uses this.
+                  </InfoTooltip>
+                </span>
+                {readOnly ? null : (
+                  <Button variant="outline" size="sm" onClick={() => setEditingFallback(true)}>
+                    Edit
+                  </Button>
+                )}
+              </div>
+            ) : null}
+          </TableCard>
+
+          <div className="relative min-w-0 min-[1440px]:min-h-96">
+            <TableCard
+              variant="glass"
+              label="Mechanic discounts"
+              className="min-[1440px]:absolute min-[1440px]:inset-0"
+              header={
+                <TableCardHeader
+                  title="Mechanic discounts"
+                  detail={settings ? `${mechanics.length} mechanic${mechanics.length === 1 ? '' : 's'}` : 'Loading mechanics…'}
+                  actions={
+                    <InfoTooltip label="About mechanic discounts">
+                      The discount each mechanic counts as. The placeholder rule and the anchors use it.
+                    </InfoTooltip>
+                  }
+                />
               }
-            />
-          }
-        >
-          {error ? (
-            <p className="px-4 pb-3 text-sm text-red-600" role="alert">
-              {error}
-            </p>
-          ) : null}
-          {anchors ? (
-            <PromoAnchorTable
-              anchors={anchors}
-              editingKey={anchorTarget?.key ?? null}
-              readOnly={readOnly}
-              onView={setAnchorDetails}
-              onEdit={setAnchorTarget}
-              onAdopt={handleAnchorAdopt}
-            />
-          ) : (
-            !error && <p className="px-4 pb-3 text-sm text-deep-violet-blue/70">Loading…</p>
-          )}
-          {fallback ? (
-            <div className="flex flex-wrap items-center gap-2 border-t border-lavander/80 px-4 py-3 text-sm text-deep-violet-blue">
-              <span className="inline-flex items-center gap-1">
-                If nothing is set: <span className="font-medium">{fallback.anchor_pct}% off</span>
-                {fallback.effective_from ? ` · from ${monthText(fallback.effective_from)}` : null}
-                <InfoTooltip label="About the fallback anchor">
-                  A SKU range with no anchor uses its customer&apos;s; a customer with none uses this.
-                </InfoTooltip>
-              </span>
-              {readOnly ? null : (
-                <Button variant="outline" size="sm" onClick={() => setEditingFallback(true)}>
-                  Edit
-                </Button>
+            >
+              {settings ? (
+                <PromoMechanicTable
+                  mechanics={mechanics}
+                  editingKey={mechanicTarget?.mechanic_key ?? null}
+                  readOnly={readOnly}
+                  onEdit={setMechanicTarget}
+                />
+              ) : (
+                !error && <p className="px-4 pb-3 text-sm text-deep-violet-blue/70">Loading…</p>
               )}
-            </div>
-          ) : null}
-        </TableCard>
+              {settings?.unmapped_mechanics?.length ? (
+                <p className="shrink-0 border-t border-lavander/80 px-4 py-3 text-xs text-deep-violet-blue/70" role="status">
+                  No discount yet:{' '}
+                  {settings.unmapped_mechanics
+                    .map((row) => `${row.promotion_mechanic} (${row.promotions} promotion${row.promotions === 1 ? '' : 's'})`)
+                    .join(' · ')}
+                </p>
+              ) : null}
+            </TableCard>
+          </div>
+        </div>
 
         {anchorDetails ? (
           <PromoAnchorDetails
@@ -205,40 +251,6 @@ export default function PromoUpliftSettingsView() {
           />
         ) : null}
 
-        <TableCard
-          variant="glass"
-          label="Mechanic discounts"
-          header={
-            <TableCardHeader
-              title="Mechanic discounts"
-              detail={settings ? `${mechanics.length} mechanic${mechanics.length === 1 ? '' : 's'}` : 'Loading mechanics…'}
-              actions={
-                <InfoTooltip label="About mechanic discounts">
-                  The discount each mechanic counts as. The placeholder rule and the anchors use it.
-                </InfoTooltip>
-              }
-            />
-          }
-        >
-          {settings ? (
-            <PromoMechanicTable
-              mechanics={mechanics}
-              editingKey={mechanicTarget?.mechanic_key ?? null}
-              readOnly={readOnly}
-              onEdit={setMechanicTarget}
-            />
-          ) : (
-            !error && <p className="px-4 pb-3 text-sm text-deep-violet-blue/70">Loading…</p>
-          )}
-          {settings?.unmapped_mechanics?.length ? (
-            <p className="px-4 py-3 text-xs text-deep-violet-blue/70" role="status">
-              No discount yet:{' '}
-              {settings.unmapped_mechanics
-                .map((row) => `${row.promotion_mechanic} (${row.promotions} promotion${row.promotions === 1 ? '' : 's'})`)
-                .join(' · ')}
-            </p>
-          ) : null}
-        </TableCard>
 
         {mechanicTarget ? (
           <PromoMechanicDiscountForm

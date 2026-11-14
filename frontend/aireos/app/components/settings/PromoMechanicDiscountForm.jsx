@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/dialog';
 import { errorClass, hintClass, inputClass, labelClass } from '@/components/ui/formStyles';
 import { getPromoUpliftHistory, saveMechanicDiscount } from '@/app/services/promoUpliftsApi';
-import { changedByLabel, parseDiscountInput } from '@/app/utils/promoUpliftSettings';
+import { parseDiscountInput } from '@/app/utils/promoUpliftSettings';
 import { formatDateTime } from '@/lib/formatDate';
 
 const HISTORY_COLUMNS = [
@@ -119,8 +119,8 @@ export default function PromoMechanicDiscountForm({ row, onSaved, onCancel }) {
                         {entry.superseded_at ? null : <StatusPill tone="success">Current</StatusPill>}
                       </span>
                     </td>
-                    <td className="px-4 py-2 text-muted-foreground">
-                      {entry.changed_at ? `${formatDateTime(entry.changed_at)} · ${changedByLabel(entry.changed_by)}` : '—'}
+                    <td className="whitespace-normal px-4 py-2 text-muted-foreground">
+                      {entry.changed_at ? formatDateTime(entry.changed_at) : '—'}
                     </td>
                   </TableRow>
                 ))}
