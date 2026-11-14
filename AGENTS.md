@@ -56,7 +56,7 @@ aireOS/
 │   │   └── services/          All logic + all external I/O; never imports fastapi. Grouped by domain in §2.
 │   │                          Sub-packages settings/ and scenario/ each have a common.py (shared engines,
 │   │                          errors)
-│   ├── migrations/            Numbered Cloud SQL DDL (001_… → 031_…), applied by hand in order
+│   ├── migrations/            Numbered Cloud SQL DDL (001_… → 032_…), applied by hand in order
 │   ├── scripts/               Out-of-band jobs: refresh_forecast, eval_mapping, install_reference_contracts,
 │   │                          historical/promotion imports and repairs, pipeline checks, rebuild_promo_calc,
 │   │                          backtest_tier0_promotions

@@ -82,7 +82,9 @@ CREATE INDEX IF NOT EXISTS idx_promo_uplift_settings_target
 -- The all-customers placeholder for every mechanic in use, at the 20%
 -- fallback anchor: (discount - 20) / 5 x 2, to a whole percent
 -- (promo_uplift_rules.placeholder_uplift). The service recalculates them
--- from each customer's and range's own anchor.
+-- from each customer's and range's own anchor. Discounts are per piece, as
+-- revenue estimation counts them: Buy 2 Get 25% Off is 12.5 (first seeded
+-- at 25 and 30; 032 corrects databases seeded before).
 INSERT INTO promo_uplift_settings
     (promotion_mechanic, effective_discount_pct, uplift_pct, source, updated_by)
 SELECT seed.promotion_mechanic, seed.effective_discount_pct, seed.uplift_pct, 'placeholder', 'seed'
@@ -93,10 +95,10 @@ FROM (
         ('15% Off', 15, -2),
         ('20% Off', 20, 0),
         ('25% Off', 25, 2),
-        ('Buy 2 Get 25% Off', 25, 2),
+        ('Buy 2 Get 25% Off', 12.5, -3),
         ('27% Off', 27, 3),
         ('30% Off', 30, 4),
-        ('Buy 2 Get 30% Off', 30, 4),
+        ('Buy 2 Get 30% Off', 15, -2),
         ('Buy 2 Get 1 Free', 33.3, 5),
         ('50% Off', 50, 12),
         ('Buy 1 Get 1 Free', 50, 12),
