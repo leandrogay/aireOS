@@ -76,7 +76,7 @@ export const AT_RISK_COLUMNS = [
   { key: 'min', label: 'Min', width: '4.5rem', align: 'right' },
   { key: 'max', label: 'Max', width: '4.5rem', align: 'right' },
   { key: 'outside', label: 'Days outside band', width: '6.5rem', align: 'right' },
-  { key: 'risk', label: 'Risk', width: '6.5rem' },
+  { key: 'risk', label: 'Risk', width: '8.5rem' }, // room for the StatusPill
 ];
 
 // The sell-in tracker's values before they are saved (SellInUploadForm).

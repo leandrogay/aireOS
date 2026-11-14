@@ -3,6 +3,7 @@
 import { useState } from 'react';
 
 import SelectDropdown from '@/components/ui/SelectDropdown';
+import StatusPill from '@/components/ui/StatusPill';
 import TableRow from '@/components/ui/TableRow';
 import useAtRisk from '@/hooks/useAtRisk';
 import { formatDoh, formatMonth, formatUnits } from '@/app/utils/inventoryForm';
@@ -18,7 +19,8 @@ import InventoryTableFrame, {
 } from './InventoryTableFrame';
 
 const RISK_LABELS = { below_min: 'Low stock', above_max: 'Overstock' };
-const RISK_CLASSES = { below_min: 'text-red-700', above_max: 'text-amber-700' };
+// The Status pills' tones (ui/StatusPill): low stock is the danger, overstock the warning.
+const RISK_TONES = { below_min: 'danger', above_max: 'warning' };
 const RISK_OPTIONS = [
   { value: '', label: 'All at-risk SKUs' },
   { value: 'below_min', label: 'Low stock (below min)' },
@@ -110,7 +112,9 @@ export default function AtRiskView({ customers, refreshKey }) {
               <td className={inventoryNumberCellClass}>{formatDoh(item.min_doh)}</td>
               <td className={inventoryNumberCellClass}>{formatDoh(item.max_doh)}</td>
               <td className={cn(inventoryNumberCellClass, 'font-medium')}>{formatDoh(item.days_outside_band)}</td>
-              <td className={cn(inventoryCellClass, RISK_CLASSES[item.doh_status])}>{RISK_LABELS[item.doh_status]}</td>
+              <td className={inventoryCellClass}>
+                <StatusPill tone={RISK_TONES[item.doh_status]}>{RISK_LABELS[item.doh_status]}</StatusPill>
+              </td>
             </TableRow>
           ))}
         </InventoryTableFrame>
