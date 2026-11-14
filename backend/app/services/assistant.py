@@ -1002,6 +1002,7 @@ def _sales_row(period: str, customer: str, tool_input: dict, units, revenue) -> 
 
 def _with_sales_table(chart: dict, rows: list[dict]) -> dict:
     scope_columns = [column for column in _SALES_SCOPE_COLUMNS if any(row[column] for row in rows)]
+    stored = _stored_customer_names() if rows else []
 
     def scope_cell(row: dict, column: str) -> str:
         value = row[column] or "All"
@@ -1014,7 +1015,7 @@ def _with_sales_table(chart: dict, rows: list[dict]) -> dict:
         "table_rows": [
             [
                 row["period"],
-                _customer_label(row["customer"]),
+                _customer_label(row["customer"], stored),
                 *[scope_cell(row, column) for column in scope_columns],
                 _units_cell(row["units"]),
                 _revenue_cell(row["revenue"]),
@@ -1078,7 +1079,7 @@ def _per_customer_total_chart(by_customer: dict[str, list]) -> dict | None:
         totals = _compare_periods_totals(calls)
         if totals is None:
             continue
-        categories.append(slug.replace("_", " ").title())
+        categories.append(_customer_label(slug))
         values.append(round(float(totals[1]), 2))
         rows += _range_total_rows(calls, slug)
     if not categories:
@@ -1351,10 +1352,34 @@ _FORECAST_REVENUE_COLUMNS = ["type", "month", "customer", "product", "cartons", 
 _MAX_FORECAST_SERIES_IN_TABLE = 9
 
 
-def _customer_label(name: str | None) -> str:
-    """'sheng_siong' -> 'Sheng Siong', the way the Forecast page writes it (retailerLabel)."""
+def _stored_customer_names() -> list[str]:
+    """Every customer's name as it was typed ('FairPrice', 'Sheng_Shiong').
+    Best effort: a label is only cosmetic, so a failed read falls back to the
+    slug rather than failing an answer whose figures are already in hand."""
+    try:
+        return [row["customer_name"] for row in inventory_service.list_customers()]
+    except Exception:
+        return []
+
+
+def _customer_label(name: str | None, stored: list[str] | None = None) -> str:
+    """
+    'fairprice' -> 'FairPrice', the customer's name as stored and as the
+    dashboard labels it (sellout_service._customer_label). The tools hand back
+    slugs, and capitalising them word by word read 'Fairprice' and 'Nhg'. A
+    slug and a stored name match through _customer_slug, so an alias
+    ('sheng_siong' for 'Sheng_Shiong') finds its customer too. `stored` lets a
+    caller labelling many rows read the customers once.
+    """
     if not name:
         return "All customers"
+    wanted = _customer_slug(name)
+    for stored_name in _stored_customer_names() if stored is None else stored:
+        if _customer_slug(stored_name) == wanted:
+            return stored_name.replace("_", " ")
+    # No customer record: keep a name that already has its capitals, else read the slug as words.
+    if name != name.lower():
+        return name.replace("_", " ")
     return " ".join(word.capitalize() for word in re.split(r"[_\s]+", name) if word)
 
 
@@ -1378,6 +1403,7 @@ def _actual_type(month_to_date: bool) -> str:
 def _forecast_rows(raw: dict, with_revenue: bool) -> list[list[str]]:
     series = raw.get("series") or []
     month = forecast_summary.month_label
+    stored = _stored_customer_names()
     rows: list[list[str]] = []
     if len(series) <= _MAX_FORECAST_SERIES_IN_TABLE:
         # Every series' actuals first, then every forecast, so the two read as
@@ -1386,7 +1412,7 @@ def _forecast_rows(raw: dict, with_revenue: bool) -> list[list[str]]:
             product = f"{item['product_name']} ({item['sku']})" if item.get("sku") else item["product_name"]
             for entry in item["actuals"]:
                 rows.append([
-                    _actual_type(entry["month_to_date"]), month(entry["month"]), _customer_label(item["customer"]),
+                    _actual_type(entry["month_to_date"]), month(entry["month"]), _customer_label(item["customer"], stored),
                     product, _cartons_cell(entry["cartons"]),
                     _revenue_cell(entry.get("revenue")) if with_revenue else "—", "—",
                 ])
@@ -1401,14 +1427,14 @@ def _forecast_rows(raw: dict, with_revenue: bool) -> list[list[str]]:
                 else:
                     sixth = "—"
                 rows.append([
-                    "Forecast", month(entry["month"]), _customer_label(item["customer"]),
+                    "Forecast", month(entry["month"]), _customer_label(item["customer"], stored),
                     product, _cartons_cell(entry["cartons"]), sixth, confidence,
                 ])
 
     totals = raw.get("monthly_totals") or []
     if totals:
         # The page shows no range or confidence for a total: neither adds up across SKUs.
-        customer = _customer_label(raw.get("customer"))
+        customer = _customer_label(raw.get("customer"), stored)
         product = raw.get("product_name") or "All SKUs"
         for total in totals:
             if total.get("actual_cartons") is not None:
@@ -1429,7 +1455,7 @@ def _forecast_rows(raw: dict, with_revenue: bool) -> list[list[str]]:
     if len(forecast_months) > 1 and raw.get("forecast_total_cartons") is not None:
         rows.append([
             "Forecast total", f"{month(forecast_months[0])} – {month(forecast_months[-1])}",
-            _customer_label(raw.get("customer")), raw.get("product_name") or "All SKUs",
+            _customer_label(raw.get("customer"), stored), raw.get("product_name") or "All SKUs",
             _cartons_cell(raw["forecast_total_cartons"]),
             _revenue_cell(raw.get("forecast_total_revenue")) if with_revenue else "—", "—",
         ])

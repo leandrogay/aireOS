@@ -16,6 +16,18 @@ from pptx.util import Inches
 from app.services import ai_models, assistant, forecast_summary, inventory_service, promotion_service, sellout_service
 
 
+@pytest.fixture(autouse=True)
+def _stored_customers(monkeypatch):
+    """Customer names as they are stored, read by every table/chart label.
+    Without it a label would try Cloud SQL; tests that need other customers
+    patch list_customers again."""
+    monkeypatch.setattr(inventory_service, "list_customers", lambda: [
+        {"customer_id": 1, "customer_name": "FairPrice"},
+        {"customer_id": 2, "customer_name": "NHG"},
+        {"customer_id": 3, "customer_name": "Sheng_Shiong"},
+    ])
+
+
 def _freeze_clock(monkeypatch):
     monkeypatch.setattr(
         assistant, "datetime", SimpleNamespace(datetime=FrozenDatetime, date=datetime.date,
@@ -625,8 +637,8 @@ def test_customers_compared_over_three_months_get_each_month_side_by_side():
 
     assert chart["chart_categories"] == ["June 2026", "July 2026", "August 2026"]
     assert chart["chart_series"] == [
-        {"label": "Fairprice", "values": [27543.25, 27097.86, 24052.28]},
-        {"label": "Nhg", "values": [9816.5, 12000.5, 28155.5]},
+        {"label": "FairPrice", "values": [27543.25, 27097.86, 24052.28]},
+        {"label": "NHG", "values": [9816.5, 12000.5, 28155.5]},
     ]
 
 
@@ -644,7 +656,7 @@ def test_one_month_totals_for_one_customer_do_not_hide_both_customers_months():
 
     chart = assistant._build_chart(sources, "fairprice")
 
-    assert [series["label"] for series in chart["chart_series"]] == ["Fairprice", "Nhg"]
+    assert [series["label"] for series in chart["chart_series"]] == ["FairPrice", "NHG"]
     assert chart["chart_categories"] == ["June 2026", "July 2026", "August 2026"]
 
 
@@ -669,8 +681,8 @@ def test_a_month_read_twice_for_one_customer_is_counted_once():
 
     assert chart["chart_categories"] == ["June 2026", "July 2026", "August 2026"]
     assert chart["chart_series"] == [
-        {"label": "Fairprice", "values": [27543.25, 27097.86, 24052.28]},
-        {"label": "Nhg", "values": [9816.5, 12000.5, 28155.5]},
+        {"label": "FairPrice", "values": [27543.25, 27097.86, 24052.28]},
+        {"label": "NHG", "values": [9816.5, 12000.5, 28155.5]},
     ]
 
 
@@ -686,8 +698,8 @@ def test_a_month_not_read_for_every_customer_is_left_out_rather_than_shown_as_ze
 
     assert chart["chart_categories"] == ["August 2026"]
     assert chart["chart_series"] == [
-        {"label": "Fairprice", "values": [24052.28]},
-        {"label": "Nhg", "values": [28155.5]},
+        {"label": "FairPrice", "values": [24052.28]},
+        {"label": "NHG", "values": [28155.5]},
     ]
 
 
@@ -701,7 +713,7 @@ def test_separate_channel_reads_for_one_customer_add_up():
 
     chart = assistant._build_chart(sources, "fairprice")
 
-    assert chart["chart_series"][0] == {"label": "Fairprice", "values": [24052.28]}
+    assert chart["chart_series"][0] == {"label": "FairPrice", "values": [24052.28]}
 
 
 def test_a_breakdown_of_another_channel_does_not_replace_the_totals_chart(monkeypatch):
@@ -1146,10 +1158,10 @@ def test_forecast_tool_passes_names_through_and_builds_labelled_table(monkeypatc
     assert result["has_table"] is True
     assert result["table_columns"] == ["type", "month", "customer", "product", "cartons", "range_80", "confidence"]
     assert result["table_rows"] == [
-        ["Actual", "Aug 2026", "Fairprice", "Aire Ultra Tape L (13271338)", "88", "—", "—"],
-        ["Forecast", "Sep 2026", "Fairprice", "Aire Ultra Tape L (13271338)", "52", "32 to 79", "Low"],
-        ["Forecast", "Oct 2026", "Fairprice", "Aire Ultra Tape L (13271338)", "1,052", "(2) to 1,080", "Low"],
-        ["Forecast total", "Sep 2026 – Oct 2026", "Fairprice", "Aire Ultra Tape L", "1,104", "—", "—"],
+        ["Actual", "Aug 2026", "FairPrice", "Aire Ultra Tape L (13271338)", "88", "—", "—"],
+        ["Forecast", "Sep 2026", "FairPrice", "Aire Ultra Tape L (13271338)", "52", "32 to 79", "Low"],
+        ["Forecast", "Oct 2026", "FairPrice", "Aire Ultra Tape L (13271338)", "1,052", "(2) to 1,080", "Low"],
+        ["Forecast total", "Sep 2026 – Oct 2026", "FairPrice", "Aire Ultra Tape L", "1,104", "—", "—"],
     ]
     assert result["table_note"] == (
         "Forecast run: 5 Oct 2026, 1:14 am SGT · Actuals loaded: 6 Oct 2026, 1:05 pm SGT"
@@ -1310,7 +1322,7 @@ def test_forecast_with_many_series_shows_only_month_totals(monkeypatch):
 
     result, _, _ = _ask_forecast(monkeypatch, "Forecast for Sep 2026: 520 cartons.", result=forecast)
 
-    assert result["table_rows"] == [["Forecast total", "Sep 2026", "Fairprice", "All SKUs", "520", "—", "—"]]
+    assert result["table_rows"] == [["Forecast total", "Sep 2026", "FairPrice", "All SKUs", "520", "—", "—"]]
 
 
 def test_forecast_tool_bad_arguments_are_a_tool_error_not_a_crash(monkeypatch):
@@ -1743,10 +1755,10 @@ def test_forecast_revenue_question_shows_revenue_column_instead_of_range(monkeyp
 
     assert result["table_columns"] == ["type", "month", "customer", "product", "cartons", "revenue", "confidence"]
     assert result["table_rows"] == [
-        ["Actual", "Aug 2026", "Fairprice", "Aire Ultra Tape L (13271338)", "88", "$712.30", "—"],
-        ["Forecast", "Sep 2026", "Fairprice", "Aire Ultra Tape L (13271338)", "52", "$441.79", "Low"],
-        ["Forecast", "Oct 2026", "Fairprice", "Aire Ultra Tape L (13271338)", "1,052", "$8,937.81", "Low"],
-        ["Forecast total", "Sep 2026 – Oct 2026", "Fairprice", "Aire Ultra Tape L", "1,104", "$9,379.60", "—"],
+        ["Actual", "Aug 2026", "FairPrice", "Aire Ultra Tape L (13271338)", "88", "$712.30", "—"],
+        ["Forecast", "Sep 2026", "FairPrice", "Aire Ultra Tape L (13271338)", "52", "$441.79", "Low"],
+        ["Forecast", "Oct 2026", "FairPrice", "Aire Ultra Tape L (13271338)", "1,052", "$8,937.81", "Low"],
+        ["Forecast total", "Sep 2026 – Oct 2026", "FairPrice", "Aire Ultra Tape L", "1,104", "$9,379.60", "—"],
     ]
     assert "realised price per carton" in result["table_note"]
 
@@ -1782,6 +1794,25 @@ def test_customer_nicknames_resolve_to_the_stored_customer(typed):
 def test_unknown_names_pass_through_unchanged():
     assert assistant._customer_slug("Sheng Siong") == "sheng_siong"
     assert assistant._customer_slug("Giant") == "giant"
+
+
+@pytest.mark.parametrize("slug, label", [("fairprice", "FairPrice"), ("nhg", "NHG"), ("sheng_siong", "Sheng Shiong")])
+def test_customer_label_keeps_the_stored_names_capitals(slug, label):
+    assert assistant._customer_label(slug) == label
+
+
+def test_customer_label_without_a_customer_record_reads_the_name_as_given():
+    assert assistant._customer_label("giant_online") == "Giant Online"
+    assert assistant._customer_label("ColdStorage") == "ColdStorage"
+
+
+def test_customer_label_falls_back_when_customers_cannot_be_read(monkeypatch):
+    def unavailable():
+        raise RuntimeError("database down")
+
+    monkeypatch.setattr(inventory_service, "list_customers", unavailable)
+
+    assert assistant._customer_label("fairprice") == "Fairprice"
 
 
 def test_forecast_tool_gets_the_resolved_customer_not_the_nickname(monkeypatch):
@@ -4413,7 +4444,7 @@ def test_a_range_total_for_several_customers_shows_one_bar_per_customer():
 
     chart = assistant._build_chart(sources, "fairprice")
 
-    assert chart["chart_categories"] == ["Fairprice", "Nhg", "Sheng Siong"]
+    assert chart["chart_categories"] == ["FairPrice", "NHG", "Sheng Shiong"]
     assert chart["chart_series"] == [{"label": "Revenue", "values": [24052.28, 28155.5, 0.0]}]
 
 
@@ -4429,8 +4460,8 @@ def test_a_comparison_across_several_customers_puts_them_side_by_side():
 
     assert chart["chart_categories"] == ["Previous", "Current"]
     assert chart["chart_series"] == [
-        {"label": "Fairprice", "values": [1.0, 24052.28]},
-        {"label": "Nhg", "values": [1.0, 28155.5]},
+        {"label": "FairPrice", "values": [1.0, 24052.28]},
+        {"label": "NHG", "values": [1.0, 28155.5]},
     ]
 
 
@@ -4467,8 +4498,8 @@ def test_a_monthly_breakdown_for_several_customers_puts_each_month_side_by_side(
 
     assert chart["chart_categories"] == ["May 2026", "June 2026", "July 2026"]
     assert chart["chart_series"] == [
-        {"label": "Nhg", "values": [0.0, 9816.5, 12000.5]},
-        {"label": "Fairprice", "values": [16616.02, 17609.91, 17639.95]},
+        {"label": "NHG", "values": [0.0, 9816.5, 12000.5]},
+        {"label": "FairPrice", "values": [16616.02, 17609.91, 17639.95]},
     ]
 
 
@@ -4539,8 +4570,8 @@ def test_sales_over_months_shows_a_chart_and_a_table_of_the_same_figures():
     assert chart["has_table"] is True
     assert chart["table_columns"] == ["period", "customer", "units", "revenue"]
     assert chart["table_rows"] == [
-        ["June 2026", "Fairprice", "10", "$100.50"],
-        ["July 2026", "Fairprice", "1,200", "$1,250.00"],
+        ["June 2026", "FairPrice", "10", "$100.50"],
+        ["July 2026", "FairPrice", "1,200", "$1,250.00"],
     ]
 
 
@@ -4553,7 +4584,7 @@ def test_sales_table_adds_offline_and_online_like_the_chart():
     chart = assistant._build_chart([("get_sales_summary", {"customer": "fairprice"}, raw)], "fairprice")
 
     assert chart["chart_series"][0]["values"] == [150.5]
-    assert chart["table_rows"] == [["June 2026", "Fairprice", "15", "$150.50"]]
+    assert chart["table_rows"] == [["June 2026", "FairPrice", "15", "$150.50"]]
 
 
 def test_sales_table_names_the_channel_product_and_store_only_when_asked_about():
@@ -4562,7 +4593,7 @@ def test_sales_table_names_the_channel_product_and_store_only_when_asked_about()
     chart = assistant._build_chart([call], "fairprice")
 
     assert chart["table_columns"] == ["period", "customer", "channel", "product", "store", "units", "revenue"]
-    assert chart["table_rows"] == [["June 2026", "Fairprice", "Offline", "SKU1", "S01", "10", "$100.50"]]
+    assert chart["table_rows"] == [["June 2026", "FairPrice", "Offline", "SKU1", "S01", "10", "$100.50"]]
 
 
 def test_customers_compared_by_month_get_a_row_each_month():
@@ -4570,12 +4601,12 @@ def test_customers_compared_by_month_get_a_row_each_month():
 
     chart = assistant._build_chart(sources, "fairprice")
 
-    assert chart["chart_series"][1] == {"label": "Nhg", "values": [0.0, 1250.0]}
+    assert chart["chart_series"][1] == {"label": "NHG", "values": [0.0, 1250.0]}
     assert chart["table_rows"] == [
-        ["June 2026", "Fairprice", "10", "$100.50"],
-        ["June 2026", "Nhg", "0", "$0.00"],
-        ["July 2026", "Fairprice", "1,200", "$1,250.00"],
-        ["July 2026", "Nhg", "1,200", "$1,250.00"],
+        ["June 2026", "FairPrice", "10", "$100.50"],
+        ["June 2026", "NHG", "0", "$0.00"],
+        ["July 2026", "FairPrice", "1,200", "$1,250.00"],
+        ["July 2026", "NHG", "1,200", "$1,250.00"],
     ]
 
 
@@ -4586,8 +4617,8 @@ def test_a_comparison_table_shows_the_dates_of_both_periods():
 
     assert chart["chart_categories"] == ["Previous", "Current"]
     assert chart["table_rows"] == [
-        ["Previous (2026-07-01 to 2026-07-31)", "Fairprice", "90", "$900.00"],
-        ["Current (2026-08-01 to 2026-08-31)", "Fairprice", "100", "$1,000.00"],
+        ["Previous (2026-07-01 to 2026-07-31)", "FairPrice", "90", "$900.00"],
+        ["Current (2026-08-01 to 2026-08-31)", "FairPrice", "100", "$1,000.00"],
     ]
 
 
@@ -4600,10 +4631,10 @@ def test_a_comparison_across_customers_has_both_periods_for_each():
     chart = assistant._build_chart(sources, "fairprice")
 
     assert [row[1:] for row in chart["table_rows"]] == [
-        ["Fairprice", "90", "$900.00"],
-        ["Fairprice", "100", "$1,000.00"],
-        ["Nhg", "2", "$20.00"],
-        ["Nhg", "3", "$30.00"],
+        ["FairPrice", "90", "$900.00"],
+        ["FairPrice", "100", "$1,000.00"],
+        ["NHG", "2", "$20.00"],
+        ["NHG", "3", "$30.00"],
     ]
 
 
@@ -4623,7 +4654,7 @@ def test_a_range_total_has_a_one_row_table_with_its_dates():
     chart = assistant._build_chart([_comparison_call("fairprice", (0.0, 0.0), (1000.0, 100.0))], "fairprice")
 
     assert chart["chart_series"][0]["values"] == [1000.0]
-    assert chart["table_rows"] == [["2026-08-01 to 2026-08-31", "Fairprice", "100", "$1,000.00"]]
+    assert chart["table_rows"] == [["2026-08-01 to 2026-08-31", "FairPrice", "100", "$1,000.00"]]
 
 
 def test_a_range_total_across_customers_has_a_row_each():
@@ -4631,7 +4662,7 @@ def test_a_range_total_across_customers_has_a_row_each():
 
     chart = assistant._build_chart(sources, "fairprice")
 
-    assert [row[1:] for row in chart["table_rows"]] == [["Fairprice", "100", "$1,000.00"], ["Nhg", "3", "$30.00"]]
+    assert [row[1:] for row in chart["table_rows"]] == [["FairPrice", "100", "$1,000.00"], ["NHG", "3", "$30.00"]]
 
 
 def test_a_long_range_total_broken_into_months_has_a_row_each_month(monkeypatch):
