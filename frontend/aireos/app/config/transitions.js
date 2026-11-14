@@ -144,6 +144,17 @@ export const SIDEBAR = {
   highlight: CARD_REVEAL.layout,
 };
 
+// The Scenario builder's right-hand panel (components/scenario/ScenarioPanel)
+// collapsing to its strip and opening again: its width moves on the side
+// bar's spring. The strip's and the panel's contents swap one after the other
+// (the old fades out on EXIT_FADE, then the new fades in on `contentIn`), so
+// neither shows squeezed into the other's width.
+export const SIDE_PANEL = {
+  width: SIDEBAR.width,
+  contentOut: EXIT_FADE,
+  contentIn: { duration: MOTION.control, ease: 'easeOut' },
+};
+
 // The assistant (components/assistant/AssistantWidget). The panel pops out of
 // the chat button's corner on a snappier spring than a card (it is a popup,
 // small and close to the pointer) and shrinks back on EXIT_FADE's timing; the
