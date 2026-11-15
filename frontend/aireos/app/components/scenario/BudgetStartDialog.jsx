@@ -26,10 +26,15 @@ function units(value) {
  *   history: { version: number, name: string | null, is_official: boolean, total_units: number, locked_at: string, locked_by: string }[],
  *   entryCount: number,
  *   onCancel: () => void,
- *   onStarted: () => void,
+ *   onStarted: (version: number | null) => void,
+ *   beforeAdding?: boolean,
+ *   blockedReason?: string | null,
  * }} props
+ *
+ * `beforeAdding`: asked before a year's first entry, so it says the new entry
+ * goes on top of what is picked. onStarted gets the version copied (null = scratch).
  */
-export default function BudgetStartDialog({ open, year, history, entryCount, onCancel, onStarted }) {
+export default function BudgetStartDialog({ open, year, history, entryCount, onCancel, onStarted, beforeAdding = false, blockedReason = null }) {
   const [choice, setChoice] = useState(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(null);
@@ -46,9 +51,10 @@ export default function BudgetStartDialog({ open, year, history, entryCount, onC
     setPending(true);
     setError(null);
     try {
-      await startBudget(year, selected === SCRATCH ? null : selected);
+      const version = selected === SCRATCH ? null : selected;
+      await startBudget(year, version);
       setChoice(null);
-      onStarted();
+      onStarted(version);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -70,10 +76,13 @@ export default function BudgetStartDialog({ open, year, history, entryCount, onC
       tone="default"
       open={open}
       title={`Start budget ${year} from…`}
-      description={`${entryCount ? `This replaces the ${entryCount} saved budget ${entryCount === 1 ? 'entry' : 'entries'} for ${year}. ` : ''}Locked versions never change; lock again to save the result as a new version.`}
+      description={beforeAdding
+        ? `${entryCount ? `This replaces the ${entryCount} saved budget ${entryCount === 1 ? 'entry' : 'entries'} for ${year}. ` : ''}Your new entry goes on top of what you start from: a locked version's growth, blocks and promotions to build on, or the Initial Yearly Forecast alone. Locked versions never change.`
+        : `${entryCount ? `This replaces the ${entryCount} saved budget ${entryCount === 1 ? 'entry' : 'entries'} for ${year}. ` : ''}Locked versions never change; lock again to save the result as a new version.`}
       confirmLabel={picked ? `Start from version ${picked.version}` : 'Start from scratch'}
       pendingLabel="Starting…"
       isPending={pending}
+      confirmDisabled={Boolean(blockedReason)}
       onConfirm={start}
       onCancel={close}
     >
@@ -90,6 +99,7 @@ export default function BudgetStartDialog({ open, year, history, entryCount, onC
           </label>
         ))}
       </fieldset>
+      {blockedReason ? <p role="alert" className="text-sm text-destructive">{blockedReason}</p> : null}
       {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
     </ConfirmDialog>
   );

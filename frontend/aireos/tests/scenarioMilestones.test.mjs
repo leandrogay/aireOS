@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { milestoneBreakdown, milestoneTotals } from '../app/utils/scenarioMilestones.js';
+import { milestoneBreakdown, milestoneSpotlightAreas, milestoneTotals } from '../app/utils/scenarioMilestones.js';
 
 const MARCH = '2026-03-01';
 const RANGES = { 'Pants M': 'Pants', 'Tape L': 'Tape' };
@@ -61,4 +61,27 @@ test('the breakdown adds each milestone up over the months it touches', () => {
   assert.equal(totals.actual, 3000);
   assert.equal(Math.round(totals.without), 3750);
   assert.deepEqual(totals.milestones.map((m) => [m.name, Math.round(m.units)]), [['Flood', -750]]);
+});
+
+// ---- spotlight --------------------------------------------------------------------
+
+test('spotlighting the actual without milestones lights each milestone month from 0', () => {
+  const points = [{ x: 0 }, { x: 1, milestones: { actual: 2000, without: 2500 } }];
+
+  assert.deepEqual(milestoneSpotlightAreas(points, 'withoutMilestones'),
+    [{ key: 'withoutMilestones-1', x1: 0.65, x2: 1.35, y1: 0, y2: 2500, decrease: false }]);
+});
+
+test('spotlighting milestones lights the gap to the actual, a decrease when they took units away', () => {
+  const points = [{ x: 2, milestones: { actual: 2000, without: 2500 } }, { x: 3, milestones: { actual: 900, without: 700 } }];
+
+  assert.deepEqual(milestoneSpotlightAreas(points, 'milestones').map(({ y1, y2, decrease }) => [y1, y2, decrease]),
+    [[2000, 2500, true], [700, 900, false]]);
+});
+
+test('another part or no spotlight lights no milestone month', () => {
+  const points = [{ x: 1, milestones: { actual: 2000, without: 2500 } }];
+
+  assert.deepEqual(milestoneSpotlightAreas(points, 'blocks'), []);
+  assert.deepEqual(milestoneSpotlightAreas(points, null), []);
 });

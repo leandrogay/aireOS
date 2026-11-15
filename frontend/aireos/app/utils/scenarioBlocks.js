@@ -348,7 +348,8 @@ export function scenarioBlockFromApi(row) {
     endMonth: row.end_month,
     isActive: row.is_active,
   };
-  return { ...block, saved: savedFieldsOf(block) };
+  // When it was saved and last changed: Budget planning tells a copied entry from one added after (draftEntryOrigin).
+  return { ...block, createdAt: row.created_at ?? null, updatedAt: row.updated_at ?? null, saved: savedFieldsOf(block) };
 }
 
 /**

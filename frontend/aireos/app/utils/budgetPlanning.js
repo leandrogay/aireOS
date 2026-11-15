@@ -30,6 +30,57 @@ export function initialSplitProblem(data, rows) {
 }
 
 /**
+ * The customers with months Initial's breakdown kept whole (backend
+ * initial_breakdown `unsplit`: their sales changed after Initial was fixed),
+ * sorted, for the Breakdown tab's note.
+ */
+export function unsplitCustomers(data) {
+  return [...new Set((data?.unsplit ?? []).map((cell) => cell.customer_name).filter(Boolean))].sort();
+}
+
+// A locked budget row in the chart's customer, SKU, range and months.
+function inBudgetScope(row, scope) {
+  if (scope.customerName && scope.customerName !== row.customer_name) return false;
+  if (scope.productName && scope.productName !== row.product_name) return false;
+  if (scope.skuRange && scope.skuRange !== row.sku_range) return false;
+  if (scope.startDate && row.month_year < scope.startDate.slice(0, 7) + '-01') return false;
+  if (scope.endDate && row.month_year > scope.endDate) return false;
+  return true;
+}
+
+/**
+ * What a locked version is made of each month in the chart's scope, for the
+ * Breakdown tab and the chart's layers when it is the line picked there:
+ * Map month_year -> { initial, baseline, carried, growth, blocks,
+ * promotionsAdded, promotionsReplaced, units } (backend budgets.read_budgets
+ * `parts`, worked out from the version's own inputs). Null when a row in
+ * scope has no parts (a version locked before they were saved).
+ *
+ * @param {object[]} rows one version's rows (GET /api/scenario/budgets?year=&version=)
+ * @param {object} scope as withBudgetPoints
+ */
+export function budgetVersionMonths(rows, scope = {}) {
+  const months = new Map();
+  for (const row of rows) {
+    if (!inBudgetScope(row, scope)) continue;
+    const parts = row.parts;
+    if (!parts || parts.baseline == null) return null;
+    const month = months.get(row.month_year) ?? { initial: 0, baseline: 0, carried: 0, growth: 0, blocks: 0,
+      promotionsAdded: 0, promotionsReplaced: 0, units: 0 };
+    month.initial += parts.initial;
+    month.baseline += parts.baseline;
+    month.carried += parts.carried;
+    month.growth += parts.growth;
+    month.blocks += parts.blocks;
+    month.promotionsAdded += parts.promotions_added;
+    month.promotionsReplaced += parts.promotions_replaced;
+    month.units += row.units;
+    months.set(row.month_year, month);
+  }
+  return months;
+}
+
+/**
  * Frozen budget totals in the requested scope, including months the rolling
  * forecast no longer reaches, as `key` on each point (the Budget line's
  * 'budget', or a compared version's key).
@@ -37,11 +88,7 @@ export function initialSplitProblem(data, rows) {
 export function withBudgetPoints(points, rows, scope = {}, makePoint = (month) => ({ month_year: month }), key = 'budget') {
   const totals = new Map();
   for (const row of rows) {
-    if (scope.customerName && scope.customerName !== row.customer_name) continue;
-    if (scope.productName && scope.productName !== row.product_name) continue;
-    if (scope.skuRange && scope.skuRange !== row.sku_range) continue;
-    if (scope.startDate && row.month_year < scope.startDate.slice(0, 7) + '-01') continue;
-    if (scope.endDate && row.month_year > scope.endDate) continue;
+    if (!inBudgetScope(row, scope)) continue;
     totals.set(row.month_year, (totals.get(row.month_year) ?? 0) + row.units);
   }
   const merged = new Map(points.map((point) => [point.month_year, { ...point, [key]: null }]));
@@ -167,4 +214,38 @@ export function budgetAsInitialMonths(months) {
     sell_in_initial: row.sell_in_budget ?? row.sell_in_initial,
     sell_out_initial: row.sell_out_budget ?? row.sell_out_initial,
   }));
+}
+
+/**
+ * What a year's Budget scenario builds on, in words, from its recorded start
+ * (GET /api/scenario/budgets?year= `draft`; null = not started):
+ * "version 2 · Test A", or "the Initial Yearly Forecast alone" for scratch.
+ *
+ * @param {{ started_from_version: number | null } | null} draft
+ * @param {{ version: number, name: string | null }[]} history
+ */
+export function draftBaseLabel(draft, history = []) {
+  if (!draft) return null;
+  if (draft.started_from_version == null) return 'the Initial Yearly Forecast alone';
+  const version = history.find((item) => item.version === draft.started_from_version);
+  return version ? budgetVersionLabel(version) : `Version ${draft.started_from_version}`;
+}
+
+/**
+ * Where a saved budget entry came from: 'copied' (made by "Start from…" with
+ * the draft: same transaction, so the same timestamp), 'edited' (copied, then
+ * changed or switched), 'added' (saved after the start), or null when the
+ * draft or the entry's times are unknown.
+ *
+ * @param {{ createdAt?: string | null, updatedAt?: string | null }} item
+ * @param {{ started_from_version: number | null, started_at: string } | null} draft
+ */
+export function draftEntryOrigin(item, draft) {
+  if (!draft || !item.createdAt) return null;
+  const started = Date.parse(draft.started_at);
+  const created = Date.parse(item.createdAt);
+  if (draft.started_from_version != null && created === started) {
+    return Date.parse(item.updatedAt ?? item.createdAt) > started ? 'edited' : 'copied';
+  }
+  return 'added';
 }

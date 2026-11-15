@@ -808,7 +808,8 @@ export function scenarioPromotionFromApi(row) {
     endDate: row.end_date ?? '',
     isActive: row.is_active,
   };
-  return { ...promotion, saved: savedFieldsOf(promotion) };
+  // When it was saved and last changed: Budget planning tells a copied entry from one added after (draftEntryOrigin).
+  return { ...promotion, createdAt: row.created_at ?? null, updatedAt: row.updated_at ?? null, saved: savedFieldsOf(promotion) };
 }
 
 /**

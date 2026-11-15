@@ -91,11 +91,27 @@ def test_published_rounding_is_reconciled_without_changing_initial(monkeypatch):
     assert split["baseline"] + split["carried"] == 110.4
 
 
-def test_revised_history_that_no_longer_matches_initial_is_reported_without_a_guessed_split(monkeypatch):
+def test_revised_history_that_no_longer_matches_initial_keeps_initial_whole_without_a_guessed_split(monkeypatch):
     _install(monkeypatch)
     result = service.get_initial_breakdown(2027, forecast_rows=[_initial(500)])
-    assert not result["rows"]
-    assert result["unavailable"][0]["sku"] == "A"
+    split, = result["rows"]
+    assert split["unsplit"] is True
+    assert (split["tier0"], split["baseline"], split["carried"]) == (500.0, 500.0, 0.0)
+    assert result["unsplit"][0]["sku"] == "A"
+    assert not result["unavailable"]
+
+
+def test_an_unsplit_month_locks_with_promotions_adding_on_top(monkeypatch):
+    from app.services.scenario import budget_calc
+    _install(monkeypatch)
+    year = [dict(_initial(500, month=f"2027-{month:02d}-01"), customer_name="FairPrice", product_name="A", sku_range="Pants")
+            for month in range(1, 13)]
+    splits = service.get_initial_breakdown(2027, forecast_rows=year)["rows"]
+    promotion = {"is_active": True, "customer_names": [], "sku_ranges": [], "sku": None, "excluded_pairs": [],
+                 "start_month": "2027-01-01", "end_month": "2027-01-01", "reference_uplift_pct": 10, "voucher": None}
+    frozen = budget_calc.calculate_budget(year, [], [promotion], 2027, splits)
+    assert frozen[0]["units"] == 550
+    assert frozen[1]["units"] == 500
 
 
 def test_missing_initial_origin_never_falls_back_to_current(monkeypatch):
@@ -129,6 +145,17 @@ def test_an_unconfigured_explicit_discount_uses_a_labelled_rule_estimate_without
     assert source["uplift_pct"] == 5
     assert source["level"] == "placeholder"
     assert source["discount_fallbacks"] == {"pct_off_33": 33.0}
+    assert not result["unavailable"]
+
+
+def test_an_unconfigured_buy_get_free_mechanic_uses_its_per_piece_discount(monkeypatch):
+    _, inputs = _install(monkeypatch, promotions=[_promotion(date(2026, 10, 1), "Buy 10 Get 10 Free")])
+    inputs["discount_in"] = lambda *_: None
+    result = service.get_initial_breakdown(2027, forecast_rows=[_initial()])
+    source = result["rows"][0]["recent"][-1]
+    assert source["level"] == "placeholder"
+    assert source["uplift_pct"] == 12
+    assert source["discount_fallbacks"] == {"b10g10": 50.0}
     assert not result["unavailable"]
 
 

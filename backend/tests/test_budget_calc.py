@@ -108,3 +108,10 @@ def test_an_incomplete_or_different_initial_split_blocks_lock_calculation():
         calculate_with_split(rows, [], [], 2027, splits[:-1])
     with pytest.raises(ValueError, match="no longer matches"):
         calculate_with_split(rows, [], [], 2027, [{**split, "tier0": 999} for split in splits])
+
+
+def test_each_row_keeps_what_its_promotions_add_and_the_carried_effect_they_replace():
+    rows, splits = carried_initial()
+    first = calculate_with_split(rows, [block()], [promo()], 2027, splits)[0]
+    assert first["parts"] == {"growth": 0, "blocks": 11, "promotions_added": 20, "promotions_replaced": 10, "promotions": 10}
+    assert first["units"] == first["forecast_initial"] + 11 + 10

@@ -150,6 +150,34 @@ export function withComposition(point, items, split = null) {
   };
 }
 
+const LAYER_KEYS = [...COMPOSITION_KEYS, 'decreaseLayer'];
+
+/**
+ * A chart point stacked by a locked budget version instead of the draft,
+ * when that version is the line picked in the Breakdown tab: the version's
+ * Initial split, growth, blocks and promotions (budgetPlanning.budgetVersionMonths)
+ * through withComposition, so its layers meet the version's own line. The
+ * point's lines (current, simulated) are left as they are; a month the
+ * version has nothing for has no layers.
+ *
+ * @param {object} point a chart point (it may carry the draft's layers)
+ * @param {{ initial: number, baseline: number, carried: number, growth: number, blocks: number,
+ *   promotionsAdded: number, promotionsReplaced: number, units: number } | undefined} month
+ */
+export function withVersionComposition(point, month) {
+  const bare = Object.fromEntries(Object.entries(point).filter(([key]) => !LAYER_KEYS.includes(key) && key !== 'breakdown'));
+  if (!month) return bare;
+  const items = [
+    { source: 'growth', deltaUnits: month.growth },
+    { source: 'blocks', deltaUnits: month.blocks },
+    { source: 'promotions', deltaUnits: month.promotionsAdded - month.promotionsReplaced,
+      addedUnits: month.promotionsAdded, replacedUnits: month.promotionsReplaced },
+  ];
+  const composed = withComposition({ ...bare, current: month.initial, simulated: month.units }, items,
+    { baseline: month.baseline, carried: month.carried });
+  return { ...composed, current: point.current, simulated: point.simulated };
+}
+
 /**
  * A count for a tiny label: 980, 12.4k, 1.2M.
  *
@@ -229,5 +257,6 @@ export function bandLabels(point, visible) {
 export function totalLabel(point, visible) {
   if (!point.breakdown || point.simulated == null) return null;
   const top = COMPOSITION_KEYS.filter((key) => visible[key]).reduce((sum, key) => sum + (point[key] ?? 0), 0);
-  return { value: Math.max(top, point.simulated), text: compactUnits(point.breakdown.simulated) };
+  // The breakdown's own total: the draft's Simulated, or a picked version's line (withVersionComposition).
+  return { value: Math.max(top, point.breakdown.simulated), text: compactUnits(point.breakdown.simulated) };
 }

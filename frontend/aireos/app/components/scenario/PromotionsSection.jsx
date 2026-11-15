@@ -12,11 +12,12 @@ import PromotionList from './PromotionList';
 
 /** Draft promotion editor; saved promotions are managed in the table below the chart. */
 export default function PromotionsSection({ editor, plan = 'scenario', customerOptions, skuRangeOptions, months,
-  rows = [], pairsFor, impacts, liveIndex = null, liveLoading = false, liveError = null }) {
+  rows = [], pairsFor, impacts, liveIndex = null, liveLoading = false, liveError = null, onRequestAdd = (add) => add(), draftNote = null, addBlocked = false }) {
   const { selected, panelItems, uplifts, saving, error, notice } = editor;
   const savedNow = selected ? upliftChangedSinceSaved(selected, liveIndex) : null;
   return (
     <div className="space-y-3">
+      {draftNote}
       <p className="text-[11px] text-deep-violet-blue/70">Plan a promotion and see its uplift on the chart.</p>
       <PromoHowItWorks />
       {uplifts.error ? <p role="alert" className="rounded-md border border-violet bg-lavander/50 px-2.5 py-2 text-xs text-deep-violet-blue">
@@ -33,7 +34,7 @@ export default function PromotionsSection({ editor, plan = 'scenario', customerO
           : 'No promotions yet. Add one to start simulating.'}
       </p> : null}
 
-      <button type="button" onClick={editor.add} disabled={!editor.canAdd || saving}
+      <button type="button" onClick={() => onRequestAdd(editor.add)} disabled={!editor.canAdd || saving || addBlocked}
         className="flex h-9 w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-deep-violet-blue/40 text-xs font-medium text-deep-violet-blue hover:bg-cream/60 disabled:cursor-not-allowed disabled:opacity-50">
         <Plus className="size-3.5" />{uplifts.loading ? 'Loading uplift values…' : 'Add promotion'}
       </button>

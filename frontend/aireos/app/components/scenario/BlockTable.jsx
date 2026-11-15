@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Pencil, Trash2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import StatusPill from '@/components/ui/StatusPill';
 import PaginatedDataTable from '@/components/ui/PaginatedDataTable';
 import ExpandableRow from '@/components/ui/ExpandableRow';
 import RowActions from '@/components/ui/RowActions';
@@ -115,6 +116,8 @@ function BlockDetails({ block, months, pairs, toggling, onTogglePair, baseLabel 
  *   onRefresh?: () => void,
  *   baseLabel?: string,
  *   closedIds?: Set<string>,          blocks whose months all have actual sales
+ *   draftNote?: ReactNode,            Budget planning: what the Budget scenario builds on (BudgetDraftNote)
+ *   originOf?: (block) => string | null, Budget planning: "From version 2" / "Added", under the name
  * }} props
  */
 export default function BlockTable({
@@ -135,6 +138,8 @@ export default function BlockTable({
   onRefresh,
   baseLabel = 'Current',
   closedIds = new Set(),
+  draftNote = null,
+  originOf = () => null,
 }) {
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState({ field: 'startMonth', direction: 'asc' });
@@ -174,6 +179,7 @@ export default function BlockTable({
       onRefresh={onRefresh}
       error={error}
       emptyMessage="No saved building blocks yet. Use Add building block to create one."
+      filters={draftNote}
       toolbar={
         <TableSearch
           value={search}
@@ -220,7 +226,8 @@ export default function BlockTable({
             isOpen={isExpanded(block.id)}
             onToggle={() => onToggleRow(block.id)}
             highlight={isEditing ? 'editing' : null}
-            primary={block.name}
+            primary={originOf(block) ? <span className="grid gap-0.5"><span>{block.name}</span>
+              <StatusPill tone={originOf(block) === 'Added' ? 'muted' : 'info'}>{originOf(block)}</StatusPill></span> : block.name}
             title={block.name}
             toggleLabel={isExpanded(block.id) ? `Hide details for ${block.name}` : `Show details for ${block.name}`}
             actions={<RowActions label={`Actions for ${block.name}`} actions={actions} />}

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { bandLabels, breakdownTotals, compactUnits, compositionOpacity, COMPOSITION_KEYS, isSpotlightLayer, totalLabel, withComposition } from '../app/utils/scenarioComposition.js';
+import { bandLabels, breakdownTotals, compactUnits, compositionOpacity, COMPOSITION_KEYS, isSpotlightLayer, totalLabel, withComposition, withVersionComposition } from '../app/utils/scenarioComposition.js';
 
 const ALL = Object.fromEntries(COMPOSITION_KEYS.map((key) => [key, true]));
 
@@ -198,4 +198,30 @@ test('spotlighting only changes opacity and keeps a selected band at its origina
   assert.equal(compositionOpacity({ key: 'blocksDownLayer', hatch: true }, 'blocks'), 1);
   assert.equal(compositionOpacity({ key: 'blocksLayer', opacity: 0.4 }, null), 0.4);
   assert.equal(JSON.stringify(result), before);
+});
+
+// ---- a locked version picked in the Breakdown tab ----------------------------------
+
+test('a picked version stacks its own parts up to its line, leaving the chart lines alone', () => {
+  const draft = withComposition({ month_year: '2027-01-01', current: 100, simulated: 150 }, [{ source: 'blocks', deltaUnits: 50 }]);
+  const month = { initial: 110, baseline: 100, carried: 10, growth: 11, blocks: 5, promotionsAdded: 20, promotionsReplaced: 10, units: 136 };
+  const result = withVersionComposition(draft, month);
+
+  assert.equal(result.current, 100);
+  assert.equal(result.simulated, 150);
+  assert.equal(result.growthLayer, 11);
+  assert.equal(result.blocksLayer, 5);
+  assert.equal(result.promotionsLayer, 20);
+  assert.equal(result.carriedLayer, 0);
+  assert.equal(result.breakdown.simulated, 136);
+  assert.equal(result.baselineLayer + result.growthLayer + result.blocksLayer + result.promotionsLayer, 136);
+});
+
+test('a month the picked version does not cover has no layers', () => {
+  const draft = withComposition({ month_year: '2027-01-01', current: 100, simulated: 150 }, [{ source: 'blocks', deltaUnits: 50 }]);
+  const result = withVersionComposition(draft, undefined);
+
+  assert.equal(result.blocksLayer, undefined);
+  assert.equal(result.breakdown, undefined);
+  assert.equal(result.simulated, 150);
 });

@@ -78,9 +78,12 @@ function Details({ promotion, months, uplifts, baseLabel }) {
   );
 }
 
-/** All saved promotions in this mode, independently of chart filters; the sidebar is their editor. */
+/**
+ * All saved promotions in this mode, independently of chart filters; the sidebar is their editor.
+ * In Budget planning, `draftNote` says what the Budget scenario builds on and `originOf` labels each row.
+ */
 export default function PromotionTable({ items, editor, impacts, monthsByItem, liveIndex, onEdit, onRefresh,
-  isLoading, error, baseLabel = 'Current', previewReady = true, showNotice = true }) {
+  isLoading, error, baseLabel = 'Current', previewReady = true, showNotice = true, draftNote = null, originOf = () => null }) {
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState({ field: 'startMonth', direction: 'asc' });
   const [page, setPage] = useState(1);
@@ -99,6 +102,7 @@ export default function PromotionTable({ items, editor, impacts, monthsByItem, l
         totalCount={allSaved.length} shownCount={matching.length} isLoading={isLoading}
         error={editor.error ?? error} onRefresh={() => { editor.clearError(); onRefresh?.(); }}
         emptyMessage="No saved promotions yet. Use Add promotion in the sidebar."
+        filters={draftNote}
         toolbar={<TableSearch value={search} onChange={(value) => { setSearch(value); setPage(1); }}
           label="Search saved promotions" placeholder="Search mechanic, customer, SKU range…" />}
         columns={COLUMNS} minWidth="73rem" sort={sort}
@@ -120,7 +124,8 @@ export default function PromotionTable({ items, editor, impacts, monthsByItem, l
               onToggle={() => expanded.toggle(promotion.id)} highlight={editing ? 'editing' : null}
               primary={<span className="grid gap-0.5"><span>{promotion.mechanicLabel}</span>
                 <span className="text-[11px] font-normal text-deep-violet-blue/60">{type}</span>
-                {dirty ? <StatusPill tone="info">Unsaved edits</StatusPill> : null}</span>}
+                {dirty ? <StatusPill tone="info">Unsaved edits</StatusPill> : null}
+                {originOf(promotion) ? <StatusPill tone={originOf(promotion) === 'Added' ? 'muted' : 'info'}>{originOf(promotion)}</StatusPill> : null}</span>}
               toggleLabel={`${expanded.isExpanded(promotion.id) ? 'Hide' : 'Show'} details for ${promotion.mechanicLabel}`}
               actions={<RowActions label={`Actions for ${promotion.mechanicLabel}`} actions={[
                 { key: 'edit', label: 'Edit', icon: Pencil, onSelect: () => onEdit(promotion), disabledReason: busy ? 'Saving changes' : editing ? 'Editing now' : undefined },

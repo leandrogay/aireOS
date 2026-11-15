@@ -135,11 +135,12 @@ def _create_fields(schema, item: dict) -> dict:
     return schema(**fields, plan="budget").model_dump()
 
 
-def start_budget(year: int, version: int | None) -> dict | None:
+def start_budget(year: int, version: int | None, started_by: str) -> dict | None:
     """
     Replace a year's budget entries in one transaction: with a copy of a
     locked version's entries, to edit and lock again, or with none (start
-    from scratch, Initial alone). Locked versions never change. None when
+    from scratch, Initial alone), and record what the draft was started from
+    (budget_drafts, migration 033). Locked versions never change. None when
     the version doesn't exist.
     """
     _validate_year(year)
@@ -166,11 +167,51 @@ def start_budget(year: int, version: int | None) -> dict | None:
             building_blocks.insert_building_block(conn, _create_fields(ScenarioBuildingBlockCreate, block))
         for promotion in promos:
             promotions.insert_scenario_promotion(conn, _create_fields(ScenarioPromotionCreate, promotion))
+        if common.has_budget_drafts(conn):
+            conn.execute(text("""
+                INSERT INTO budget_drafts (year, started_from_version, started_at, started_by)
+                VALUES (:year, :version, CURRENT_TIMESTAMP, :started_by)
+                ON CONFLICT (year) DO UPDATE SET started_from_version = EXCLUDED.started_from_version,
+                    started_at = EXCLUDED.started_at, started_by = EXCLUDED.started_by
+            """), {"year": year, "version": version, "started_by": started_by})
     return {"year": year, "version": version, "blocks": len(blocks), "promotions": len(promos)}
 
 
+def _version_parts(inputs: dict | None, rows: list[dict], year: int) -> dict | None:
+    # What one version's growth, blocks and promotions add to each cell, worked
+    # out again from the inputs its lock saved (budget_calc, as frozen), so the
+    # Breakdown tab can show it. None for a version saved without its split,
+    # or whose saved inputs can't be read back, so its line still shows.
+    if isinstance(inputs, str):
+        inputs = json.loads(inputs)
+    splits = ((inputs or {}).get("initial_breakdown") or {}).get("rows")
+    if not splits:
+        return None
+    by_cell = {(row["customer_id"], row["sku"], row["month_year"]): row for row in splits}
+    initial = {key: row["tier0"] for key, row in by_cell.items()}
+    base = [{"customer_id": row["customer_id"], "customer_name": row["customer_name"], "sku": row["sku"],
+             "product_name": row["product_name"], "sku_range": row["sku_range"], "month_year": row["month_year"],
+             "forecast_initial": initial.get((row["customer_id"], row["sku"], row["month_year"]))} for row in rows]
+    if any(row["forecast_initial"] is None for row in base):
+        return None
+    try:
+        frozen = calculate_budget(base, inputs.get("blocks", []), inputs.get("promotions", []), year, splits)
+    except (ValueError, KeyError, TypeError):
+        return None
+    # Initial's own split at the lock too, so the chart can stack the version like the draft.
+    return {key: {"initial": row["forecast_initial"], "baseline": by_cell[key]["baseline"], "carried": by_cell[key]["carried"],
+                  **row["parts"]}
+            for row in frozen for key in [(row["customer_id"], row["sku"], row["month_year"])]}
+
+
 def read_budgets(year: int | None = None, version: int | None = None) -> dict:
-    """History (deleted versions left out) plus rows of each year's official version, or of one version of a year."""
+    """
+    History (deleted versions left out) plus rows of each year's official
+    version, or of one version of a year; one version's rows also carry
+    `parts` (initial, growth, blocks, promotions) when its inputs allow.
+    With a year, also `draft`: what that year's draft was started from
+    (None until "Start from..." is used), and `drafts_enabled` (migration 033).
+    """
     if version is not None and year is None:
         raise ValueError("Choose a year when requesting a version.")
     with common.read_connection() as conn:
@@ -198,9 +239,24 @@ def read_budgets(year: int | None = None, version: int | None = None) -> dict:
             LEFT JOIN skus p ON p.sku = r.sku
             WHERE snapshot_id = ANY(:ids) ORDER BY r.month_year, r.customer_id, r.sku
         """), {"ids": list(chosen.values())}).mappings().all() if chosen else []
+        drafts_enabled = common.has_budget_drafts(conn)
+        draft = conn.execute(text(
+            "SELECT started_from_version, started_at, started_by FROM budget_drafts WHERE year = :year"
+        ), {"year": year}).mappings().first() if drafts_enabled and year is not None else None
+        # One version asked for (Budget planning's compare): its parts too.
+        parts = None
+        if version is not None and chosen:
+            inputs = conn.execute(text("SELECT inputs FROM budget_snapshots WHERE snapshot_id = :snapshot_id"),
+                                  {"snapshot_id": chosen[year]}).scalar()
+            locked = [{**dict(row), "month_year": row["month_year"].isoformat()} for row in rows]
+            parts = _version_parts(inputs, locked, year)
     return {"history": [{**item, "locked_at": common.iso(item["locked_at"]), "total_units": float(item.get("total_units") or 0)} for item in history],
+            "drafts_enabled": drafts_enabled,
+            "draft": {**dict(draft), "started_at": common.iso(draft["started_at"])} if draft else None,
             "rows": [{**dict(row), "customer_name": row["current_customer_name"], "product_name": row["current_product_name"],
-                      "sku_range": row["current_sku_range"], "month_year": row["month_year"].isoformat(), "units": float(row["units"])} for row in rows]}
+                      "sku_range": row["current_sku_range"], "month_year": row["month_year"].isoformat(), "units": float(row["units"]),
+                      **({"parts": parts.get((row["customer_id"], row["sku"], row["month_year"].isoformat()))} if parts is not None else {})}
+                     for row in rows]}
 
 
 def sellout_for_customer(conn: Connection, customer_id: int) -> dict[str, dict[date, float]]:

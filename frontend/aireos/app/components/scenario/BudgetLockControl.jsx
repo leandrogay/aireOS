@@ -10,7 +10,6 @@ import { glassInsetClass, glassRuleClass } from '@/components/ui/surfaceStyles';
 import BudgetStartDialog from '@/components/scenario/BudgetStartDialog';
 import { deleteBudgetVersion, lockBudget, setOfficialBudget } from '@/app/services/budgetsApi';
 import { MAX_COMPARED_VERSIONS, budgetVersionLabel } from '@/app/utils/budgetPlanning';
-import useBudgets from '@/hooks/useBudgets';
 import { formatDateTime } from '@/lib/formatDate';
 import { cn } from '@/lib/utils';
 
@@ -25,7 +24,7 @@ function units(value) {
  * a new lock changes only when it is made official.
  *
  * @param {{
- *   year: number, unsaved: number, loading: boolean, hasInitial: boolean, loadError?: string | null,
+ *   year: number, budgets: ReturnType<typeof import('@/hooks/useBudgets').default>, unsaved: number, loading: boolean, hasInitial: boolean, loadError?: string | null,
  *   entryCount: number,
  *   compared: { version: number, name: string | null }[],
  *   onComparedChange: (compared: { version: number, name: string | null }[]) => void,
@@ -33,8 +32,7 @@ function units(value) {
  *   onRestarted?: () => void,
  * }} props
  */
-export default function BudgetLockControl({ year, unsaved, loading, hasInitial, loadError, entryCount, compared, onComparedChange, compareError, onRestarted }) {
-  const budgets = useBudgets({ year });
+export default function BudgetLockControl({ year, budgets, unsaved, loading, hasInitial, loadError, entryCount, compared, onComparedChange, compareError, onRestarted }) {
   const history = budgets.data.history;
   const official = history.find((item) => item.is_official);
   const [locking, setLocking] = useState(false);
@@ -105,6 +103,15 @@ export default function BudgetLockControl({ year, unsaved, loading, hasInitial, 
           </Button>
         </div>
       </div>
+      {/* What the draft was started from (budget_drafts, migration 033). */}
+      {budgets.data.draft ? (
+        <p className={hintClass}>
+          Budget scenario started from {budgets.data.draft.started_from_version == null ? 'scratch' : `version ${budgets.data.draft.started_from_version}`}
+          {' '}· {formatDateTime(budgets.data.draft.started_at)} by {budgets.data.draft.started_by}
+        </p>
+      ) : budgets.data.drafts_enabled ? (
+        <p className={hintClass}>Not started yet: adding a block, promotion or growth asks what to start from.</p>
+      ) : null}
       <p>{unsaved ? 'Save or discard all drafts and edits before locking or starting over.' : 'Locks the whole year for every customer and SKU with an Initial forecast, regardless of chart filters.'}</p>
       {!hasInitial && !loading ? <p>No Initial forecast is available for {year} yet.</p> : null}
       <p className="text-deep-violet-blue/60">
