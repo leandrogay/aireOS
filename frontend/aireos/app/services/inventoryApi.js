@@ -51,14 +51,15 @@ export async function getInventorySkus() {
 /**
  * GET /api/inventory/overview
  *
- * Ending stock for every customer: `monthly` (one row per customer and
- * month, for the bar chart) and `skus` (one row per customer, SKU and
- * month, for the table). Months are 'YYYY-MM-01' strings.
+ * Ending stock for every customer: `customers` (each with its chart
+ * `color`), `monthly` (one row per customer and month, for the bar chart)
+ * and `skus` (one row per customer, SKU and month, for the table). Months
+ * are 'YYYY-MM-01' strings.
  *
  * `atRiskOnly` keeps only the SKUs that are on the at-risk list now.
  *
  * @param {{ customerIds?: number[], skus?: string[], startMonth?: string, endMonth?: string, atRiskOnly?: boolean }} [filters]
- * @returns {Promise<{ customers: object[], monthly: object[], skus: object[] }>}
+ * @returns {Promise<{ customers: Array<{ customer_id: number, customer_name: string, color: string | null }>, monthly: object[], skus: object[] }>}
  */
 export async function getInventoryOverview({ customerIds, skus, startMonth, endMonth, atRiskOnly } = {}, { signal } = {}) {
   return request(

@@ -5,7 +5,6 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import DataTable from '@/components/ui/DataTable';
 import ExpandableRow from '@/components/ui/ExpandableRow';
-import { cardClass } from '@/components/ui/formStyles';
 import MobileRecordCard from '@/components/ui/MobileRecordCard';
 import RecordCardList from '@/components/ui/RecordCardList';
 import InfoTooltip from '@/components/ui/InfoTooltip';
@@ -49,8 +48,8 @@ const COLUMNS = [
   { key: 'customer', label: 'Customer', width: '11rem' },
   { key: 'range', label: 'SKU range', width: '12rem' },
   { key: 'mechanic', label: 'Mechanic' },
-  { key: 'discount', label: 'Discount', width: '6rem', align: 'right' },
-  { key: 'uplift', label: 'Uplift', width: '10rem', align: 'right' },
+  { key: 'discount', label: 'Discount', width: '6rem' },
+  { key: 'uplift', label: 'Uplift', width: '10rem' },
   {
     key: 'basis',
     label: hinted(
@@ -66,18 +65,19 @@ const COLUMNS = [
       'Offline months where this mechanic was the only promotion for the whole month, so its own uplift can be measured. Hover a count for its years.',
     ),
     width: '7.5rem',
-    align: 'right',
   },
 ];
 
 const SKU_COLUMNS = [
   { key: 'product', label: 'SKU' },
-  { key: 'uplift', label: 'Uplift', width: '10rem', align: 'right' },
+  { key: 'uplift', label: 'Uplift', width: '10rem' },
   { key: 'basis', label: 'Basis', width: '17rem' },
 ];
 
 const tdClass = 'px-4 py-2.5';
-const numClass = 'text-right tabular-nums';
+// Left-aligned like the text columns, so every column reads from the same
+// edge; tabular digits still keep the figures even.
+const numClass = 'tabular-nums';
 const subClass = 'block text-xs font-normal text-deep-violet-blue/50';
 
 // A level's pill with its 'i' card: how the value was reached (anchor
@@ -104,9 +104,9 @@ function rangeLines(version) {
 /**
  * Uplift by mechanic: the worked-out uplift per customer x SKU range x
  * mechanic (backend promo_uplift_calc), read-only -- uplifts are never typed.
- * Laid out like the Nomenclatures list (MappingList): the heading and filters
- * in a card, then the shared list-table card (count, search, Refresh/Retry,
- * paging). The value is this month's anchor version, the next version is its
+ * One shared list-table card, like the other tables on the page: the
+ * heading and count, search and Refresh/Retry, then its filters (DataTable
+ * `filters`), the table and paging. The value is this month's anchor version, the next version is its
  * second line, and the Basis pill says how it was reached, with an 'i' card.
  * A range whose SKUs differ shows the spread and the least direct level;
  * every row opens to its SKUs. Any change to what is listed goes back to
@@ -169,16 +169,19 @@ export default function PromoUpliftTable({ rows, isLoading, error, onRefresh, me
   );
 
   return (
-    <>
-      <section className={cardClass}>
-        <h2 className="mb-2 flex items-center gap-1 text-sm font-medium text-deep-violet-blue">
+    <DataTable
+      label="Uplift by mechanic"
+      title={
+        <span className="inline-flex items-center gap-1">
           Uplift by mechanic
           <InfoTooltip label="About uplift">
             How much more or less a month with this mechanic sells than an ordinary month, worked out from past
             promotions. Used when planning future promotions in the Scenario builder, where it can be edited for one
             scenario.
           </InfoTooltip>
-        </h2>
+        </span>
+      }
+      filters={
         <PromoUpliftFilters
           filters={filters}
           customers={customerNames}
@@ -187,131 +190,129 @@ export default function PromoUpliftTable({ rows, isLoading, error, onRefresh, me
           onChange={changeFilter}
           onReset={resetFilters}
         />
-      </section>
-
-      <DataTable
-        label="Uplift by mechanic"
-        noun="uplift"
-        totalCount={withVersions.length}
-        shownCount={matching.length}
-        isLoading={isLoading}
-        error={error}
-        onRefresh={onRefresh}
-        emptyMessage="No uplifts worked out yet. Use Recalculate to work them out."
-        toolbar={
-          <TableSearch
-            value={search}
-            onChange={changeSearch}
-            label="Search uplifts"
-            placeholder="Search customer, SKU range, mechanic…"
-          />
-        }
-        footer={
-          <TablePagination
-            page={currentPage}
-            totalPages={totalPages}
-            pageSize={pageSize}
-            totalRows={matching.length}
-            onPageChange={setPage}
-            onPageSizeChange={changePageSize}
-          />
-        }
-        columns={COLUMNS}
-        minWidth="72rem"
-        emptyState={noMatches || null}
-        mobileContent={
-          <RecordCardList>
-            {pageRows.map((row) => {
-              const [current] = row.versions;
-              const upcoming = upcomingText(row);
-              const counts = moments ? momentCounts(row, moments.moments) : null;
-              return (
-                <MobileRecordCard
-                  key={`${row.customer_id}:${row.sku_range}:${row.mechanic_key}`}
-                  title={row.mechanic_label}
-                  subtitle={`${customerLabel(row.customer_name)} · ${row.sku_range}`}
-                  badge={<Basis level={current.level} lines={rangeLines(current)} />}
-                  fields={[
-                    { label: 'Uplift', value: upcoming ? <>{upliftText(current)}<span className={subClass}>{upcoming}</span></> : upliftText(current) },
-                    { label: 'Discount', value: row.discount_pct != null ? `${row.discount_pct}%` : '—' },
-                    { label: 'Moments', value: counts ? counts.total : '—' },
-                  ]}
-                >
-                  {skusDiffer(current) ? (
-                    <ul className="mt-3 grid gap-1.5 border-t border-lavander/70 pt-2 text-xs text-deep-violet-blue">
-                      {current.skus.map((sku) => (
-                        <li key={sku.sku} className="flex min-w-0 items-center justify-between gap-2">
-                          <span className="min-w-0 truncate">{sku.product_name ?? sku.sku}</span>
-                          <span className="inline-flex shrink-0 items-center gap-1.5">
-                            <span className="tabular-nums">{sku.uplift_pct != null ? formatPct(sku.uplift_pct) : '—'}</span>
-                            <Basis level={sku.level} lines={explanationLines(sku, current.anchor)} />
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
-                </MobileRecordCard>
-              );
-            })}
-          </RecordCardList>
-        }
-      >
-        {pageRows.map((row) => {
-          const key = `${row.customer_id}:${row.sku_range}:${row.mechanic_key}`;
-          const [current] = row.versions;
-          const upcoming = upcomingText(row);
-          const counts = moments ? momentCounts(row, moments.moments) : null;
-          const name = customerLabel(row.customer_name);
-          const isOpen = expanded.isExpanded(key);
-          return (
-            <ExpandableRow
-              key={key}
-              columnCount={COLUMNS.length}
-              isOpen={isOpen}
-              onToggle={() => expanded.toggle(key)}
-              primary={name}
-              title={name}
-              toggleLabel={
-                isOpen
-                  ? `Hide SKUs for ${name} · ${row.sku_range} · ${row.mechanic_label}`
-                  : `Show SKUs for ${name} · ${row.sku_range} · ${row.mechanic_label}`
-              }
-              details={
-                <TableGrid variant="nested" columns={SKU_COLUMNS} inset={EXPANDED_ROW_INSET} minWidth="40rem">
-                  {current.skus.map((sku) => (
-                    <TableRow key={sku.sku} className="h-11 border-b border-lavander/80 last:border-b-0">
-                      <td className={cn(tdClass, 'truncate')} title={`${sku.product_name ?? ''} · ${sku.sku}`}>
-                        {sku.product_name ?? sku.sku}
-                        <span className={subClass}>{sku.sku}</span>
-                      </td>
-                      <td className={cn(tdClass, numClass)}>
-                        {sku.uplift_pct != null ? formatPct(sku.uplift_pct) : '—'}
-                      </td>
-                      <td className={tdClass}>
-                        <Basis level={sku.level} lines={explanationLines(sku, current.anchor)} />
-                      </td>
-                    </TableRow>
-                  ))}
-                </TableGrid>
-              }
-            >
-              <td className={cn(tdClass, 'truncate')} title={row.sku_range}>{row.sku_range}</td>
-              <td className={cn(tdClass, 'truncate font-medium')} title={row.mechanic_label}>{row.mechanic_label}</td>
-              <td className={cn(tdClass, numClass)}>{row.discount_pct != null ? `${row.discount_pct}%` : '—'}</td>
-              <td className={cn(tdClass, numClass)}>
-                {upliftText(current)}
-                {upcoming ? <span className={subClass}>{upcoming}</span> : null}
-              </td>
-              <td className={tdClass}>
-                <Basis level={current.level} lines={rangeLines(current)} />
-              </td>
-              <td className={cn(tdClass, numClass)}>
-                {counts ? <span title={formatMomentCounts(counts)}>{counts.total}</span> : '—'}
-              </td>
-            </ExpandableRow>
-          );
-        })}
-      </DataTable>
-    </>
+      }
+      noun="uplift"
+      totalCount={withVersions.length}
+      shownCount={matching.length}
+      isLoading={isLoading}
+      error={error}
+      onRefresh={onRefresh}
+      emptyMessage="No uplifts worked out yet. Use Recalculate to work them out."
+      toolbar={
+        <TableSearch
+          value={search}
+          onChange={changeSearch}
+          label="Search uplifts"
+          placeholder="Search customer, SKU range, mechanic…"
+        />
+      }
+      footer={
+        <TablePagination
+          page={currentPage}
+          totalPages={totalPages}
+          pageSize={pageSize}
+          totalRows={matching.length}
+          onPageChange={setPage}
+          onPageSizeChange={changePageSize}
+        />
+      }
+      columns={COLUMNS}
+      minWidth="72rem"
+      emptyState={noMatches || null}
+      mobileContent={
+        <RecordCardList>
+          {pageRows.map((row) => {
+            const [current] = row.versions;
+            const upcoming = upcomingText(row);
+            const counts = moments ? momentCounts(row, moments.moments) : null;
+            return (
+              <MobileRecordCard
+                key={`${row.customer_id}:${row.sku_range}:${row.mechanic_key}`}
+                title={row.mechanic_label}
+                subtitle={`${customerLabel(row.customer_name)} · ${row.sku_range}`}
+                badge={<Basis level={current.level} lines={rangeLines(current)} />}
+                fields={[
+                  { label: 'Uplift', value: upcoming ? <>{upliftText(current)}<span className={subClass}>{upcoming}</span></> : upliftText(current) },
+                  { label: 'Discount', value: row.discount_pct != null ? `${row.discount_pct}%` : '—' },
+                  { label: 'Moments', value: counts ? counts.total : '—' },
+                ]}
+              >
+                {skusDiffer(current) ? (
+                  <ul className="mt-3 grid gap-1.5 border-t border-lavander/70 pt-2 text-xs text-deep-violet-blue">
+                    {current.skus.map((sku) => (
+                      <li key={sku.sku} className="flex min-w-0 items-center justify-between gap-2">
+                        <span className="min-w-0 truncate">{sku.product_name ?? sku.sku}</span>
+                        <span className="inline-flex shrink-0 items-center gap-1.5">
+                          <span className="tabular-nums">{sku.uplift_pct != null ? formatPct(sku.uplift_pct) : '—'}</span>
+                          <Basis level={sku.level} lines={explanationLines(sku, current.anchor)} />
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </MobileRecordCard>
+            );
+          })}
+        </RecordCardList>
+      }
+    >
+      {pageRows.map((row) => {
+        const key = `${row.customer_id}:${row.sku_range}:${row.mechanic_key}`;
+        const [current] = row.versions;
+        const upcoming = upcomingText(row);
+        const counts = moments ? momentCounts(row, moments.moments) : null;
+        const name = customerLabel(row.customer_name);
+        const isOpen = expanded.isExpanded(key);
+        return (
+          <ExpandableRow
+            key={key}
+            columnCount={COLUMNS.length}
+            isOpen={isOpen}
+            onToggle={() => expanded.toggle(key)}
+            primary={name}
+            title={name}
+            toggleLabel={
+              isOpen
+                ? `Hide SKUs for ${name} · ${row.sku_range} · ${row.mechanic_label}`
+                : `Show SKUs for ${name} · ${row.sku_range} · ${row.mechanic_label}`
+            }
+            details={
+              <TableGrid variant="nested" columns={SKU_COLUMNS} inset={EXPANDED_ROW_INSET} minWidth="40rem">
+                {current.skus.map((sku) => (
+                  <TableRow key={sku.sku} className="h-11 border-b border-lavander/80 last:border-b-0">
+                    <td className={cn(tdClass, 'truncate')} title={`${sku.product_name ?? ''} · ${sku.sku}`}>
+                      {sku.product_name ?? sku.sku}
+                      <span className={subClass}>{sku.sku}</span>
+                    </td>
+                    <td className={cn(tdClass, numClass)}>
+                      {sku.uplift_pct != null ? formatPct(sku.uplift_pct) : '—'}
+                    </td>
+                    <td className={tdClass}>
+                      <Basis level={sku.level} lines={explanationLines(sku, current.anchor)} />
+                    </td>
+                  </TableRow>
+                ))}
+              </TableGrid>
+            }
+          >
+            <td className={cn(tdClass, 'truncate')} title={row.sku_range}>{row.sku_range}</td>
+            <td className={cn(tdClass, 'truncate font-medium')} title={row.mechanic_label}>{row.mechanic_label}</td>
+            <td className={cn(tdClass, numClass)}>{row.discount_pct != null ? `${row.discount_pct}%` : '—'}</td>
+            {/* whitespace-normal: a range ("−19.32% to −2%") and its next
+                version wrap inside the column rather than running under Basis. */}
+            <td className={cn(tdClass, numClass, 'whitespace-normal')}>
+              {upliftText(current)}
+              {upcoming ? <span className={subClass}>{upcoming}</span> : null}
+            </td>
+            <td className={tdClass}>
+              <Basis level={current.level} lines={rangeLines(current)} />
+            </td>
+            <td className={cn(tdClass, numClass)}>
+              {counts ? <span title={formatMomentCounts(counts)}>{counts.total}</span> : '—'}
+            </td>
+          </ExpandableRow>
+        );
+      })}
+    </DataTable>
   );
 }

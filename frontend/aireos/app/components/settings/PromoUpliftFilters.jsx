@@ -7,7 +7,7 @@ import { customerLabel } from '@/app/utils/retailerLabel';
 /**
  * Customer, SKU range and Mechanic filters for the Uplift by mechanic table,
  * laid out like the SKU catalogue's filters (SkuFilters) but inside the
- * table's own card. Every row is one customer x SKU range x mechanic, so
+ * table's own card (DataTable `filters`). Every row is one customer x SKU range x mechanic, so
  * "All" on a filter shows every combination (utils/promoUpliftCalc
  * filterCalculatedRows), never a value for all customers at once.
  *
@@ -24,7 +24,7 @@ export default function PromoUpliftFilters({ filters, customers, skuRangeOptions
   const hasFilters = Boolean(filters.customer || filters.skuRange || filters.mechanic);
 
   return (
-    <div aria-label="Filter uplift values" role="group" className="mb-3 flex flex-wrap items-end gap-3">
+    <div aria-label="Filter uplift values" role="group" className="flex flex-wrap items-end gap-3">
       <div className="grid min-w-0 flex-1 grid-cols-[repeat(auto-fit,minmax(11rem,1fr))] gap-3">
         <FilterSelect
           label="Customer"

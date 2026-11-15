@@ -7,24 +7,27 @@ import RowActions from '@/components/ui/RowActions';
 import TableGrid, { ACTIONS_COLUMN } from '@/components/ui/TableGrid';
 import TableRow from '@/components/ui/TableRow';
 import { formatDateTime } from '@/lib/formatDate';
-import { changedByLabel } from '@/app/utils/promoUpliftSettings';
 import { cn } from '@/lib/utils';
 
+// A narrow reference card beside the anchors on wide screens, so Last
+// changed is a second line under the mechanic rather than a column of its own.
 const COLUMNS = [
   { key: 'mechanic', label: 'Mechanic' },
-  { key: 'discount', label: 'Discount', width: '7rem', align: 'right' },
-  { key: 'changed', label: 'Last changed', width: '16rem' },
+  { key: 'discount', label: 'Discount', width: '5.5rem', align: 'right' },
   ACTIONS_COLUMN,
 ];
 
 const rowClass = 'h-11 cursor-pointer border-b border-lavander/80 last:border-b-0 hover:bg-cream/60';
 const tdClass = 'px-4 py-2.5';
+const subClass = 'block truncate text-xs font-normal text-deep-violet-blue/60';
 
 /**
  * Every mechanic and its effective discount (the all-customers uplift rows,
  * backend promo_uplifts.list_settings), which the placeholder rule and
  * anchors use. The discount is the one thing edited here: a row, or Edit
- * discount in its "..." menu, opens PromoMechanicDiscountForm.
+ * discount in its "..." menu, opens PromoMechanicDiscountForm. The table
+ * fills its card's height and scrolls under its header when the list is
+ * taller (the card sits beside the anchors, as tall as they are).
  *
  * @param {object} props
  * @param {object[]} props.mechanics setting rows with scope 'all'
@@ -44,7 +47,7 @@ export default function PromoMechanicTable({ mechanics, editingKey, readOnly, on
   }
 
   function changedText(row) {
-    return row.changed_at ? `${formatDateTime(row.changed_at)} · ${changedByLabel(row.changed_by)}` : '—';
+    return row.changed_at ? formatDateTime(row.changed_at) : '—';
   }
 
   return (
@@ -64,10 +67,10 @@ export default function PromoMechanicTable({ mechanics, editingKey, readOnly, on
           />
         ))}
       </div>
-      <div className="hidden min-w-0 sm:block">
+      <div className="hidden min-h-0 min-w-0 flex-1 sm:flex">
         <TableGrid
           columns={COLUMNS}
-          minWidth="34rem"
+          minWidth="18rem"
           emptyState={mechanics.length === 0 ? 'No mechanics yet.' : null}
         >
           {mechanics.map((row) => (
@@ -76,11 +79,13 @@ export default function PromoMechanicTable({ mechanics, editingKey, readOnly, on
               onClick={() => !readOnly && onEdit(row)}
               className={cn(rowClass, readOnly && 'cursor-default', editingKey === row.mechanic_key && 'bg-lavander/90')}
             >
-              <td className={cn(tdClass, 'truncate font-medium')} title={row.mechanic_label}>{row.mechanic_label}</td>
+              <td className={cn(tdClass, 'truncate font-medium')} title={`${row.mechanic_label} · ${changedText(row)}`}>
+                {row.mechanic_label}
+                <span className={subClass}>{changedText(row)}</span>
+              </td>
               <td className={cn(tdClass, 'text-right tabular-nums')}>
                 {row.effective_discount_pct != null ? `${row.effective_discount_pct}%` : '—'}
               </td>
-              <td className={cn(tdClass, 'truncate text-deep-violet-blue/70')}>{changedText(row)}</td>
               <td className="px-2 py-1 text-right" onClick={(event) => event.stopPropagation()}>
                 <RowActions label={`Actions for ${row.mechanic_label}`} actions={actions(row)} />
               </td>

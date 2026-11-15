@@ -130,8 +130,11 @@ export default function ScenarioYearComparison({ rows, loading = false, baseLabe
               {compare ? (
                 <>
                   <td className={NUMBER_CELL_CLASS}>
-                    {row.items.length ? <ItemsBadge items={row.items} /> : null}
-                    {row.current == null ? '—' : formatFigure(row.current + row.delta)}
+                    {/* A gap keeps the badge off the figure. */}
+                    <span className="flex items-center justify-end gap-2">
+                      {row.items.length ? <ItemsBadge items={row.items} /> : null}
+                      <span>{row.current == null ? '—' : formatFigure(row.current + row.delta)}</span>
+                    </span>
                   </td>
                   <td className={changeClass(changed || hasParts)}>
                     {row.current != null && (changed || hasParts) ? <YearChangeDetails row={row} /> : '—'}

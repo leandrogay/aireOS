@@ -559,15 +559,10 @@ export default function ScenarioBuilder({ plan = 'scenario', budgetYear, onBudge
         </p>
       )}
 
-      <div
-        className={cn(
-          'grid items-start gap-3',
-          panelCollapsed
-            ? 'min-[1100px]:grid-cols-[minmax(0,1fr)_56px]'
-            // A capped panel width leaves the chart card room for the Monthly plan's columns.
-            : 'min-[1100px]:grid-cols-[minmax(0,1fr)_minmax(300px,340px)] min-[1100px]:items-stretch'
-        )}
-      >
+      {/* The panel sets its own width (ScenarioPanel springs it between the
+          strip and 340px, capped so the chart card keeps room for the
+          Monthly plan's columns); the chart takes the rest. */}
+      <div className="grid items-start gap-3 min-[1100px]:grid-cols-[minmax(0,1fr)_auto] min-[1100px]:items-stretch">
         <div className="min-w-0 space-y-3 min-[1100px]:flex min-[1100px]:flex-col min-[1100px]:[&>[data-slot=card]]:flex-1">
           <ForecastChart
           points={chartPoints}
@@ -674,7 +669,7 @@ export default function ScenarioBuilder({ plan = 'scenario', budgetYear, onBudge
             row is as tall as the taller of the two and the other stretches.
             Space the editor leaves free holds the cards of what is on the
             chart, so a short panel never shows as a blank column. */}
-        <div className={cn('min-w-0', panelCollapsed ? null : 'min-[1100px]:[&>aside]:h-full')}>
+        <div className="min-w-0">
         <ScenarioPanel
           plan={plan}
           collapsed={panelCollapsed}

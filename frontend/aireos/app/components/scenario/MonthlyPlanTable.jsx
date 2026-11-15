@@ -44,8 +44,9 @@ export default function MonthlyPlanTable({ rows, lastYearLoading, onOpenItem, sc
     { key: 'base', label: baseLabel, width: '8rem', align: 'right' },
     { key: 'adjustments', label: <Header label="Adjustments" hint={`Net change on ${baseLabel}. Open the month to see each contribution.`} />, width: '8rem', align: 'right' },
     { key: 'simulated', label: 'Simulated', width: '8rem', align: 'right' },
-    { key: 'variance', label: <Header label="vs last year" hint="Simulated minus the same month's actual sales last year, in units." />, width: '8rem', align: 'right' },
-    { key: 'variancePct', label: 'vs last year %', align: 'right' },
+    // Δ / Δ% as in the By year table, so units and percent read apart.
+    { key: 'variance', label: <Header label="Δ units vs last year" hint="Simulated minus the same month's actual sales last year, in units." />, width: '10rem', align: 'right' },
+    { key: 'variancePct', label: 'Δ% vs last year', align: 'right' },
   ];
   return (
     <section aria-label="Monthly plan">

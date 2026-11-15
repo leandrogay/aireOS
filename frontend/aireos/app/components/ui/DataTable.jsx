@@ -54,9 +54,14 @@ import { TABLE_ROWS } from '@/app/config/transitions';
  * with other sections (Recent uploads under the upload area). Leave it out
  * when the page title already names the list.
  *
+ * `filters` puts a list's filters inside its own card, under the header, for
+ * a list that shares its page with other cards (Uplift by mechanic on
+ * Promotion uplift settings), so they read as this table's. A page that is
+ * one list keeps its FilterBar card above the table (Promotions, SKUs).
+ *
  * @param {{
  *   label: string,
- *   title?: string,
+ *   title?: import('react').ReactNode,
  *   noun: string,
  *   plural?: string,
  *   totalCount: number,
@@ -66,6 +71,7 @@ import { TABLE_ROWS } from '@/app/config/transitions';
  *   onRefresh: () => void,
  *   emptyMessage: import('react').ReactNode,
  *   toolbar?: import('react').ReactNode,
+ *   filters?: import('react').ReactNode,
  *   footer?: import('react').ReactNode,
  *   fill?: boolean,
  *   mobileContent?: import('react').ReactNode,
@@ -84,6 +90,7 @@ export default function DataTable({
   onRefresh,
   emptyMessage,
   toolbar = null,
+  filters = null,
   footer = null,
   fill = false,
   mobileContent = null,
@@ -113,24 +120,27 @@ export default function DataTable({
       // min-h-80 keeps the table usable on a short window.
       className={fill ? 'min-h-80 flex-1' : undefined}
       header={(
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          {/* With a title, title and count follow TableCardHeader, like every other table card. */}
-          <div className={cn('min-w-0', title ? null : 'flex flex-wrap items-baseline gap-x-3')}>
-            {title && <h2 className="font-serif text-base text-deep-violet-blue">{title}</h2>}
-            <p className={cn('text-deep-violet-blue/70', title ? 'mt-0.5 text-xs' : 'text-sm')} aria-live="polite">
-              {firstLoad ? `Loading ${plural}…` : resultCountLabel(shownCount, totalCount, noun, plural)}
-            </p>
+        <>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            {/* With a title, title and count follow TableCardHeader, like every other table card. */}
+            <div className={cn('min-w-0', title ? null : 'flex flex-wrap items-baseline gap-x-3')}>
+              {title && <h2 className="font-serif text-base text-deep-violet-blue">{title}</h2>}
+              <p className={cn('text-deep-violet-blue/70', title ? 'mt-0.5 text-xs' : 'text-sm')} aria-live="polite">
+                {firstLoad ? `Loading ${plural}…` : resultCountLabel(shownCount, totalCount, noun, plural)}
+              </p>
+            </div>
+            <div className={cn('flex min-w-0 flex-wrap items-center gap-2', toolbar ? 'w-full sm:w-auto' : 'ml-auto')}>
+              {toolbar}
+              <RefreshButton
+                onClick={onRefresh}
+                isRefreshing={isLoading}
+                label={`Refresh ${plural}`}
+                className={TABLE_HEADER_BUTTON_CLASS}
+              />
+            </div>
           </div>
-          <div className={cn('flex min-w-0 flex-wrap items-center gap-2', toolbar ? 'w-full sm:w-auto' : 'ml-auto')}>
-            {toolbar}
-            <RefreshButton
-              onClick={onRefresh}
-              isRefreshing={isLoading}
-              label={`Refresh ${plural}`}
-              className={TABLE_HEADER_BUTTON_CLASS}
-            />
-          </div>
-        </div>
+          {filters ? <div className="mt-3">{filters}</div> : null}
+        </>
       )}
     >
       {error && (
