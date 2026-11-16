@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { MAX_COMPARED_VERSIONS, budgetAsInitial, budgetAsInitialMonths, budgetYears, budgetVersionKey, budgetVersionSeries, hasBudgetMonths, hasBudgetPoints, initialBudgetRows, initialSplitProblem, withBudgetPoints } from '../app/utils/budgetPlanning.js';
+import { MAX_COMPARED_VERSIONS, budgetAsInitial, budgetVersionMonths, addBlockedReason, draftBaseLabel, draftEntryOrigin, draftOriginLabel, growthCameWithStart, isDraftStarted, startBlockedReason, budgetAsInitialMonths, budgetYears, budgetVersionKey, budgetVersionSeries, hasBudgetMonths, hasBudgetPoints, initialBudgetRows, initialSplitProblem, unsplitCustomers, withBudgetPoints } from '../app/utils/budgetPlanning.js';
 import { promotionCells, tier0SplitIndex } from '../app/utils/scenarioTier0Split.js';
 
 test('budget simulation uses Initial and excludes series without it, without changing the original forecast', () => {
@@ -105,4 +105,85 @@ test('Inventory Initial lines take the budget where it has values and keep the p
   ];
   assert.deepEqual(budgetAsInitialMonths(months).map((row) => [row.sell_in_initial, row.sell_out_initial]), [[15, 25], [11, 21]]);
   assert.equal(months[0].sell_in_initial, 10);
+});
+
+test('a month Initial keeps whole passes the preview check and its promotion adds on top', () => {
+  const unsplit = { ...initialSplit, baseline: 110, carried: 0, unsplit: true };
+  const data = { basis: 'initial', rows: [unsplit], unavailable: [], unsplit: [{ customer_name: 'FairPrice' }] };
+  assert.equal(initialSplitProblem(data, [initialRow]), null);
+  const rows = initialBudgetRows([initialRow]);
+  const [cell] = promotionCells([{ id: 'promotion' }], tier0SplitIndex(data), () => rows, () => 20, () => 1);
+  assert.equal(cell.addedUnits, 22);
+  assert.equal(cell.replacedUnits, 0);
+});
+
+test('the customers with unsplit months are named once, in order', () => {
+  const data = { unsplit: [{ customer_name: 'Pharmex' }, { customer_name: 'NHG' }, { customer_name: 'Pharmex' }] };
+  assert.deepEqual(unsplitCustomers(data), ['NHG', 'Pharmex']);
+  assert.deepEqual(unsplitCustomers(null), []);
+});
+
+test('a compared version is broken down by month in the chart scope, or not at all without its parts', () => {
+  const parts = { initial: 100, baseline: 90, carried: 10, growth: 10, blocks: 5, promotions: -3, promotions_added: 7, promotions_replaced: 10 };
+  const rows = [
+    { month_year: '2027-01-01', customer_name: 'FairPrice', units: 112, parts },
+    { month_year: '2027-02-01', customer_name: 'FairPrice', units: 112, parts },
+    { month_year: '2027-01-01', customer_name: 'NHG', units: 50, parts: { ...parts, initial: 50 } },
+  ];
+  const months = budgetVersionMonths(rows, { customerName: 'FairPrice', endDate: '2027-01-01' });
+  assert.deepEqual([...months.keys()], ['2027-01-01']);
+  assert.deepEqual(months.get('2027-01-01'), { initial: 100, baseline: 90, carried: 10, growth: 10, blocks: 5,
+    promotionsAdded: 7, promotionsReplaced: 10, units: 112 });
+  assert.equal(budgetVersionMonths([{ ...rows[0], parts: { initial: 100, growth: 0, blocks: 0, promotions: 0 } }]), null);
+});
+
+test('the draft says what it builds on, by version name or as scratch', () => {
+  const history = [{ version: 2, name: 'Test A' }];
+  assert.equal(draftBaseLabel({ started_from_version: 2 }, history), 'Version 2 · Test A');
+  assert.equal(draftBaseLabel({ started_from_version: 5 }, history), 'Version 5');
+  assert.equal(draftBaseLabel({ started_from_version: null }, history), 'the Initial Yearly Forecast alone');
+  assert.equal(draftBaseLabel(null, history), null);
+});
+
+test('an entry is copied with the start, edited after it, or added later', () => {
+  const draft = { started_from_version: 2, started_at: '2026-11-16T02:00:00.123456+00:00' };
+  const at = '2026-11-16T02:00:00.123456+00:00';
+  assert.equal(draftEntryOrigin({ createdAt: at, updatedAt: at }, draft), 'copied');
+  assert.equal(draftEntryOrigin({ createdAt: at, updatedAt: '2026-11-16T03:00:00+00:00' }, draft), 'edited');
+  assert.equal(draftEntryOrigin({ createdAt: '2026-11-16T04:00:00+00:00' }, draft), 'added');
+  assert.equal(draftEntryOrigin({ createdAt: at }, { ...draft, started_from_version: null }), 'added');
+  assert.equal(draftEntryOrigin({ createdAt: at }, null), null);
+  assert.equal(draftEntryOrigin({}, draft), null);
+});
+
+test('a draft with saved entries counts as started, so they are never offered for replacement', () => {
+  assert.equal(isDraftStarted({ draft: null, draftsEnabled: true, savedEntries: 3, versionCount: 2 }), true);
+  assert.equal(isDraftStarted({ draft: null, draftsEnabled: true, savedEntries: 0, versionCount: 2 }), false);
+  assert.equal(isDraftStarted({ draft: null, draftsEnabled: true, savedEntries: 0, versionCount: 0 }), false);
+  assert.equal(isDraftStarted({ draft: { started_from_version: null }, draftsEnabled: true, savedEntries: 0, versionCount: 0 }), true);
+  assert.equal(isDraftStarted({ draft: null, draftsEnabled: false, savedEntries: 0, versionCount: 0 }), true);
+  assert.equal(isDraftStarted({ draft: null, draftsEnabled: false, savedEntries: 0, versionCount: 1 }), false);
+});
+
+test('adding waits for the start to be read and starting waits for edits to be saved', () => {
+  assert.equal(addBlockedReason({ loading: false, error: null }), null);
+  assert.match(addBlockedReason({ loading: true, error: null }), /Checking/);
+  assert.match(addBlockedReason({ loading: false, error: 'down' }), /down/);
+  assert.equal(startBlockedReason(0), null);
+  assert.match(startBlockedReason(2), /2 edited saved entries/);
+});
+
+test('a row is labelled with the same name as the draft everywhere else', () => {
+  const draft = { started_from_version: 2, started_at: '2026-11-16T02:00:00+00:00' };
+  const history = [{ version: 2, name: 'Test A' }];
+  assert.equal(draftOriginLabel({ createdAt: draft.started_at }, draft, history), 'From Version 2 · Test A');
+  assert.equal(draftOriginLabel({ createdAt: draft.started_at, updatedAt: '2026-11-17T00:00:00+00:00' }, draft, history), 'From Version 2 · Test A · edited');
+  assert.equal(draftOriginLabel({ createdAt: '2026-11-17T00:00:00+00:00' }, draft, history), 'Added');
+  assert.equal(draftOriginLabel({ createdAt: draft.started_at }, null, history), null);
+});
+
+test('a growth whose customer came with the copied version is not saved again', () => {
+  assert.equal(growthCameWithStart({ customers: ['FairPrice'] }, { growth_customers: ['FairPrice'] }), true);
+  assert.equal(growthCameWithStart({ customers: ['NHG'] }, { growth_customers: ['FairPrice'] }), false);
+  assert.equal(growthCameWithStart({ customers: ['NHG'] }, null), false);
 });

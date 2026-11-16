@@ -26,7 +26,7 @@ def _promotion(month, mechanic="45% Off", sku="A", promotion_id=1):
             "promotion_mechanic": mechanic}
 
 
-def _install(monkeypatch, history=None, promotions=None):
+def _install(monkeypatch, history=None, promotions=None, revised=()):
     history = history or {(1, "A"): {date(2026, month, 1): 110 for month in [1, 8, 9, 10]}}
     promotions = promotions if promotions is not None else [_promotion(month) for month in history[(1, "A")]]
     inputs = {"promotions": promotions, "moments": [], "sku_ranges": {"A": "Pants", "B": "Tape"},
@@ -36,6 +36,8 @@ def _install(monkeypatch, history=None, promotions=None):
     monkeypatch.setattr(service, "_cutoff", lambda year: CUTOFF)
     monkeypatch.setattr(tier0_breakdown, "_history", lambda scope: history)
     monkeypatch.setattr(tier0_breakdown, "_settings_inputs", lambda _: inputs)
+    # Customers whose sales changed after Initial was made (none unless a test says so).
+    monkeypatch.setattr(service, "_revised_customers", lambda rows, cutoff: set(revised))
     return history, inputs
 
 
@@ -91,11 +93,27 @@ def test_published_rounding_is_reconciled_without_changing_initial(monkeypatch):
     assert split["baseline"] + split["carried"] == 110.4
 
 
-def test_revised_history_that_no_longer_matches_initial_is_reported_without_a_guessed_split(monkeypatch):
-    _install(monkeypatch)
+def test_revised_history_that_no_longer_matches_initial_keeps_initial_whole_without_a_guessed_split(monkeypatch):
+    _install(monkeypatch, revised={1})
     result = service.get_initial_breakdown(2027, forecast_rows=[_initial(500)])
-    assert not result["rows"]
-    assert result["unavailable"][0]["sku"] == "A"
+    split, = result["rows"]
+    assert split["unsplit"] is True
+    assert (split["tier0"], split["baseline"], split["carried"]) == (500.0, 500.0, 0.0)
+    assert result["unsplit"][0]["sku"] == "A"
+    assert not result["unavailable"]
+
+
+def test_an_unsplit_month_locks_with_promotions_adding_on_top(monkeypatch):
+    from app.services.scenario import budget_calc
+    _install(monkeypatch, revised={1})
+    year = [dict(_initial(500, month=f"2027-{month:02d}-01"), customer_name="FairPrice", product_name="A", sku_range="Pants")
+            for month in range(1, 13)]
+    splits = service.get_initial_breakdown(2027, forecast_rows=year)["rows"]
+    promotion = {"is_active": True, "customer_names": [], "sku_ranges": [], "sku": None, "excluded_pairs": [],
+                 "start_month": "2027-01-01", "end_month": "2027-01-01", "reference_uplift_pct": 10, "voucher": None}
+    frozen = budget_calc.calculate_budget(year, [], [promotion], 2027, splits)
+    assert frozen[0]["units"] == 550
+    assert frozen[1]["units"] == 500
 
 
 def test_missing_initial_origin_never_falls_back_to_current(monkeypatch):
@@ -132,6 +150,17 @@ def test_an_unconfigured_explicit_discount_uses_a_labelled_rule_estimate_without
     assert not result["unavailable"]
 
 
+def test_an_unconfigured_buy_get_free_mechanic_uses_its_per_piece_discount(monkeypatch):
+    _, inputs = _install(monkeypatch, promotions=[_promotion(date(2026, 10, 1), "Buy 10 Get 10 Free")])
+    inputs["discount_in"] = lambda *_: None
+    result = service.get_initial_breakdown(2027, forecast_rows=[_initial()])
+    source = result["rows"][0]["recent"][-1]
+    assert source["level"] == "placeholder"
+    assert source["uplift_pct"] == 12
+    assert source["discount_fallbacks"] == {"b10g10": 50.0}
+    assert not result["unavailable"]
+
+
 def test_a_configured_historical_discount_wins_over_the_number_in_its_label(monkeypatch):
     _, inputs = _install(monkeypatch, promotions=[_promotion(date(2026, 10, 1), "33% Off")])
     inputs["discount_in"] = lambda *_: Decimal("30")
@@ -157,3 +186,41 @@ def test_initial_route_passes_basis_and_year_and_requires_a_year_before_io(monke
     assert seen == [(2027, "FairPrice", None)]
     assert client.get("/api/scenario/tier0-breakdown?basis=initial").status_code == 400
     assert client.get("/api/scenario/tier0-breakdown?basis=unknown").status_code == 400
+
+
+
+def test_a_mismatch_with_no_changed_sales_still_blocks_instead_of_hiding_a_rebuild_bug(monkeypatch):
+    _install(monkeypatch)
+    result = service.get_initial_breakdown(2027, forecast_rows=[_initial(500)])
+    assert not result["rows"] and not result["unsplit"]
+    assert "check the Initial build" in result["unavailable"][0]["reason"]
+
+
+def test_a_revised_cell_is_kept_whole_even_when_its_rebuilt_uplifts_are_missing(monkeypatch):
+    _install(monkeypatch, promotions=[_promotion(date(2026, 10, 1), "Free mystery gift")], revised={1})
+    result = service.get_initial_breakdown(2027, forecast_rows=[_initial(500)])
+    assert result["rows"][0]["unsplit"] is True
+    assert not result["unavailable"]
+
+
+def test_changed_sales_are_read_after_the_initial_shown_and_up_to_the_cutoff(monkeypatch):
+    from conftest import FakeConnection, FakeEngine
+    conn = FakeConnection(lambda sql, params: [(3,)])
+    monkeypatch.setattr(service.common, "read_connection", lambda: FakeEngine(conn))
+    rows = [_initial(), dict(_initial(), initial_generated_at="2026-11-12T07:37:13Z")]
+    assert service._revised_customers(rows, date(2026, 10, 1)) == {3}
+    (sql, params), = conn.calls
+    assert "rolled_back_at > :since" in sql
+    assert params["after_cutoff"] == date(2026, 11, 1)
+    assert params["since"].isoformat() == "2026-11-01T00:00:00+00:00"
+
+
+def test_no_stamp_on_initial_means_no_evidence_and_no_query(monkeypatch):
+    monkeypatch.setattr(service.common, "read_connection", lambda: pytest.fail("Nothing to compare against"))
+    assert service._revised_customers([dict(_initial(), initial_generated_at=None)], date(2026, 10, 1)) == set()
+
+
+def test_a_year_that_matches_never_reads_whether_sales_changed(monkeypatch):
+    _install(monkeypatch)
+    monkeypatch.setattr(service, "_revised_customers", lambda rows, cutoff: pytest.fail("Nothing to explain"))
+    assert service.get_initial_breakdown(2027, forecast_rows=[_initial()])["rows"]

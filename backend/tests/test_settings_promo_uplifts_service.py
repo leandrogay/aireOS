@@ -658,14 +658,16 @@ def test_earlier_months_keep_the_discount_they_had(monkeypatch):
     assert discount_in("pct_off_30", date(2027, 3, 1)) == Decimal("25")
 
 
-def test_a_mechanic_with_no_discount_has_none_in_any_month(monkeypatch):
+def test_a_mechanic_with_no_saved_discount_takes_the_one_its_key_states(monkeypatch):
     _install(monkeypatch, FakePromoUpliftDatabase())
 
     with common.read_connection() as conn:
         discount_in = service.mechanic_discount_lookup(conn)
+        saved_in = service.mechanic_discount_lookup(conn, derive=False)
 
     assert discount_in("voucher", date(2026, 6, 1)) is None
-    assert discount_in("pct_off_99", date(2026, 6, 1)) is None
+    assert discount_in("pct_off_99", date(2026, 6, 1)) == Decimal("99")
+    assert saved_in("pct_off_99", date(2026, 6, 1)) is None
 
 
 def test_saving_the_same_discount_writes_nothing(monkeypatch):

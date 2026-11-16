@@ -87,6 +87,11 @@ def has_budget_tables(conn: Connection) -> bool:
     """)).scalar_one())
 
 
+def has_budget_drafts(conn: Connection) -> bool:
+    """Migration 033's budget_drafts: until it is applied, a year's draft records no start and the app keeps its old rule."""
+    return bool(conn.execute(text("SELECT to_regclass('public.budget_drafts') IS NOT NULL")).scalar_one())
+
+
 def require_budget_schema(conn: Connection) -> None:
     """Refuse budget writes before every part of migrations 029-031 is present."""
     for table in _ITEM_TABLES:

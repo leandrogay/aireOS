@@ -42,7 +42,14 @@ def calculate_budget(
     rows: list[dict], blocks: list[dict], promotions: list[dict], year: int,
     split_rows: list[dict] | None = None,
 ) -> list[dict]:
-    """Freeze every Initial customer x SKU x month for one full year, never chart-filtered rows."""
+    """
+    Freeze every Initial customer x SKU x month for one full year, never
+    chart-filtered rows. Each row also carries `parts`: what growth, building
+    blocks and promotions (net of the carried effects they replace) add to
+    its Initial, before the floor at 0, for a version's breakdown; promotions
+    also as `promotions_added` and the carried effects they replace
+    (`promotions_replaced`), so a chart can draw both.
+    """
     base = [dict(row) for row in rows if row.get("forecast_initial") is not None and row["month_year"].startswith(f"{year}-")]
     if not base:
         raise ValueError(f"No Initial Yearly Forecast exists for {year} yet.")
@@ -61,7 +68,7 @@ def calculate_budget(
             raise ValueError("Initial's baseline and carried promotion effects must be available for every cell before locking.")
         if abs(split["tier0"] - row["forecast_initial"]) > 1e-6 or abs(split["baseline"] + split["carried"] - row["forecast_initial"]) > 1e-6:
             raise ValueError("Initial's breakdown no longer matches its published units; reload before locking.")
-    deltas = [0.0] * len(base)
+    parts = [{"growth": 0.0, "blocks": 0.0, "promotions_added": 0.0, "promotions_replaced": 0.0} for _ in base]
     for block in blocks:
         if not block["is_active"]:
             continue
@@ -74,16 +81,19 @@ def calculate_budget(
             for index in indices:
                 units = base[index]["forecast_initial"]
                 share = units / 100 if block["uplift_mode"] == "pct" else units / total if total else 1 / len(indices)
-                deltas[index] += float(block["uplift_value"]) * share
+                parts[index]["growth" if block.get("kind") == "growth" else "blocks"] += float(block["uplift_value"]) * share
     replaced_share = [0.0] * len(base)
     for item in promotions:
         if item["is_active"]:
             for index, row in enumerate(base):
                 if _covers(item, row):
                     split = split_index[(row["customer_id"], row["sku"], row["month_year"])]
-                    deltas[index] += split["baseline"] * _promotion_pct(item, row) / 100
+                    parts[index]["promotions_added"] += split["baseline"] * _promotion_pct(item, row) / 100
                     replaced_share[index] += _promotion_share(item, row)
     for index, row in enumerate(base):
         split = split_index[(row["customer_id"], row["sku"], row["month_year"])]
-        deltas[index] -= split["carried"] * min(1, replaced_share[index])
-    return [{**row, "units": max(0, row["forecast_initial"] + deltas[index])} for index, row in enumerate(base)]
+        part = parts[index]
+        part["promotions_replaced"] = split["carried"] * min(1, replaced_share[index])
+        part["promotions"] = part["promotions_added"] - part["promotions_replaced"]
+    return [{**row, "units": max(0, row["forecast_initial"] + part["growth"] + part["blocks"] + part["promotions"]), "parts": part}
+            for row, part in zip(base, parts)]

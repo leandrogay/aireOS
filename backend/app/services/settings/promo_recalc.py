@@ -9,6 +9,7 @@ from sqlalchemy.engine import Connection
 from app.services.settings import common
 from app.services.settings import promo_anchor_versions as versions
 from app.services.settings import promo_moment_rules as moment_rules
+from app.services.settings import promo_uplift_rules as uplift_rules
 from app.services.settings import promo_moments
 from app.services.settings import promo_recalc_events as events
 from app.services.settings import promo_uplifts
@@ -228,7 +229,7 @@ def recalculate_customer(customer_id: int) -> dict:
             sku_ranges,
             anchor_for,
             _version_months(anchor_rows, this_month),
-            lambda key: discounts.get(key, {}).get("discount_pct"),
+            lambda key: uplift_rules.discount_or_derived(discounts.get(key, {}).get("discount_pct"), key),
         )
 
         _save_moments(conn, customer_id, measured, planned)

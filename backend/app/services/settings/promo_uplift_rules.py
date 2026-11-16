@@ -89,6 +89,47 @@ def voucher_flag(voucher: str | None, mechanic: str | None = None) -> int:
 # ============================================================
 
 
+_DISCOUNT_KEYS = [
+    (re.compile(rf"^pct_off_{_PCT}$"), lambda m: Decimal(m[1])),
+    # Buy N Get M Free: M of every N + M units are free.
+    (re.compile(r"^b(\d+)g(\d+)$"), lambda m: Decimal(m[2]) * 100 / (Decimal(m[1]) + Decimal(m[2]))),
+    # Buy N Get P% Off: the P% comes off one of the N units (migration 032).
+    (re.compile(rf"^b(\d+)_pct_off_{_PCT}$"), lambda m: Decimal(m[2]) / Decimal(m[1])),
+]
+
+
+def derived_discount(mechanic_key: str | None) -> Decimal | None:
+    """
+    The per-piece discount a mechanic key states, to 0.1 ("b2g1" -> 33.3,
+    "b2_pct_off_25" -> 12.5), as the seeded settings measure it; None when the
+    key states none (a voucher) or the numbers make no discount.
+    """
+
+    for pattern, build in _DISCOUNT_KEYS:
+        match = pattern.match(mechanic_key or "")
+        if not match:
+            continue
+        try:
+            discount = build(match)
+        except ArithmeticError:
+            return None
+        if not 0 < discount <= 100:
+            return None
+        return discount.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP).normalize()
+    return None
+
+
+def discount_or_derived(saved: Decimal | None, mechanic_key: str | None) -> Decimal | None:
+    """
+    A mechanic's discount wherever one is looked up: the saved one, else the
+    one its key states (derived_discount), so the Current and Initial
+    breakdowns and Promotion Uplift Settings never disagree on a mechanic
+    nobody configured.
+    """
+
+    return saved if saved is not None else derived_discount(mechanic_key)
+
+
 def placeholder_uplift(effective_discount_pct: Decimal, anchor_pct: Decimal) -> Decimal:
     """(discount - anchor) / 5 x 2, to a whole percent: 30% Off at a 20% anchor is +4."""
 

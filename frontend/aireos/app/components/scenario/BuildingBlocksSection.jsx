@@ -78,6 +78,9 @@ export default function BuildingBlocksSection({
   onToggleSaved,
   togglingIds,
   closedIds,
+  onRequestAdd = (add) => add(),
+  draftNote = null,
+  addBlocked = false,
 }) {
   // Field errors show only after Save was pressed on that block, so a new
   // block isn't covered in red before the user has typed anything.
@@ -155,10 +158,11 @@ export default function BuildingBlocksSection({
 
   return (
     <div className="space-y-3">
+      {draftNote}
       <button
         type="button"
-        onClick={addBlock}
-        disabled={!canAdd}
+        onClick={() => onRequestAdd(addBlock)}
+        disabled={!canAdd || addBlocked}
         className="flex h-9 w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-deep-violet-blue/40 text-xs font-medium text-deep-violet-blue hover:bg-cream/60 disabled:cursor-not-allowed disabled:opacity-50"
       >
         <Plus className="size-3.5" />

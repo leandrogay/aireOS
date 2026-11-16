@@ -34,13 +34,17 @@ function splitKey(customerId, sku, month) {
 }
 
 /**
- * Map customer_id|sku|month_year → split row.
+ * Map customer_id|sku|month_year → split row. Rows the backend could not
+ * split (`unsplit`: their sales changed after Initial was fixed) are left out,
+ * so they read as having no split: all baseline, nothing carried.
  *
  * @param {{ rows: object[] } | null} data GET /api/scenario/tier0-breakdown
  */
 export function tier0SplitIndex(data) {
   const index = new Map();
-  for (const row of data?.rows ?? []) index.set(splitKey(row.customer_id, row.sku, row.month_year), row);
+  for (const row of data?.rows ?? []) {
+    if (!row.unsplit) index.set(splitKey(row.customer_id, row.sku, row.month_year), row);
+  }
   return index;
 }
 

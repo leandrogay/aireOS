@@ -44,6 +44,7 @@ import {
   promosOverlappingMonth,
 } from '@/app/utils/forecastView';
 import { PART_COLORS, bandLabels, compositionOpacity, isSpotlightLayer, MIN_LABEL_PX, MIN_LABEL_SLOT_PX, totalLabel } from '@/app/utils/scenarioComposition';
+import { milestoneSpotlightAreas } from '@/app/utils/scenarioMilestones';
 import { NO_CUSTOMER_COLOR } from '@/app/utils/customerColors';
 import { withActualBridges } from '@/app/utils/forecastActuals';
 import { CONFIDENCE_DOT_FILL, forecastLineHints, initialMissingHint as noInitialHint } from '@/app/utils/forecastLineText';
@@ -583,6 +584,10 @@ export default function ForecastChart({
   const milestoneMarkers = (scenario?.milestoneMonths ?? [])
     .map((month) => ({ month, x: monthX(month) }))
     .filter((marker) => marker.x >= 0 && chartData[marker.x]?.actual != null);
+  // Hovering "What Actual is made of" in the Breakdown tab lights its part in
+  // each milestone month, as the bands do for the forecast's parts.
+  const milestoneAreas = milestoneSpotlightAreas(chartData, scenario?.compositionSpotlight ?? null);
+  const milestoneHatch = { key: 'milestonesDown', hatch: true, color: PART_COLORS.milestones };
   // The block selected in the panel or the blocks table: its months banded.
   const selectedBand =
     showSimulated && scenario.selectedBand
@@ -761,6 +766,7 @@ export default function ForecastChart({
                   >
                     <OverlayDefs bands={overlayBands} />
                     {showComposition ? <CompositionHatches layers={scenario.composition} /> : null}
+                    {milestoneAreas.length ? <CompositionHatches layers={[milestoneHatch]} /> : null}
                     <XAxis
                       dataKey="x"
                       type="number"
@@ -988,6 +994,20 @@ export default function ForecastChart({
                         fill={simulatedSeries.color}
                         stroke="#fff"
                         strokeWidth={2}
+                        ifOverflow="visible"
+                      />
+                    ))}
+                    {milestoneAreas.map((area) => (
+                      <ReferenceArea
+                        key={area.key}
+                        x1={area.x1}
+                        x2={area.x2}
+                        y1={area.y1}
+                        y2={area.y2}
+                        fill={area.decrease ? `url(#${compositionHatchId(milestoneHatch.key)})`
+                          : scenario.compositionSpotlight === 'milestones' ? PART_COLORS.milestones : PART_COLORS.baseline}
+                        fillOpacity={area.decrease ? 1 : 0.7}
+                        stroke="none"
                         ifOverflow="visible"
                       />
                     ))}

@@ -59,9 +59,9 @@ def set_official_budget(body: BudgetOfficial):
 
 
 @router.post("/start")
-def start_budget(body: BudgetStart):
+def start_budget(body: BudgetStart, started_by: str = Depends(current_user_email)):
     try:
-        started = budgets.start_budget(body.year, body.version)
+        started = budgets.start_budget(body.year, body.version, started_by)
         if started is None:
             raise HTTPException(404, detail="Budget version not found")
         return started

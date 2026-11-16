@@ -3,13 +3,17 @@
 import { useEffect, useState } from 'react';
 import { getBudgets } from '@/app/services/budgetsApi';
 
-/** Each year's official locked Budget rows (or one year's) and the version history; refresh after a lock or a change of official version. */
-export default function useBudgets({ year } = {}) {
+/**
+ * Each year's official locked Budget rows (or one year's) and the version history; refresh after a lock or a change of
+ * official version. Nothing is read until `ready`.
+ */
+export default function useBudgets({ year, ready = true } = {}) {
   const [data, setData] = useState({ rows: [], history: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [revision, setRevision] = useState(0);
   useEffect(() => {
+    if (!ready) return undefined;
     let cancelled = false;
     async function load() {
       setLoading(true);
@@ -24,6 +28,6 @@ export default function useBudgets({ year } = {}) {
     }
     load();
     return () => { cancelled = true; };
-  }, [year, revision]);
+  }, [ready, year, revision]);
   return { data, loading, error, refresh: () => setRevision((value) => value + 1) };
 }

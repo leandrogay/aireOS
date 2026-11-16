@@ -52,6 +52,7 @@ def migrated_budget_schema(monkeypatch):
 
     monkeypatch.setattr(common, "has_plan_column", lambda conn, table: True)
     monkeypatch.setattr(common, "has_budget_tables", lambda conn: True)
+    monkeypatch.setattr(common, "has_budget_drafts", lambda conn: True)
 
 
 @pytest.fixture

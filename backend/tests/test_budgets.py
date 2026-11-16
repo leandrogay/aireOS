@@ -104,9 +104,10 @@ def test_reading_a_lock_never_recalculates_its_units_from_new_forecasts(monkeypa
     row = {"snapshot_id": 1, "customer_id": 1, "sku": "A", "customer_name": "Old customer", "current_customer_name": "Renamed customer",
            "product_name": "Old name", "current_product_name": "Renamed SKU", "sku_range": "Pants", "current_sku_range": "Pants",
            "month_year": date(2027, 1, 1), "units": 123}
-    conn = FakeConnection(lambda sql, params: [header] if "FROM budget_snapshots s" in sql else [row])
+    conn = FakeConnection(lambda sql, params: [header] if "FROM budget_snapshots s" in sql else [] if "budget_drafts" in sql else [row])
     monkeypatch.setattr(common, "read_connection", lambda: FakeEngine(conn))
     result = budgets.read_budgets(2027)
+    assert result["draft"] is None
     assert result["rows"][0]["units"] == 123
     assert result["rows"][0]["product_name"] == "Renamed SKU"
     assert result["rows"][0]["customer_name"] == "Renamed customer"
@@ -220,7 +221,8 @@ def _start(monkeypatch, inputs):
 def test_starting_from_a_version_replaces_the_years_entries_with_its_copies(monkeypatch):
     other_year = _saved_block(start_month="2028-01-01", end_month="2028-02-01")
     conn, copied = _start(monkeypatch, {"blocks": [_saved_block(), other_year], "promotions": []})
-    assert budgets.start_budget(2027, 2) == {"year": 2027, "version": 2, "blocks": 1, "promotions": 0}
+    assert budgets.start_budget(2027, 2, "staff@aire.sg") == {"year": 2027, "version": 2, "blocks": 1, "promotions": 0,
+                                                             "growth_customers": []}
     deletes = conn.sql_containing("DELETE FROM")
     assert len(deletes) == 2 and all("plan = 'budget'" in sql and params["year_start"] == date(2027, 1, 1) for sql, params in deletes)
     # Copied as a create request: plan budget, dates parsed, no saved ids.
@@ -229,20 +231,42 @@ def test_starting_from_a_version_replaces_the_years_entries_with_its_copies(monk
 
 def test_starting_from_scratch_only_clears_the_years_entries(monkeypatch):
     conn, copied = _start(monkeypatch, None)
-    assert budgets.start_budget(2027, None)["blocks"] == 0
+    assert budgets.start_budget(2027, None, "staff@aire.sg")["blocks"] == 0
     assert not conn.sql_containing("SELECT inputs") and len(conn.sql_containing("DELETE FROM")) == 2 and copied == []
+
+
+def test_starting_records_what_the_draft_was_started_from_and_by_whom(monkeypatch):
+    conn, _ = _start(monkeypatch, {"blocks": [], "promotions": []})
+    budgets.start_budget(2027, 2, "staff@aire.sg")
+    (sql, params), = conn.sql_containing("INSERT INTO budget_drafts")
+    assert "ON CONFLICT (year)" in sql
+    assert params == {"year": 2027, "version": 2, "started_by": "staff@aire.sg"}
+
+
+def test_starting_before_migration_033_still_starts_without_recording(monkeypatch):
+    conn, _ = _start(monkeypatch, None)
+    monkeypatch.setattr(common, "has_budget_drafts", lambda conn: False)
+    assert budgets.start_budget(2027, None, "staff@aire.sg")["blocks"] == 0
+    assert not conn.sql_containing("budget_drafts")
+
+
+def test_start_endpoint_records_the_signed_in_user(monkeypatch, signed_in):
+    seen = []
+    monkeypatch.setattr(budgets, "start_budget", lambda year, version, started_by: seen.append(started_by) or {"year": year})
+    assert TestClient(app).post("/api/scenario/budgets/start", json={"year": 2027, "version": None}).status_code == 200
+    assert seen == [signed_in]
 
 
 def test_starting_from_a_missing_version_changes_nothing(monkeypatch):
     conn, _ = _start(monkeypatch, None)
-    assert budgets.start_budget(2027, 9) is None
-    assert not conn.sql_containing("DELETE")
+    assert budgets.start_budget(2027, 9, "staff@aire.sg") is None
+    assert not conn.sql_containing("DELETE") and not conn.sql_containing("budget_drafts")
 
 
 def test_start_endpoint_maps_missing_versions_and_stale_entries(monkeypatch):
-    monkeypatch.setattr(budgets, "start_budget", lambda year, version: None)
+    monkeypatch.setattr(budgets, "start_budget", lambda year, version, started_by: None)
     assert TestClient(app).post("/api/scenario/budgets/start", json={"year": 2027, "version": 3}).status_code == 404
-    def stale(year, version):
+    def stale(year, version, started_by):
         raise ValueError("Unknown customer: Gone")
     monkeypatch.setattr(budgets, "start_budget", stale)
     response = TestClient(app).post("/api/scenario/budgets/start", json={"year": 2027, "version": 3})
@@ -279,7 +303,7 @@ def test_deleted_versions_are_never_listed_copied_or_made_official(monkeypatch):
     monkeypatch.setattr(common, "get_engine", lambda: FakeEngine(conn))
     budgets.read_budgets(2027)
     assert budgets.set_official(2027, 3) is None
-    assert budgets.start_budget(2027, 3) is None
+    assert budgets.start_budget(2027, 3, "staff@aire.sg") is None
     assert budgets.delete_version(2027, 3, "staff") is False
     for fragment in ("FROM budget_snapshots s", "AND version = :version"):
         assert all("deleted_at IS NULL" in sql for sql, _ in conn.sql_containing(fragment))
@@ -296,3 +320,55 @@ def test_delete_endpoint_records_identity_and_maps_errors(monkeypatch, signed_in
         raise budgets.OfficialBudgetDeleteError("The official budget can't be deleted.")
     monkeypatch.setattr(budgets, "delete_version", official)
     assert TestClient(app).delete("/api/scenario/budgets/2027/versions/3").status_code == 409
+
+
+# ---- A version's parts -----------------------------------------------------
+
+
+def _locked(rows, units):
+    return [{key: row[key] for key in ("customer_id", "customer_name", "sku", "product_name", "sku_range", "month_year")}
+            | {"units": units} for row in rows]
+
+
+def test_a_versions_parts_are_worked_out_again_from_its_saved_inputs():
+    rows = initial()
+    splits = [{"customer_id": 1, "sku": "A", "month_year": row["month_year"], "tier0": 100, "baseline": 100, "carried": 0}
+              for row in rows]
+    growth = {"kind": "growth", "is_active": True, "customer_names": ["C1"], "sku_ranges": None, "sku": None, "excluded_pairs": [],
+              "start_month": "2027-01-01", "end_month": "2027-12-01", "uplift_mode": "pct", "uplift_value": 10}
+    block = {**growth, "kind": "block", "uplift_mode": "units", "uplift_value": 120}
+    inputs = {"blocks": [growth, block], "promotions": [], "initial_breakdown": {"rows": splits}}
+    parts = budgets._version_parts(inputs, _locked(rows, 120), 2027)
+    assert parts[(1, "A", "2027-01-01")] == {"initial": 100, "baseline": 100, "carried": 0, "growth": 10, "blocks": 10,
+                                             "promotions": 0, "promotions_added": 0, "promotions_replaced": 0}
+
+
+def test_a_version_locked_without_its_split_has_no_parts():
+    assert budgets._version_parts({"blocks": [], "promotions": []}, _locked(initial(), 100), 2027) is None
+
+
+def test_a_years_draft_says_what_it_was_started_from(monkeypatch):
+    started = {"started_from_version": 2, "started_at": STAMP, "started_by": "staff@aire.sg"}
+    conn = FakeConnection(lambda sql, params: [started] if "budget_drafts" in sql else [])
+    monkeypatch.setattr(common, "read_connection", lambda: FakeEngine(conn))
+    result = budgets.read_budgets(2027)
+    assert result["drafts_enabled"] is True
+    assert result["draft"] == {"started_from_version": 2, "started_at": common.iso(STAMP), "started_by": "staff@aire.sg"}
+
+
+def test_a_versions_inputs_saved_as_text_or_with_gaps_never_fail_the_read():
+    rows = initial()
+    splits = [{"customer_id": 1, "sku": "A", "month_year": row["month_year"], "tier0": 100, "baseline": 100, "carried": 0}
+              for row in rows]
+    as_text = json.dumps({"blocks": [], "promotions": [], "initial_breakdown": {"rows": splits}})
+    assert budgets._version_parts(as_text, _locked(rows, 100), 2027)[(1, "A", "2027-01-01")]["initial"] == 100
+    gap = {"is_active": True, "customer_names": None, "sku_ranges": None, "sku": None, "excluded_pairs": [],
+           "start_month": "2027-01-01", "end_month": "2027-12-01", "uplift_mode": "pct", "uplift_value": None}
+    assert budgets._version_parts({"blocks": [gap], "promotions": [], "initial_breakdown": {"rows": splits}},
+                                  _locked(rows, 100), 2027) is None
+
+
+def test_starting_says_whose_growth_came_with_the_copy(monkeypatch):
+    growth = _saved_block(kind="growth", start_month="2027-01-01", end_month="2027-12-01")
+    _start(monkeypatch, {"blocks": [growth, _saved_block()], "promotions": []})
+    assert budgets.start_budget(2027, 2, "staff@aire.sg")["growth_customers"] == ["FairPrice"]

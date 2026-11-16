@@ -114,3 +114,33 @@ export function milestoneTotals(breakdown) {
   totals.milestones = [...byItem.values()];
   return totals;
 }
+
+// Half a milestone month's width on the chart, so neighbouring months' areas never touch.
+const SPOTLIGHT_HALF_WIDTH = 0.35;
+
+/**
+ * The areas the chart lights up while a part of "What Actual is made of" is
+ * hovered in the Breakdown tab, as the bands above do for the forecast:
+ * `withoutMilestones` from 0 up to each month's actual without its
+ * milestones, `milestones` between that and the actual (`decrease` when the
+ * milestones took units away). Points are chart points with `x` and
+ * `milestones` (milestoneBreakdown's month); any other spotlight has none.
+ *
+ * @param {Array<{ x: number, milestones?: { actual: number, without: number } }>} points
+ * @param {string | null} spotlight
+ * @returns {Array<{ key: string, x1: number, x2: number, y1: number, y2: number, decrease: boolean }>}
+ */
+export function milestoneSpotlightAreas(points, spotlight) {
+  if (spotlight !== 'withoutMilestones' && spotlight !== 'milestones') return [];
+  return points
+    .filter((point) => point.milestones)
+    .map(({ x, milestones: { actual, without } }) => ({
+      key: `${spotlight}-${x}`,
+      x1: x - SPOTLIGHT_HALF_WIDTH,
+      x2: x + SPOTLIGHT_HALF_WIDTH,
+      y1: spotlight === 'withoutMilestones' ? 0 : Math.min(actual, without),
+      y2: spotlight === 'withoutMilestones' ? without : Math.max(actual, without),
+      decrease: spotlight === 'milestones' && actual < without,
+    }))
+    .filter((area) => area.y2 > area.y1);
+}

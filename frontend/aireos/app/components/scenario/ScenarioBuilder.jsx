@@ -3,7 +3,10 @@
 import { useState } from 'react';
 
 import BudgetLockControl from '@/components/scenario/BudgetLockControl';
-import { budgetVersionKey, budgetVersionSeries, initialBudgetRows, initialSplitProblem, withBudgetPoints } from '@/app/utils/budgetPlanning';
+import BudgetDraftNote from '@/components/scenario/BudgetDraftNote';
+import BudgetStartDialog from '@/components/scenario/BudgetStartDialog';
+import { addBlockedReason, budgetVersionKey, budgetVersionMonths, budgetVersionSeries, draftOriginLabel, growthCameWithStart, initialBudgetRows,
+  initialSplitProblem, isDraftStarted, startBlockedReason, unsplitCustomers, withBudgetPoints } from '@/app/utils/budgetPlanning';
 import { cn } from '@/lib/utils';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import ForecastChart from '@/components/forecast/ForecastChart';
@@ -57,7 +60,7 @@ import {
   withLiveIndex,
 } from '@/app/utils/scenarioPromotions';
 import { liveUpliftIndex } from '@/app/utils/scenarioLiveUplifts';
-import { breakdownTotals, withComposition } from '@/app/utils/scenarioComposition';
+import { breakdownTotals, withComposition, withVersionComposition } from '@/app/utils/scenarioComposition';
 import { milestoneBreakdown } from '@/app/utils/scenarioMilestones';
 import { OFFICIAL_ITEM, bigChange, monthSplit, tier0SplitIndex } from '@/app/utils/scenarioTier0Split';
 import { anchorInMonth, anchorLabel, anchorSourceLabel, anchorTargets } from '@/app/utils/promoUpliftSettings';
@@ -75,6 +78,7 @@ import useForecastView from '@/hooks/useForecastView';
 import useForecastYearTotals from '@/hooks/useForecastYearTotals';
 import usePromoAnchors from '@/hooks/usePromoAnchors';
 import usePromoUpliftCalc from '@/hooks/usePromoUpliftCalc';
+import useBudgets from '@/hooks/useBudgets';
 import useBudgetVersions from '@/hooks/useBudgetVersions';
 import useConfirmAction from '@/hooks/useConfirmAction';
 import useExpandedRows from '@/hooks/useExpandedRows';
@@ -175,10 +179,19 @@ export default function ScenarioBuilder({ plan = 'scenario', budgetYear, onBudge
     [SIMULATED_SERIES.key]: true,
   });
   const [panelCollapsed, setPanelCollapsed] = useState(false);
+  // The year's locked versions, for the lock control and the prompt before a first entry.
+  const budgets = useBudgets({ year: budgetYear, ready: budget });
   // Locked budget versions drawn beside the draft to compare ({ version, name }, in the order picked).
-  const [comparedVersions, setComparedVersions] = useState([]);
+  // Null until one is picked or removed: the year's official version is shown by default.
+  const [pickedVersions, setComparedVersions] = useState(null);
+  const officialVersion = budgets.data.history.find((item) => item.is_official);
+  const comparedVersions = pickedVersions ?? (officialVersion ? [{ version: officialVersion.version, name: officialVersion.name }] : []);
+  // The add waiting on "Start budget from…" ({ run }), asked before a year's first entry.
+  const [addPrompt, setAddPrompt] = useState(null);
   const compared = useBudgetVersions({ year: budgetYear, versions: budget ? comparedVersions.map((item) => item.version) : [] });
   const [compositionSpotlight, setCompositionSpotlight] = useState(null);
+  // The line the Breakdown tab and the chart's layers describe: 'draft' or a compared version's key.
+  const [breakdownLine, setBreakdownLine] = useState('draft');
   // The panel's tab, here so opening a block from the Monthly plan shows it.
   const [panelTab, setPanelTab] = useState('breakdown');
   const view = useForecastView({ ready,
@@ -347,18 +360,37 @@ export default function ScenarioBuilder({ plan = 'scenario', budgetYear, onBudge
   // key; one shows until its legend pill is switched off.
   const versionSeries = budgetVersionSeries(comparedVersions);
   const shownSeries = { ...Object.fromEntries(versionSeries.map((series) => [series.key, true])), ...visibleSeries };
+  // The lines the Breakdown tab can break down: the draft, and each compared
+  // version shown on the chart. A version switched off or removed falls back
+  // to the draft.
+  const breakdownLines = [{ value: 'draft', label: 'Draft (Simulated)' },
+    ...versionSeries.filter((series) => shownSeries[series.key]).map((series) => ({ value: series.key, label: series.label }))];
+  const pickedLine = breakdownLines.some((line) => line.value === breakdownLine) ? breakdownLine : 'draft';
+  const pickedIndex = versionSeries.findIndex((series) => series.key === pickedLine);
+  const pickedRows = pickedIndex >= 0 ? compared.data[comparedVersions[pickedIndex].version] : null;
+  const pickedMonths = pickedRows ? budgetVersionMonths(pickedRows, { productName, customerName, skuRange, startDate, endDate }) : null;
+  const pickedState = pickedIndex < 0 ? null
+    : { label: versionSeries[pickedIndex].label, loading: !pickedRows && !compared.error, error: pickedRows ? null : compared.error,
+      missing: Boolean(pickedRows) && !pickedMonths };
   const chartPoints = versionSeries.reduce((points, series, index) => withBudgetPoints(points,
     compared.data[comparedVersions[index].version] ?? [], { productName, customerName, skuRange, startDate, endDate },
     undefined, budgetVersionKey(comparedVersions[index].version)), composedPoints);
   // Each month's parts, for the Monthly plan, and the months the promotions
   // planned move by more than 35% of Tier 0 (Big change).
   const breakdowns = new Map(chartPoints.filter((point) => point.breakdown).map((point) => [point.month_year, point.breakdown]));
+  // The chart's layers and the Breakdown tab follow the picked line; the
+  // Monthly plan stays on the draft.
+  const shownPoints = pickedMonths ? chartPoints.map((point) => withVersionComposition(point, pickedMonths.get(point.month_year))) : chartPoints;
+  const shownTotals = pickedMonths
+    ? breakdownTotals(new Map(shownPoints.filter((point) => point.breakdown).map((point) => [point.month_year, point.breakdown])))
+    : breakdownTotals(breakdowns);
   function monthChange(month) {
     const breakdown = breakdowns.get(month);
     return breakdown ? bigChange(breakdown.tier0, breakdown.official + breakdown.promotions) : null;
   }
   const tier0SplitState = { index: tier0Split, loading: tier0Breakdown.loading, error: budgetSplitError ?? tier0Breakdown.error,
-    basis: budget ? 'initial' : 'current', dataCutoff: tier0Breakdown.data?.data_cutoff ?? null };
+    basis: budget ? 'initial' : 'current', dataCutoff: tier0Breakdown.data?.data_cutoff ?? null,
+    unsplitCustomers: budget ? unsplitCustomers(tier0Breakdown.data) : [] };
   // The anchor in the hover card: one customer x SKU range has one.
   const anchorTarget = !budget && rangePicked
     ? anchorTargets(anchors.data).find((target) => target.customerName === customerName && target.skuRange === skuRange)
@@ -468,6 +500,54 @@ export default function ScenarioBuilder({ plan = 'scenario', budgetYear, onBudge
       : []),
   ];
 
+  const entryCount = scenarioBlocks.blocks.filter((block) => block.blockId != null).length
+    + scenarioPromotions.promotions.filter((promotion) => promotion.promotionId != null).length;
+  // A budget year's draft is built on what "Start from…" picked (a locked
+  // version or scratch, budget_drafts, migration 033); until it is started,
+  // its first block, promotion or new growth asks first (budgetPlanning.js).
+  const draftStarted = isDraftStarted({ draft: budgets.data.draft, draftsEnabled: budgets.data.drafts_enabled,
+    savedEntries: entryCount, versionCount: budgets.data.history.length });
+  const addBlocked = budget ? addBlockedReason(budgets) : null;
+  function requestAdd(add, cancel) {
+    if (addBlocked) return;
+    if (budget && !draftStarted) setAddPrompt({ run: add, cancel, adding: true });
+    else add();
+  }
+  // What the Budget scenario builds on, beside its entries in the sidebar and both tables.
+  const draftNote = budget
+    ? <BudgetDraftNote budgets={budgets} savedEntries={entryCount} onStart={() => setAddPrompt({ run: () => {}, adding: false })} />
+    : null;
+  function originOf(item) {
+    return budget ? draftOriginLabel(item, budgets.data.draft, budgets.data.history) : null;
+  }
+  // Growth asks when a new one is saved, not as it is typed, and never for an
+  // edit to a saved one. If the version started from brought its own growth
+  // for this customer, that one is kept and the typed one dropped.
+  function saveGrowth(block) {
+    if (block.blockId != null) return scenarioBlocks.saveBlock(block);
+    if (addBlocked) return Promise.reject(new Error(addBlocked));
+    return new Promise((resolve, reject) => requestAdd((started) => {
+      if (!growthCameWithStart(block, started)) return scenarioBlocks.saveBlock(block).then(resolve, reject);
+      scenarioBlocks.setBlocks((current) => current.filter((item) => item.id !== block.id));
+      return reject(new Error(`Version ${started.version} already sets this growth; it was copied in. Change it there if needed.`));
+    }, resolve));
+  }
+  // The year's entries are read back in (a copy, or what scratch cleared);
+  // the new draft stays (scenarioSavedItems).
+  function startedBeforeAdding(version, started) {
+    scenarioBlocks.refresh();
+    scenarioPromotions.refresh();
+    budgets.refresh();
+    addPrompt?.run(started);
+    setAddPrompt(null);
+  }
+  const editedSaved = scenarioBlocks.blocks.filter((block) => block.blockId != null && hasUnsavedChanges(block)).length
+    + scenarioPromotions.promotions.filter((promotion) => promotion.promotionId != null && hasUnsavedPromotionChanges(promotion)).length;
+  function cancelStart() {
+    addPrompt?.cancel?.();
+    setAddPrompt(null);
+  }
+
   const error =
     filters.error ?? view.error ?? scenarioBlocks.error ?? scenarioPromotions.error ?? promotionEditor.error ?? budgetSplitError ?? splitBasis.error ?? actionError;
 
@@ -547,12 +627,14 @@ export default function ScenarioBuilder({ plan = 'scenario', budgetYear, onBudge
 
   return (
     <div className="space-y-3">
-      {budget ? <BudgetLockControl year={budgetYear} unsaved={scenarioBlocks.unsavedCount + scenarioPromotions.unsavedCount}
+      {budget ? <BudgetLockControl year={budgetYear} budgets={budgets} unsaved={scenarioBlocks.unsavedCount + scenarioPromotions.unsavedCount}
         loading={view.loading || scenarioBlocks.loading || scenarioPromotions.loading || tier0Breakdown.loading || promotionEditor.saving || promotionEditor.togglingIds.length > 0} hasInitial={fullInitial.length > 0}
         loadError={view.error ?? scenarioBlocks.error ?? scenarioPromotions.error ?? promotionEditor.error ?? budgetSplitError}
-        entryCount={scenarioBlocks.blocks.filter((block) => block.blockId != null).length + scenarioPromotions.promotions.filter((promotion) => promotion.promotionId != null).length}
+        entryCount={entryCount}
         compared={comparedVersions} onComparedChange={setComparedVersions} compareError={compared.error}
         onRestarted={onBudgetRestarted} /> : null}
+      {budget ? <BudgetStartDialog open={Boolean(addPrompt)} beforeAdding={addPrompt?.adding !== false} year={budgetYear} history={budgets.data.history}
+        entryCount={entryCount} blockedReason={startBlockedReason(editedSaved)} onCancel={cancelStart} onStarted={startedBeforeAdding} /> : null}
       {error && (
         <p className="rounded-md border border-violet bg-lavander/50 px-3 py-2 text-sm text-deep-violet-blue">
           {error}
@@ -565,7 +647,7 @@ export default function ScenarioBuilder({ plan = 'scenario', budgetYear, onBudge
       <div className="grid items-start gap-3 min-[1100px]:grid-cols-[minmax(0,1fr)_auto] min-[1100px]:items-stretch">
         <div className="min-w-0 space-y-3 min-[1100px]:flex min-[1100px]:flex-col min-[1100px]:[&>[data-slot=card]]:flex-1">
           <ForecastChart
-          points={chartPoints}
+          points={shownPoints}
             baseSeries={budget
               ? FORECAST_SERIES.filter((series) => series.key === 'current').map((series) => ({ ...series, label: baseLabel }))
               : FORECAST_SERIES.map((series) => (series.key === 'current' ? { ...series, label: baseLabel } : series))}
@@ -692,13 +774,17 @@ export default function ScenarioBuilder({ plan = 'scenario', budgetYear, onBudge
                     years={growthYears(months)}
                     impacts={byItem}
                     onChange={scenarioBlocks.setBlocks}
-                    onSave={scenarioBlocks.saveBlock}
+                    onSave={budget ? saveGrowth : scenarioBlocks.saveBlock}
                     onRemove={scenarioBlocks.deleteBlock}
                   />
                 )
               }
-              totals={breakdownTotals(breakdowns)}
+              totals={shownTotals}
               milestones={milestones}
+              lines={budget ? breakdownLines : []}
+              line={pickedLine}
+              onLineChange={setBreakdownLine}
+              version={pickedState}
             />
           }
           blocksSection={
@@ -723,6 +809,9 @@ export default function ScenarioBuilder({ plan = 'scenario', budgetYear, onBudge
                 skuRangeOptions={filters.skuRangeOptions}
                 defaultSkuRange={skuRange}
                 pastMonths={pastMonths}
+                onRequestAdd={requestAdd}
+                draftNote={draftNote}
+                addBlocked={Boolean(addBlocked)}
                 {...sectionProps}
               />
             )
@@ -741,6 +830,9 @@ export default function ScenarioBuilder({ plan = 'scenario', budgetYear, onBudge
                 liveIndex={liveIndex}
                 liveLoading={calculated.loading}
                 liveError={calculated.error}
+                onRequestAdd={requestAdd}
+                draftNote={draftNote}
+                addBlocked={Boolean(addBlocked)}
                 {...sectionProps}
               />
             )
@@ -751,6 +843,8 @@ export default function ScenarioBuilder({ plan = 'scenario', budgetYear, onBudge
 
       <BlockTable
         blocks={savedBlocks}
+        draftNote={draftNote}
+        originOf={originOf}
         baseLabel={baseLabel}
         impacts={byItem}
         monthsByItem={monthsByItem}
@@ -772,7 +866,7 @@ export default function ScenarioBuilder({ plan = 'scenario', budgetYear, onBudge
       <PromotionTable items={scenarioPromotions.promotions} editor={promotionEditor} impacts={byItem}
         monthsByItem={monthsByItem} liveIndex={liveIndex} onEdit={editSavedPromotion} onRefresh={scenarioPromotions.refresh}
         isLoading={scenarioPromotions.loading} error={scenarioPromotions.error} baseLabel={baseLabel}
-        previewReady={budgetReady} showNotice={panelTab !== 'promotions'} />
+        previewReady={budgetReady} showNotice={panelTab !== 'promotions'} draftNote={draftNote} originOf={originOf} />
 
       <ConfirmDialog
         open={Boolean(deletion.target)}

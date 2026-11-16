@@ -3,6 +3,7 @@
 import { LockKeyhole } from 'lucide-react';
 
 import InfoTooltip from '@/components/ui/InfoTooltip';
+import SelectDropdown from '@/components/ui/SelectDropdown';
 import { Button } from '@/components/ui/button';
 import { formatMonthLabel } from '@/app/utils/forecastView';
 import { PART_COLORS } from '@/app/utils/scenarioComposition';
@@ -72,7 +73,10 @@ const GROUP_CLASS = 'mt-2 text-[10px] font-bold uppercase tracking-wide text-dee
  * over the months on the chart (scenarioComposition.breakdownTotals): what
  * the forecast already holds, then what is added here in the sidebar, each
  * with its chart band's colour. Month by month the same parts are the
- * Monthly plan's columns.
+ * Monthly plan's columns. In Budget planning, `lines` lists the draft and
+ * each compared version on the chart; the one picked (`version` when it is
+ * a locked one, with `totals` already its own) is what the list describes,
+ * as the chart's layers do.
  *
  * @param {{
  *   plan?: 'scenario' | 'budget',
@@ -81,11 +85,18 @@ const GROUP_CLASS = 'mt-2 text-[10px] font-bold uppercase tracking-wide text-dee
  *   totals: ReturnType<typeof import('@/app/utils/scenarioComposition').breakdownTotals>,
  *   milestones: ReturnType<typeof import('@/app/utils/scenarioMilestones').milestoneBreakdown>,
  *   onSpotlight?: (part: string | null) => void,
+ *   lines?: { value: string, label: string }[],
+ *   line?: string,
+ *   onLineChange?: (line: string) => void,
+ *   version?: { label: string, loading: boolean, error: string | null, missing: boolean } | null,
  * }} props
  */
-export default function FrozenBaselinePanel({ plan = 'scenario', growthSection, tier0Split, totals, milestones, onSpotlight }) {
+export default function FrozenBaselinePanel({ plan = 'scenario', growthSection, tier0Split, totals, milestones, onSpotlight,
+  lines = [], line = 'draft', onLineChange, version = null }) {
   const budget = plan === 'budget';
-  const split = Boolean(tier0Split.index);
+  // A locked version always has its split: it was saved with the lock.
+  const split = version ? true : Boolean(tier0Split.index);
+  const versionPending = version && (version.loading || version.error || version.missing);
   const title = budget ? 'Budget breakdown' : 'Forecast breakdown';
   const period = periodLabel(totals.months);
   // Past months with milestones: their actual, worked back (scenarioMilestones.js).
@@ -102,7 +113,7 @@ export default function FrozenBaselinePanel({ plan = 'scenario', growthSection, 
 
       <div className="border-t border-lavander pt-3 text-xs text-deep-violet-blue">
         <p className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-deep-violet-blue/55">
-          What Simulated is made of{period ? ` · ${period}` : ''}
+          What {version ? version.label : 'Simulated'} is made of{period && !versionPending ? ` · ${period}` : ''}
           <InfoTooltip label="About the breakdown">
             {budget ? (
               <>Initial is reconstructed at its own data cut-off: an ordinary-month baseline at the source anchors,
@@ -116,7 +127,17 @@ export default function FrozenBaselinePanel({ plan = 'scenario', growthSection, 
             )}
           </InfoTooltip>
         </p>
-        {totals.months.length ? (
+        {lines.length > 1 ? (
+          <div className="mt-1.5">
+            <SelectDropdown value={line} onChange={onLineChange} options={lines} ariaLabel="Breakdown of" look="compact" />
+          </div>
+        ) : null}
+        {versionPending ? (
+          <p className="mt-1 text-[11px] text-deep-violet-blue/60">
+            {version.error ? `Couldn't load this version: ${version.error}`
+              : version.loading ? 'Loading this version…' : 'This version was locked before its breakdown was saved.'}
+          </p>
+        ) : totals.months.length ? (
           <>
             {/* The baseline differs per tab: Tier 0 of the Current forecast here, Tier 0 of the Initial Yearly Forecast for a budget. */}
             <p className={GROUP_CLASS}>{budget ? 'In the Initial Yearly Forecast · Tier 0' : 'In the Current forecast · Tier 0'}</p>
@@ -131,21 +152,32 @@ export default function FrozenBaselinePanel({ plan = 'scenario', growthSection, 
                 <Part partKey="baseline" onSpotlight={onSpotlight} color={PART_COLORS.baseline} label={budget ? 'Initial forecast (unsplit)' : 'Tier 0'} value={units(totals.baseline)} />
               )}
             </ul>
-            {budget ? (
+            {version ? (
+              <p className="mt-1 text-[11px] leading-snug text-deep-violet-blue/60">
+                As locked: Initial and its split at the lock, with this version&apos;s growth, blocks and promotions.
+              </p>
+            ) : budget ? (
               <p className="mt-1 text-[11px] leading-snug text-deep-violet-blue/60">
                 {split ? <>Reconstructed at Initial&apos;s own data cut-off{tier0Split.dataCutoff ? ` (${formatMonthLabel(tier0Split.dataCutoff)})` : ''}.
                   {' '}Carried effects remain where you have no budget promotion; elsewhere your promotion replaces its covered share.</>
                   : <>The Initial breakdown is needed before budget adjustments can be previewed or locked.</>}
               </p>
             ) : null}
-            <p className={GROUP_CLASS}>Your adjustments</p>
+            {budget && !version && split && tier0Split.unsplitCustomers?.length ? (
+              <p className="mt-1.5 rounded-md border border-violet bg-lavander/50 px-2.5 py-2 text-[11px] leading-snug" role="status">
+                {tier0Split.unsplitCustomers.join(', ')}: sales up to the data cut-off changed after Initial was fixed, so
+                {' '}Initial can&apos;t be split for some of their months. There it counts whole as baseline, and a budget
+                promotion adds on top instead of replacing carried effects. Remaking Initial fixes this.
+              </p>
+            ) : null}
+            <p className={GROUP_CLASS}>{version ? `Adjustments · ${version.label}` : 'Your adjustments'}</p>
             <ul>
               {budget ? <Part partKey="growth" onSpotlight={onSpotlight} color={PART_COLORS.growth} label="Growth" value={signedUnits(totals.growth)} /> : null}
               <Part partKey="blocks" onSpotlight={onSpotlight} color={PART_COLORS.blocks} label="Building blocks" value={signedUnits(totals.blocks)} />
               <Part partKey="promotions" onSpotlight={onSpotlight} color={PART_COLORS.promotions} label="Scenario promotions" value={signedUnits(totals.promotions)} />
             </ul>
             <p className="mt-2 flex items-center justify-between border-t border-lavander pt-1.5 font-semibold">
-              <span>Simulated</span>
+              <span>{version ? version.label : 'Simulated'}</span>
               <span className="tabular-nums">{units(totals.simulated)}</span>
             </p>
           </>
@@ -163,18 +195,17 @@ export default function FrozenBaselinePanel({ plan = 'scenario', growthSection, 
               </InfoTooltip>
             </p>
             <ul className="mt-1">
-              <Part color={PART_COLORS.baseline} label="Without milestones" value={units(past.without)} />
-              {past.milestones.map((item) => (
-                <Part key={item.itemId} color={PART_COLORS.milestones} label={item.name} value={signedUnits(item.units)} />
-              ))}
-            </ul>
+              <Part partKey="withoutMilestones" onSpotlight={onSpotlight} color={PART_COLORS.baseline} label="Without milestones" value={units(past.without)} />
+              {/* One line, as Building blocks is above; each block's name is in the chart's hover card. */}
+              <Part partKey="milestones" onSpotlight={onSpotlight} color={PART_COLORS.milestones} label="Building block milestones"
+                value={signedUnits(past.milestones.reduce((sum, item) => sum + item.units, 0))} />            </ul>
             <p className="mt-2 flex items-center justify-between border-t border-lavander pt-1.5 font-semibold">
               <span>Actual</span>
               <span className="tabular-nums">{units(past.actual)}</span>
             </p>
           </div>
         ) : null}
-        {tier0Split.error ? (
+        {version ? null : tier0Split.error ? (
           <p className="mt-2 rounded-md border border-violet bg-lavander/50 px-2.5 py-2 text-xs" role="alert">
             {budget ? 'Initial' : 'Tier 0'} could not be split into its baseline and promotions: {tier0Split.error}
           </p>
