@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { MAX_COMPARED_VERSIONS, budgetAsInitial, budgetVersionMonths, draftBaseLabel, draftEntryOrigin, budgetAsInitialMonths, budgetYears, budgetVersionKey, budgetVersionSeries, hasBudgetMonths, hasBudgetPoints, initialBudgetRows, initialSplitProblem, unsplitCustomers, withBudgetPoints } from '../app/utils/budgetPlanning.js';
+import { MAX_COMPARED_VERSIONS, budgetAsInitial, budgetVersionMonths, addBlockedReason, draftBaseLabel, draftEntryOrigin, draftOriginLabel, growthCameWithStart, isDraftStarted, startBlockedReason, budgetAsInitialMonths, budgetYears, budgetVersionKey, budgetVersionSeries, hasBudgetMonths, hasBudgetPoints, initialBudgetRows, initialSplitProblem, unsplitCustomers, withBudgetPoints } from '../app/utils/budgetPlanning.js';
 import { promotionCells, tier0SplitIndex } from '../app/utils/scenarioTier0Split.js';
 
 test('budget simulation uses Initial and excludes series without it, without changing the original forecast', () => {
@@ -154,4 +154,36 @@ test('an entry is copied with the start, edited after it, or added later', () =>
   assert.equal(draftEntryOrigin({ createdAt: at }, { ...draft, started_from_version: null }), 'added');
   assert.equal(draftEntryOrigin({ createdAt: at }, null), null);
   assert.equal(draftEntryOrigin({}, draft), null);
+});
+
+test('a draft with saved entries counts as started, so they are never offered for replacement', () => {
+  assert.equal(isDraftStarted({ draft: null, draftsEnabled: true, savedEntries: 3, versionCount: 2 }), true);
+  assert.equal(isDraftStarted({ draft: null, draftsEnabled: true, savedEntries: 0, versionCount: 2 }), false);
+  assert.equal(isDraftStarted({ draft: null, draftsEnabled: true, savedEntries: 0, versionCount: 0 }), false);
+  assert.equal(isDraftStarted({ draft: { started_from_version: null }, draftsEnabled: true, savedEntries: 0, versionCount: 0 }), true);
+  assert.equal(isDraftStarted({ draft: null, draftsEnabled: false, savedEntries: 0, versionCount: 0 }), true);
+  assert.equal(isDraftStarted({ draft: null, draftsEnabled: false, savedEntries: 0, versionCount: 1 }), false);
+});
+
+test('adding waits for the start to be read and starting waits for edits to be saved', () => {
+  assert.equal(addBlockedReason({ loading: false, error: null }), null);
+  assert.match(addBlockedReason({ loading: true, error: null }), /Checking/);
+  assert.match(addBlockedReason({ loading: false, error: 'down' }), /down/);
+  assert.equal(startBlockedReason(0), null);
+  assert.match(startBlockedReason(2), /2 edited saved entries/);
+});
+
+test('a row is labelled with the same name as the draft everywhere else', () => {
+  const draft = { started_from_version: 2, started_at: '2026-11-16T02:00:00+00:00' };
+  const history = [{ version: 2, name: 'Test A' }];
+  assert.equal(draftOriginLabel({ createdAt: draft.started_at }, draft, history), 'From Version 2 · Test A');
+  assert.equal(draftOriginLabel({ createdAt: draft.started_at, updatedAt: '2026-11-17T00:00:00+00:00' }, draft, history), 'From Version 2 · Test A · edited');
+  assert.equal(draftOriginLabel({ createdAt: '2026-11-17T00:00:00+00:00' }, draft, history), 'Added');
+  assert.equal(draftOriginLabel({ createdAt: draft.started_at }, null, history), null);
+});
+
+test('a growth whose customer came with the copied version is not saved again', () => {
+  assert.equal(growthCameWithStart({ customers: ['FairPrice'] }, { growth_customers: ['FairPrice'] }), true);
+  assert.equal(growthCameWithStart({ customers: ['NHG'] }, { growth_customers: ['FairPrice'] }), false);
+  assert.equal(growthCameWithStart({ customers: ['NHG'] }, null), false);
 });

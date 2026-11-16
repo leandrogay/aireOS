@@ -174,7 +174,10 @@ def start_budget(year: int, version: int | None, started_by: str) -> dict | None
                 ON CONFLICT (year) DO UPDATE SET started_from_version = EXCLUDED.started_from_version,
                     started_at = EXCLUDED.started_at, started_by = EXCLUDED.started_by
             """), {"year": year, "version": version, "started_by": started_by})
-    return {"year": year, "version": version, "blocks": len(blocks), "promotions": len(promos)}
+    # The customers whose growth came with the copy, so a growth being added
+    # alongside the start isn't saved a second time (one per customer x year).
+    growth = sorted({name for block in blocks if block.get("kind") == "growth" for name in block.get("customer_names") or []})
+    return {"year": year, "version": version, "blocks": len(blocks), "promotions": len(promos), "growth_customers": growth}
 
 
 def _version_parts(inputs: dict | None, rows: list[dict], year: int) -> dict | None:

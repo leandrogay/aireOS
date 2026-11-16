@@ -221,7 +221,8 @@ def _start(monkeypatch, inputs):
 def test_starting_from_a_version_replaces_the_years_entries_with_its_copies(monkeypatch):
     other_year = _saved_block(start_month="2028-01-01", end_month="2028-02-01")
     conn, copied = _start(monkeypatch, {"blocks": [_saved_block(), other_year], "promotions": []})
-    assert budgets.start_budget(2027, 2, "staff@aire.sg") == {"year": 2027, "version": 2, "blocks": 1, "promotions": 0}
+    assert budgets.start_budget(2027, 2, "staff@aire.sg") == {"year": 2027, "version": 2, "blocks": 1, "promotions": 0,
+                                                             "growth_customers": []}
     deletes = conn.sql_containing("DELETE FROM")
     assert len(deletes) == 2 and all("plan = 'budget'" in sql and params["year_start"] == date(2027, 1, 1) for sql, params in deletes)
     # Copied as a create request: plan budget, dates parsed, no saved ids.
@@ -365,3 +366,9 @@ def test_a_versions_inputs_saved_as_text_or_with_gaps_never_fail_the_read():
            "start_month": "2027-01-01", "end_month": "2027-12-01", "uplift_mode": "pct", "uplift_value": None}
     assert budgets._version_parts({"blocks": [gap], "promotions": [], "initial_breakdown": {"rows": splits}},
                                   _locked(rows, 100), 2027) is None
+
+
+def test_starting_says_whose_growth_came_with_the_copy(monkeypatch):
+    growth = _saved_block(kind="growth", start_month="2027-01-01", end_month="2027-12-01")
+    _start(monkeypatch, {"blocks": [growth, _saved_block()], "promotions": []})
+    assert budgets.start_budget(2027, 2, "staff@aire.sg")["growth_customers"] == ["FairPrice"]

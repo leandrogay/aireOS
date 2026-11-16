@@ -26,13 +26,14 @@ function units(value) {
  *   history: { version: number, name: string | null, is_official: boolean, total_units: number, locked_at: string, locked_by: string }[],
  *   entryCount: number,
  *   onCancel: () => void,
- *   onStarted: (version: number | null) => void,
+ *   onStarted: (version: number | null, started: object) => void,
  *   beforeAdding?: boolean,
  *   blockedReason?: string | null,
  * }} props
  *
  * `beforeAdding`: asked before a year's first entry, so it says the new entry
- * goes on top of what is picked. onStarted gets the version copied (null = scratch).
+ * goes on top of what is picked. onStarted gets the version copied (null = scratch)
+ * and what POST /budgets/start returned (`growth_customers`: growth that came with it).
  */
 export default function BudgetStartDialog({ open, year, history, entryCount, onCancel, onStarted, beforeAdding = false, blockedReason = null }) {
   const [choice, setChoice] = useState(null);
@@ -52,9 +53,9 @@ export default function BudgetStartDialog({ open, year, history, entryCount, onC
     setError(null);
     try {
       const version = selected === SCRATCH ? null : selected;
-      await startBudget(year, version);
+      const started = await startBudget(year, version);
       setChoice(null);
-      onStarted(version);
+      onStarted(version, started);
     } catch (err) {
       setError(err.message);
     } finally {

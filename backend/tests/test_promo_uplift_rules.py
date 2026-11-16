@@ -82,6 +82,12 @@ def test_a_key_stating_no_discount_has_none(key):
     assert rules.derived_discount(key) is None
 
 
+def test_a_saved_discount_wins_and_an_unsaved_one_is_read_from_the_key():
+    assert rules.discount_or_derived(Decimal("40"), "b1g1") == Decimal("40")
+    assert rules.discount_or_derived(None, "b1g1") == Decimal("50")
+    assert rules.discount_or_derived(None, "voucher") is None
+
+
 # ---- placeholder_uplift ------------------------------------------------------------
 
 

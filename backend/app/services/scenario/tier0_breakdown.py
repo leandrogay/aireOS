@@ -56,6 +56,8 @@ def _settings_inputs(customer_ids: list[int] | None) -> dict:
             "sku_ranges": promo_moments.sku_ranges(conn),
             "anchor_for": versions.version_lookup(promo_uplifts._anchor_rows(conn)),
             "discount_in": promo_uplifts.mechanic_discount_lookup(conn),
+            # Saved only: the Initial breakdown names the discounts it worked out.
+            "saved_discount_in": promo_uplifts.mechanic_discount_lookup(conn, derive=False),
         }
 
 

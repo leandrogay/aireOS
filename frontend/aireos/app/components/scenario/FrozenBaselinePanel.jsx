@@ -88,7 +88,7 @@ const GROUP_CLASS = 'mt-2 text-[10px] font-bold uppercase tracking-wide text-dee
  *   lines?: { value: string, label: string }[],
  *   line?: string,
  *   onLineChange?: (line: string) => void,
- *   version?: { label: string, loading: boolean, missing: boolean } | null,
+ *   version?: { label: string, loading: boolean, error: string | null, missing: boolean } | null,
  * }} props
  */
 export default function FrozenBaselinePanel({ plan = 'scenario', growthSection, tier0Split, totals, milestones, onSpotlight,
@@ -96,7 +96,7 @@ export default function FrozenBaselinePanel({ plan = 'scenario', growthSection, 
   const budget = plan === 'budget';
   // A locked version always has its split: it was saved with the lock.
   const split = version ? true : Boolean(tier0Split.index);
-  const versionPending = version && (version.loading || version.missing);
+  const versionPending = version && (version.loading || version.error || version.missing);
   const title = budget ? 'Budget breakdown' : 'Forecast breakdown';
   const period = periodLabel(totals.months);
   // Past months with milestones: their actual, worked back (scenarioMilestones.js).
@@ -134,7 +134,8 @@ export default function FrozenBaselinePanel({ plan = 'scenario', growthSection, 
         ) : null}
         {versionPending ? (
           <p className="mt-1 text-[11px] text-deep-violet-blue/60">
-            {version.loading ? 'Loading this version…' : 'This version was locked before its breakdown was saved.'}
+            {version.error ? `Couldn't load this version: ${version.error}`
+              : version.loading ? 'Loading this version…' : 'This version was locked before its breakdown was saved.'}
           </p>
         ) : totals.months.length ? (
           <>

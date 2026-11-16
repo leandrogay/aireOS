@@ -249,3 +249,70 @@ export function draftEntryOrigin(item, draft) {
   }
   return 'added';
 }
+
+/**
+ * Whether a year's Budget scenario has been started, so adding to it goes
+ * straight through instead of asking "Start from…". Started when its start
+ * is recorded (budget_drafts, migration 033), or when it already has saved
+ * entries: those were made before starts were recorded, and asking would
+ * offer only to replace them. Before 033, an empty draft with locked
+ * versions to build on asks.
+ *
+ * @param {{ draft: object | null, draftsEnabled?: boolean, savedEntries: number, versionCount: number }} state
+ */
+export function isDraftStarted({ draft, draftsEnabled, savedEntries, versionCount }) {
+  if (draft || savedEntries > 0) return true;
+  return draftsEnabled ? false : versionCount === 0;
+}
+
+/**
+ * Why a budget entry can't be added yet, or null: the year's start is still
+ * being read, or couldn't be (useBudgets), so the page never guesses.
+ *
+ * @param {{ loading: boolean, error: string | null }} budgets
+ */
+export function addBlockedReason({ loading, error }) {
+  if (error) return `Can't check what this budget builds on: ${error}`;
+  return loading ? 'Checking what this budget builds on…' : null;
+}
+
+/**
+ * Why "Start from…" must wait, or null: starting replaces the year's saved
+ * entries, so an unsaved edit to one would be left pointing at nothing.
+ *
+ * @param {number} editedSaved saved entries with unsaved edits
+ */
+export function startBlockedReason(editedSaved) {
+  if (!editedSaved) return null;
+  return `Save or discard the ${editedSaved} edited saved ${editedSaved === 1 ? 'entry' : 'entries'} first: starting replaces them.`;
+}
+
+/**
+ * A saved entry's origin under its name in the saved tables: "From Version 2
+ * · Test A", "… · edited", or "Added" (draftEntryOrigin), the draft named as
+ * everywhere else (draftBaseLabel); null when unknown.
+ *
+ * @param {object} item
+ * @param {object | null} draft
+ * @param {{ version: number, name: string | null }[]} history
+ */
+export function draftOriginLabel(item, draft, history = []) {
+  const origin = draftEntryOrigin(item, draft);
+  if (!origin) return null;
+  if (origin === 'added') return 'Added';
+  const from = `From ${draftBaseLabel(draft, history)}`;
+  return origin === 'edited' ? `${from} · edited` : from;
+}
+
+/**
+ * True when "Start from…" copied in a growth for this growth's customer
+ * (POST /budgets/start `growth_customers`): one growth per customer x year,
+ * so the one being typed is not saved as well.
+ *
+ * @param {{ customers?: string[] }} growth
+ * @param {{ growth_customers?: string[] } | null} started
+ */
+export function growthCameWithStart(growth, started) {
+  const copied = started?.growth_customers ?? [];
+  return (growth.customers ?? []).some((customer) => copied.includes(customer));
+}

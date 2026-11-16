@@ -5,7 +5,8 @@ import { useState } from 'react';
 import BudgetLockControl from '@/components/scenario/BudgetLockControl';
 import BudgetDraftNote from '@/components/scenario/BudgetDraftNote';
 import BudgetStartDialog from '@/components/scenario/BudgetStartDialog';
-import { budgetVersionKey, budgetVersionMonths, budgetVersionSeries, draftEntryOrigin, initialBudgetRows, initialSplitProblem, unsplitCustomers, withBudgetPoints } from '@/app/utils/budgetPlanning';
+import { addBlockedReason, budgetVersionKey, budgetVersionMonths, budgetVersionSeries, draftOriginLabel, growthCameWithStart, initialBudgetRows,
+  initialSplitProblem, isDraftStarted, startBlockedReason, unsplitCustomers, withBudgetPoints } from '@/app/utils/budgetPlanning';
 import { cn } from '@/lib/utils';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import ForecastChart from '@/components/forecast/ForecastChart';
@@ -369,7 +370,8 @@ export default function ScenarioBuilder({ plan = 'scenario', budgetYear, onBudge
   const pickedRows = pickedIndex >= 0 ? compared.data[comparedVersions[pickedIndex].version] : null;
   const pickedMonths = pickedRows ? budgetVersionMonths(pickedRows, { productName, customerName, skuRange, startDate, endDate }) : null;
   const pickedState = pickedIndex < 0 ? null
-    : { label: versionSeries[pickedIndex].label, loading: !pickedRows, missing: Boolean(pickedRows) && !pickedMonths };
+    : { label: versionSeries[pickedIndex].label, loading: !pickedRows && !compared.error, error: pickedRows ? null : compared.error,
+      missing: Boolean(pickedRows) && !pickedMonths };
   const chartPoints = versionSeries.reduce((points, series, index) => withBudgetPoints(points,
     compared.data[comparedVersions[index].version] ?? [], { productName, customerName, skuRange, startDate, endDate },
     undefined, budgetVersionKey(comparedVersions[index].version)), composedPoints);
@@ -501,52 +503,46 @@ export default function ScenarioBuilder({ plan = 'scenario', budgetYear, onBudge
   const entryCount = scenarioBlocks.blocks.filter((block) => block.blockId != null).length
     + scenarioPromotions.promotions.filter((promotion) => promotion.promotionId != null).length;
   // A budget year's draft is built on what "Start from…" picked (a locked
-  // version or scratch, recorded in budget_drafts, migration 033): until the
-  // year has been started, its first block, promotion or growth asks first,
-  // and goes on once picked. Before 033 is applied, only an empty draft
-  // with locked versions to build on asks.
-  const draftStarted = budgets.data.drafts_enabled ? Boolean(budgets.data.draft)
-    : Boolean(scenarioBlocks.blocks.length || scenarioPromotions.promotions.length || !budgets.data.history.length);
-  // Until the year's start is read, adding waits (BudgetDraftNote says why), so it never guesses.
-  const addBlockedReason = !budget ? null : budgets.error ? `Can't check what this budget builds on: ${budgets.error}`
-    : budgets.loading ? 'Checking what this budget builds on…' : null;
+  // version or scratch, budget_drafts, migration 033); until it is started,
+  // its first block, promotion or new growth asks first (budgetPlanning.js).
+  const draftStarted = isDraftStarted({ draft: budgets.data.draft, draftsEnabled: budgets.data.drafts_enabled,
+    savedEntries: entryCount, versionCount: budgets.data.history.length });
+  const addBlocked = budget ? addBlockedReason(budgets) : null;
   function requestAdd(add, cancel) {
-    if (addBlockedReason) return;
+    if (addBlocked) return;
     if (budget && !draftStarted) setAddPrompt({ run: add, cancel, adding: true });
     else add();
   }
   // What the Budget scenario builds on, beside its entries in the sidebar and both tables.
   const draftNote = budget
-    ? <BudgetDraftNote budgets={budgets} onStart={() => setAddPrompt({ run: () => {}, adding: false })} />
+    ? <BudgetDraftNote budgets={budgets} savedEntries={entryCount} onStart={() => setAddPrompt({ run: () => {}, adding: false })} />
     : null;
-  // Each saved entry's origin under its name: copied with the start, edited since, or added after.
   function originOf(item) {
-    const origin = budget ? draftEntryOrigin(item, budgets.data.draft) : null;
-    if (!origin) return null;
-    if (origin === 'added') return 'Added';
-    const from = `From version ${budgets.data.draft.started_from_version}`;
-    return origin === 'edited' ? `${from} · edited` : from;
+    return budget ? draftOriginLabel(item, budgets.data.draft, budgets.data.history) : null;
   }
-  // Growth asks when it is saved, not as it is typed; cancelling leaves it unsaved.
+  // Growth asks when a new one is saved, not as it is typed, and never for an
+  // edit to a saved one. If the version started from brought its own growth
+  // for this customer, that one is kept and the typed one dropped.
   function saveGrowth(block) {
-    if (addBlockedReason) return Promise.reject(new Error(addBlockedReason));
-    return new Promise((resolve, reject) => requestAdd(() => scenarioBlocks.saveBlock(block).then(resolve, reject), resolve));
+    if (block.blockId != null) return scenarioBlocks.saveBlock(block);
+    if (addBlocked) return Promise.reject(new Error(addBlocked));
+    return new Promise((resolve, reject) => requestAdd((started) => {
+      if (!growthCameWithStart(block, started)) return scenarioBlocks.saveBlock(block).then(resolve, reject);
+      scenarioBlocks.setBlocks((current) => current.filter((item) => item.id !== block.id));
+      return reject(new Error(`Version ${started.version} already sets this growth; it was copied in. Change it there if needed.`));
+    }, resolve));
   }
   // The year's entries are read back in (a copy, or what scratch cleared);
   // the new draft stays (scenarioSavedItems).
-  function startedBeforeAdding() {
+  function startedBeforeAdding(version, started) {
     scenarioBlocks.refresh();
     scenarioPromotions.refresh();
     budgets.refresh();
-    addPrompt?.run();
+    addPrompt?.run(started);
     setAddPrompt(null);
   }
-  // Starting replaces the year's saved entries, so an unsaved edit to one would be left behind.
   const editedSaved = scenarioBlocks.blocks.filter((block) => block.blockId != null && hasUnsavedChanges(block)).length
     + scenarioPromotions.promotions.filter((promotion) => promotion.promotionId != null && hasUnsavedPromotionChanges(promotion)).length;
-  const startBlockedReason = editedSaved
-    ? `Save or discard the ${editedSaved} edited saved ${editedSaved === 1 ? 'entry' : 'entries'} first: starting replaces them.`
-    : null;
   function cancelStart() {
     addPrompt?.cancel?.();
     setAddPrompt(null);
@@ -638,7 +634,7 @@ export default function ScenarioBuilder({ plan = 'scenario', budgetYear, onBudge
         compared={comparedVersions} onComparedChange={setComparedVersions} compareError={compared.error}
         onRestarted={onBudgetRestarted} /> : null}
       {budget ? <BudgetStartDialog open={Boolean(addPrompt)} beforeAdding={addPrompt?.adding !== false} year={budgetYear} history={budgets.data.history}
-        entryCount={entryCount} blockedReason={startBlockedReason} onCancel={cancelStart} onStarted={startedBeforeAdding} /> : null}
+        entryCount={entryCount} blockedReason={startBlockedReason(editedSaved)} onCancel={cancelStart} onStarted={startedBeforeAdding} /> : null}
       {error && (
         <p className="rounded-md border border-violet bg-lavander/50 px-3 py-2 text-sm text-deep-violet-blue">
           {error}
@@ -815,7 +811,7 @@ export default function ScenarioBuilder({ plan = 'scenario', budgetYear, onBudge
                 pastMonths={pastMonths}
                 onRequestAdd={requestAdd}
                 draftNote={draftNote}
-                addBlocked={Boolean(addBlockedReason)}
+                addBlocked={Boolean(addBlocked)}
                 {...sectionProps}
               />
             )
@@ -836,7 +832,7 @@ export default function ScenarioBuilder({ plan = 'scenario', budgetYear, onBudge
                 liveError={calculated.error}
                 onRequestAdd={requestAdd}
                 draftNote={draftNote}
-                addBlocked={Boolean(addBlockedReason)}
+                addBlocked={Boolean(addBlocked)}
                 {...sectionProps}
               />
             )

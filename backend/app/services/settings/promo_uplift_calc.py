@@ -194,7 +194,8 @@ def calculated_rows(
                             anchor_key = version["mechanic_key"]
                             if version["version_id"] is None:
                                 anchor_key = unsaved_anchor_keys.get((customer_id, item["sku"]))
-                            value = _worked_out(mechanic_key, version, anchor_key, mechanic.get("discount_pct"))
+                            value = _worked_out(mechanic_key, version, anchor_key,
+                                                uplift_rules.discount_or_derived(mechanic.get("discount_pct"), mechanic_key))
                         skus.append({**item, **value})
                     row_versions.append({
                         "effective_from": start.isoformat(),

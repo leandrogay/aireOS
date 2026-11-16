@@ -762,12 +762,13 @@ def mechanic_discounts(conn: Connection) -> dict[str, dict]:
     }
 
 
-def mechanic_discount_lookup(conn: Connection):
+def mechanic_discount_lookup(conn: Connection, derive: bool = True):
     """
     discount_in(mechanic_key, month): the mechanic's effective discount in
     effect that month (migration 024: a change applies from the month it was
-    made, NULL = from the start), or None. For months in the past, so a
-    discount changed today never moves them.
+    made, NULL = from the start), else the one its key states
+    (rules.discount_or_derived), or None. For months in the past, so a
+    discount changed today never moves them. `derive=False`: saved only.
     """
 
     rows = [row for row in _uplift_rows(conn) if row["scope"] == "all" and row["mechanic_key"]]
@@ -777,9 +778,10 @@ def mechanic_discount_lookup(conn: Connection):
         if month not in by_month:
             by_month[month] = common.in_effect(rows, lambda row: (row["mechanic_key"],), month)
         row = by_month[month].get((mechanic_key,))
-        if row is None or row["source"] == "removed" or row["effective_discount_pct"] is None:
-            return None
-        return Decimal(row["effective_discount_pct"])
+        saved = None
+        if row is not None and row["source"] != "removed" and row["effective_discount_pct"] is not None:
+            saved = Decimal(row["effective_discount_pct"])
+        return rules.discount_or_derived(saved, mechanic_key) if derive else saved
 
     return discount_in
 

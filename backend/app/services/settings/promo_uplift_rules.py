@@ -119,6 +119,17 @@ def derived_discount(mechanic_key: str | None) -> Decimal | None:
     return None
 
 
+def discount_or_derived(saved: Decimal | None, mechanic_key: str | None) -> Decimal | None:
+    """
+    A mechanic's discount wherever one is looked up: the saved one, else the
+    one its key states (derived_discount), so the Current and Initial
+    breakdowns and Promotion Uplift Settings never disagree on a mechanic
+    nobody configured.
+    """
+
+    return saved if saved is not None else derived_discount(mechanic_key)
+
+
 def placeholder_uplift(effective_discount_pct: Decimal, anchor_pct: Decimal) -> Decimal:
     """(discount - anchor) / 5 x 2, to a whole percent: 30% Off at a 20% anchor is +4."""
 
