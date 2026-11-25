@@ -150,6 +150,19 @@ def summarize_clean_rows(dataframe: pd.DataFrame) -> dict:
     }
 
 
+def _replaced_by_load(stored: dict, keys: set[tuple], month_spans: dict[tuple, list[tuple]]) -> bool:
+    """Whether loading would replace this stored row: its key, or month days an incoming row covers."""
+    product = (stored["retailer_name"], str(stored["store_code"]), str(stored["sku"]))
+    if (*product, stored["period_start"], stored["period_type"]) in keys:
+        return True
+    if stored["period_type"] != "month" or stored["period_end"] is None:
+        return False
+    return any(
+        stored["period_start"] <= end and stored["period_end"] >= start
+        for start, end in month_spans.get(product, [])
+    )
+
+
 def existing_overlap(
     dataframe: pd.DataFrame,
     *,
@@ -164,7 +177,9 @@ def existing_overlap(
 
     Loading cannot be undone from the app, and an upsert replaces values
     silently, so this is what the load confirmation shows before it happens.
-    Matched on the same business key and retailer name the load uses.
+    Matched on the same business key and retailer name the load uses, and,
+    like the load, a stored month row whose days these rows cover
+    (_rows_overlapped_by).
     """
     if dataframe.empty:
         return {"rows_replaced": 0, "overwrites": []}
@@ -175,7 +190,15 @@ def existing_overlap(
         (str(row["retailer"]), str(row["store_code"]), str(row["sku"]), row["period_start"], row["period_type"])
         for row in records
     }
-    periods = [row["period_start"] for row in records]
+    month_spans: dict[tuple, list[tuple]] = {}
+    for row in records:
+        if row["period_type"] == "month" and row.get("period_end"):
+            product = (str(row["retailer"]), str(row["store_code"]), str(row["sku"]))
+            month_spans.setdefault(product, []).append((row["period_start"], row["period_end"]))
+    # From the 1st of the first month, so a row for that month's earlier days
+    # is found, to the last day covered, for a later start inside it.
+    first_period = min(row["period_start"] for row in records).replace(day=1)
+    last_period = max(row.get("period_end") or row["period_start"] for row in records)
     database = engine or _get_read_engine()
 
     with database.connect() as connection:
@@ -200,6 +223,7 @@ def existing_overlap(
                     s.store_code,
                     s.sku,
                     s.period_start,
+                    s.period_end,
                     s.period_type,
                     s.source_file
                 FROM sellout s
@@ -210,8 +234,8 @@ def existing_overlap(
             ),
             {
                 "retailer_names": sorted({key[0] for key in keys}),
-                "first_period": min(periods),
-                "last_period": max(periods),
+                "first_period": first_period,
+                "last_period": last_period,
             },
         ).mappings().all()
 
@@ -221,14 +245,7 @@ def existing_overlap(
     overwritten = Counter(
         row["source_file"] or "Unknown file"
         for row in existing
-        if row["source_file"] not in deleted_first
-        and (
-            row["retailer_name"],
-            str(row["store_code"]),
-            str(row["sku"]),
-            row["period_start"],
-            row["period_type"],
-        ) in keys
+        if row["source_file"] not in deleted_first and _replaced_by_load(row, keys, month_spans)
     )
     return {
         "rows_replaced": int(rows_replaced),
@@ -469,8 +486,78 @@ def _upsert_sellout_in_batches(connection: Connection, records: list[dict]) -> N
         )
 
 
+# ============================================================
+# STATEMENTS COVERING PART OF A MONTH
+# ============================================================
+#
+# A monthly row starts on the first day its file covers (apply_contract.
+# _within_stated_period): Sheng Siong's 1-5 Oct statement is stored from
+# 1 Oct, its 6-31 Oct one from 6 Oct, and the two add up to October. A file
+# replaces what is stored for the days it covers, so a stored month row of
+# the same retailer, store and SKU whose days overlap an incoming row's is
+# removed before the upsert: a later 1-31 Oct restatement replaces both
+# halves instead of being added on top of them. Rows with the same start
+# are the upsert's own key, and weeks are never compared.
+
+
+def _rows_overlapped_by(connection: Connection, facts: list[dict]) -> list[dict]:
+    """Lock and return the stored month rows with a different start whose days these facts cover."""
+    months = [fact for fact in facts if fact["period_type"] == "month" and fact.get("period_end")]
+    if not months:
+        return []
+    rows = connection.execute(
+        text(
+            """
+            WITH incoming_spans AS (
+                SELECT *
+                FROM unnest(
+                    CAST(:retailer_ids AS integer[]),
+                    CAST(:store_codes AS text[]),
+                    CAST(:skus AS text[]),
+                    CAST(:period_starts AS date[]),
+                    CAST(:period_ends AS date[])
+                ) AS incoming(retailer_id, store_code, sku, period_start, period_end)
+            )
+            SELECT
+                current.retailer_id, current.period_start,
+                current.period_end, current.period_type,
+                current.store_code, current.sku,
+                current.quantity_units, current.revenue,
+                current.source_file, current.loaded_at,
+                current.data_source
+            FROM sellout AS current
+            WHERE
+                current.period_type = 'month'
+                AND EXISTS (
+                    SELECT 1
+                    FROM incoming_spans AS incoming
+                    WHERE
+                        incoming.retailer_id = current.retailer_id
+                        AND incoming.store_code = current.store_code
+                        AND incoming.sku = current.sku
+                        AND current.period_start <> incoming.period_start
+                        AND current.period_start <= incoming.period_end
+                        AND current.period_end >= incoming.period_start
+                )
+            FOR UPDATE OF current
+            """
+        ),
+        {
+            "retailer_ids": [fact["retailer_id"] for fact in months],
+            "store_codes": [fact["store_code"] for fact in months],
+            "skus": [fact["sku"] for fact in months],
+            "period_starts": [fact["period_start"].isoformat() for fact in months],
+            "period_ends": [fact["period_end"].isoformat() for fact in months],
+        },
+    ).mappings().all()
+    return [dict(row) for row in rows]
+
+
 def _delete_replaced_rows(connection: Connection, rows: list[dict]) -> None:
-    """Delete only stale keys still owned by the exact upload being reloaded."""
+    """
+    Delete only the exact keys this load removes: stale keys still owned by
+    the upload being reloaded, and month rows whose days it covers.
+    """
     if not rows:
         return
     connection.execute(
@@ -598,8 +685,11 @@ def load_clean_rows(
                     }
                 )
 
+            # Another file's month row for days this file covers goes, the
+            # same way a reload's stale rows do (and is versioned with them).
+            overlapped = _rows_overlapped_by(connection, facts)
             ingestion_id = None
-            replaced_rows = []
+            replaced_rows = overlapped
             if source_blob:
                 ingestion_id = ingestion_service.start_run(
                     connection,
@@ -614,6 +704,7 @@ def load_clean_rows(
                     ingestion_id,
                     facts,
                     replace_source=replace_source,
+                    superseded=overlapped,
                 )
 
             _delete_replaced_rows(connection, replaced_rows)
@@ -1638,10 +1729,19 @@ def _latest_preferred_period(retailer: str | list[str] | None) -> dict | None:
     where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
     # Only dates are read, so nothing is priced.
     params["revenue_estimates"] = NO_REVENUE_ESTIMATES
+    # A month row from a statement covering part of the month starts on its
+    # first day (6 Oct); the period is still the whole month from the 1st, or
+    # a range starting on the 6th would leave out the 1-5 Oct row.
     query = text(
         EFFECTIVE_SELLOUT_CTE
         + f"""
-        SELECT period_start, period_end, period_type
+        SELECT
+            CASE
+                WHEN period_type = 'month' THEN date_trunc('month', period_start)::date
+                ELSE period_start
+            END AS period_start,
+            period_end,
+            period_type
         FROM effective_sellout
         {where_sql}
         ORDER BY period_end DESC

@@ -596,6 +596,17 @@ def test_default_date_range_week_returns_the_latest_preferred_period_as_is(monke
     }
 
 
+def test_the_latest_period_of_a_part_month_statement_starts_on_the_first(monkeypatch):
+    # A statement for 6-31 Oct is stored from the 6th; the month's 1-5 Oct
+    # row must stay inside the default range the dashboard filters on.
+    conn = _install(monkeypatch, _latest_and_earliest([], date(2024, 1, 4)))
+
+    sellout_service.get_default_date_range(customer="fairprice", period="week")
+
+    [(latest_sql, _params)] = conn.sql_containing("ORDER BY period_end DESC")
+    assert "WHEN period_type = 'month' THEN date_trunc('month', period_start)::date" in latest_sql
+
+
 def test_default_date_range_earliest_start_is_scoped_to_the_channel(monkeypatch):
     rows = [{"period_start": date(2026, 8, 1), "period_end": date(2026, 8, 31), "period_type": "month"}]
     conn = _install(monkeypatch, _latest_and_earliest(rows, date(2024, 1, 4)))
@@ -661,7 +672,7 @@ def test_period_comparison_without_mode_covers_both_of_the_customers_channels(mo
     conn = _install(
         monkeypatch,
         lambda sql, params: [{"period_start": date(2026, 8, 1), "period_end": date(2026, 8, 31), "period_type": "month"}]
-        if "SELECT period_start, period_end, period_type FROM effective_sellout" in sql
+        if "ORDER BY period_end DESC" in sql
         else [],
     )
 

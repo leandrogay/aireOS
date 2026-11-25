@@ -224,15 +224,25 @@ def record_versions(
     facts: list[dict],
     *,
     replace_source: bool,
+    superseded: list[dict] | None = None,
 ) -> list[dict]:
-    """Record this run and return exact stale rows removed by a reload."""
+    """
+    Record this run and return the exact rows it removes: stale rows of the
+    upload it reloads, and `superseded` rows (another upload's month row for
+    days this one covers, sellout_service._rows_overlapped_by). Both are
+    tombstoned under this run, so rolling it back restores them.
+    """
     replaced = (
         _rows_replaced_by_upload(connection, ingestion_id)
         if replace_source
         else []
     )
     fact_keys = {_key(row) for row in facts}
-    tombstones = [row for row in replaced if _key(row) not in fact_keys]
+    removed = {}
+    for row in [*replaced, *(superseded or [])]:
+        if _key(row) not in fact_keys:
+            removed.setdefault(_key(row), row)
+    tombstones = list(removed.values())
     affected = [*facts, *tombstones]
 
     _capture_baselines(connection, affected)

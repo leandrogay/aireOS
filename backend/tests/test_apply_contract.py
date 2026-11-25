@@ -4,7 +4,15 @@ import copy
 
 import pandas as pd
 import pytest
-from conftest import LEDGER_ROWS, ledger_csv, outlet_codes_below_xlsx, prime_sales_xlsx, prime_xlsx, singhealth_xlsx
+from conftest import (
+    LEDGER_ROWS,
+    ledger_csv,
+    outlet_codes_below_xlsx,
+    prime_sales_xlsx,
+    prime_xlsx,
+    sheng_siong_xlsx,
+    singhealth_xlsx,
+)
 
 from app.services import (
     apply_contract,
@@ -219,6 +227,40 @@ def test_singhealth_period_is_the_month_its_title_states():
     assert set(result["period_start"]) == {pd.Timestamp("2026-08-01")}
     assert set(result["period_end"]) == {pd.Timestamp("2026-08-31")}
     assert set(result["period_type"]) == {"month"}
+
+
+def test_a_statement_covering_the_whole_month_gives_whole_month_rows():
+    result = _transformed(SHENG_SIONG_CLAIM, "claim.xlsx", sheng_siong_xlsx())
+
+    assert set(result["period_start"]) == {pd.Timestamp("2026-06-01")}
+    assert set(result["period_end"]) == {pd.Timestamp("2026-06-30")}
+
+
+def test_a_statement_covering_part_of_a_month_is_dated_by_the_days_it_covers():
+    data = sheng_siong_xlsx(period="6/6/2026 TO 30/6/2026", days=(6, 7))
+
+    result = _transformed(SHENG_SIONG_CLAIM, "claim.xlsx", data)
+
+    assert set(result["period_start"]) == {pd.Timestamp("2026-06-06")}
+    assert set(result["period_end"]) == {pd.Timestamp("2026-06-30")}
+    assert set(result["period_type"]) == {"month"}
+    assert validation_service.validate_mapped_dataframe(result)["total_rejected"] == 0
+
+
+def test_two_statements_splitting_a_month_never_share_a_stored_row():
+    # Sheng Siong sent October as 1-5 Oct and 6-31 Oct. Both dated as the
+    # whole month, the second load overwrote the first file's units.
+    first = _transformed(SHENG_SIONG_CLAIM, "1-5.xlsx", sheng_siong_xlsx(period="1/6/2026 TO 5/6/2026"))
+    rest = _transformed(
+        SHENG_SIONG_CLAIM, "6-30.xlsx", sheng_siong_xlsx(period="6/6/2026 TO 30/6/2026", days=(6, 7)),
+    )
+
+    key = ["retailer", "store_code", "sku", "period_start", "period_type"]
+    first_keys = set(first[key].itertuples(index=False))
+    rest_keys = set(rest[key].itertuples(index=False))
+    assert first_keys and rest_keys
+    assert first_keys.isdisjoint(rest_keys)
+    assert set(first["period_end"]) == {pd.Timestamp("2026-06-05")}
 
 
 def test_singhealth_revenue_is_units_times_the_unit_price_column():

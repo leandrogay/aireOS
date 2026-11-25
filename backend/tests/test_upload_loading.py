@@ -321,12 +321,13 @@ def _rows_to_load():
     )
 
 
-def _existing(source_file, sku="13255043"):
+def _existing(source_file, sku="13255043", start=datetime.date(2026, 8, 1), end=datetime.date(2026, 8, 31)):
     return {
         "retailer_name": "xel_offline",
         "store_code": "420",
         "sku": sku,
-        "period_start": datetime.date(2026, 8, 1),
+        "period_start": start,
+        "period_end": end,
         "period_type": "month",
         "source_file": source_file,
     }
@@ -361,6 +362,26 @@ def test_overlap_counts_rows_other_files_loaded_under_the_same_key():
 
     assert overlap == {"rows_replaced": 0, "overwrites": [{"source_file": "july_resend.txt", "rows": 1}]}
     assert engine.parameters[-1]["retailer_names"] == ["xel_offline"]
+
+
+def test_overlap_counts_a_stored_month_row_whose_days_the_file_also_covers():
+    engine = FakeReadEngine([_existing("aug_1-31.txt")])
+    rest_of_august = _rows_to_load().assign(period_start="2026-08-06")
+
+    overlap = sellout_service.existing_overlap(rest_of_august, engine=engine)
+
+    assert overlap["overwrites"] == [{"source_file": "aug_1-31.txt", "rows": 1}]
+    # Read from the 1st, so a row for the earlier days of the month is found.
+    assert engine.parameters[-1]["first_period"] == datetime.date(2026, 8, 1)
+
+
+def test_the_other_part_of_a_split_month_is_not_counted_as_overwritten():
+    engine = FakeReadEngine([_existing("aug_1-5.txt", end=datetime.date(2026, 8, 5))])
+    rest_of_august = _rows_to_load().assign(period_start="2026-08-06")
+
+    overlap = sellout_service.existing_overlap(rest_of_august, engine=engine)
+
+    assert overlap["overwrites"] == []
 
 
 def test_rows_from_a_same_named_file_count_as_replaced_not_overwritten():

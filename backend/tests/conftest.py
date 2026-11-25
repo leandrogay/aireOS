@@ -243,17 +243,24 @@ def nhg_xlsx(pivot_first: bool = True, extra_material: str | None = None) -> byt
 SHENG_SIONG_OUTLETS = ["2A", "6M_Ecomm", "TC"]
 
 
-def sheng_siong_xlsx(outlets=SHENG_SIONG_OUTLETS, claim_label: str = "Total Claim") -> bytes:
+def sheng_siong_xlsx(
+    outlets=SHENG_SIONG_OUTLETS,
+    claim_label: str = "Total Claim",
+    period: str = "1/6/2026 TO 30/6/2026",
+    days: tuple[int, int] = (1, 2),
+) -> bytes:
     """
     A claim statement: title, key-value preamble, header on row 7, merged dates,
     footers. Newer statements label the claim lines "Supplier Claim ..." instead.
+    `period` is the title's range and `days` the two June days it has sales on:
+    Sheng Siong can split a month across statements (1-5 Oct, then 6-31 Oct).
     """
     import datetime as _dt
     workbook = openpyxl.Workbook()
     sheet = workbook.active
     sheet.title = "Supplier"
     width = 6 + len(outlets) + 1
-    sheet.append(["CLAIM SALES SUMMARY FOR 1/6/2026 TO 30/6/2026"])
+    sheet.append([f"CLAIM SALES SUMMARY FOR {period}"])
     sheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=width)
     sheet.append(["RefNo", ": P100045355"])
     sheet.append(["Buyer Code", ": CSTANG"])
@@ -264,11 +271,11 @@ def sheng_siong_xlsx(outlets=SHENG_SIONG_OUTLETS, claim_label: str = "Total Clai
 
     # Each row's cells, one per outlet: 2A, 6M_Ecomm, TC (extra outlets sell 1).
     blocks = [
-        (_dt.datetime(2026, 6, 1), [
+        (_dt.datetime(2026, 6, days[0]), [
             (1909284, "AIRE AD P/UP PANTS-L 1X10", 2.14, [1, 0, 2]),
             (1909280, "AIRE ULTRA TAPE DIAPERS L", 1.46, [0, 3, 0]),
         ]),
-        (_dt.datetime(2026, 6, 2), [
+        (_dt.datetime(2026, 6, days[1]), [
             (1909284, "AIRE AD P/UP PANTS-L 1X10", 2.14, [0, 0, 4]),
         ]),
     ]

@@ -47,8 +47,11 @@ def _dataframe():
     )
 
 
-def _fake_database(unowned=(), stored_elsewhere=()):
-    """`stored_elsewhere`: what the one-retailer-per-store query finds already stored."""
+def _fake_database(unowned=(), stored_elsewhere=(), overlapped=()):
+    """
+    `stored_elsewhere`: what the one-retailer-per-store query finds already
+    stored. `overlapped`: the stored month rows the overlapping-days query finds.
+    """
     engine = MagicMock()
     connection = engine.begin.return_value.__enter__.return_value
 
@@ -57,6 +60,8 @@ def _fake_database(unowned=(), stored_elsewhere=()):
         sql = str(statement)
         if "sibling" in sql:
             result.mappings.return_value.all.return_value = list(stored_elsewhere)
+        elif "incoming_spans" in sql:
+            result.mappings.return_value.all.return_value = list(overlapped)
         elif "customer_retailers" in sql:
             owned = [
                 name for name in parameters["retailer_names"] if name not in unowned
@@ -245,6 +250,93 @@ def test_reload_deletes_only_stale_keys_returned_by_the_ingestion_run(monkeypatc
         "period_start": datetime.date(2025, 12, 1),
         "period_type": "month",
     }]
+
+
+# ---- Statements covering part of a month ------------------------------------------
+
+def _rest_of_january():
+    """January's sales from the 6th on: the second of two statements for the month."""
+    return _dataframe().iloc[[0]].assign(period_start="2026-01-06", period_end="2026-01-31")
+
+
+def _stored_whole_january():
+    return {
+        "retailer_id": 7,
+        "store_code": "420",
+        "sku": "13255043",
+        "period_start": datetime.date(2026, 1, 1),
+        "period_end": datetime.date(2026, 1, 31),
+        "period_type": "month",
+        "quantity_units": 4.0,
+        "revenue": 40.0,
+        "source_file": "january_before_the_fix.xlsx",
+        "loaded_at": datetime.datetime(2026, 2, 3, tzinfo=datetime.timezone.utc),
+        "data_source": "aireos_upload",
+    }
+
+
+def test_a_stored_month_row_whose_days_the_load_covers_is_deleted_before_the_upsert():
+    engine, connection = _fake_database(overlapped=[_stored_whole_january()])
+
+    sellout_service.load_clean_rows(_rest_of_january(), engine=engine)
+
+    sql_calls = [str(call.args[0]) for call in connection.execute.call_args_list]
+    delete_index = next(index for index, sql in enumerate(sql_calls) if "DELETE FROM sellout" in sql)
+    insert_index = next(index for index, sql in enumerate(sql_calls) if "INSERT INTO sellout" in sql)
+    assert delete_index < insert_index
+    assert connection.execute.call_args_list[delete_index].args[1] == [{
+        "retailer_id": 7,
+        "store_code": "420",
+        "sku": "13255043",
+        "period_start": datetime.date(2026, 1, 1),
+        "period_type": "month",
+    }]
+
+
+def test_a_month_row_the_load_overlaps_is_recorded_so_a_rollback_restores_it(monkeypatch):
+    engine, connection = _fake_database(overlapped=[_stored_whole_january()])
+    record = MagicMock(return_value=[_stored_whole_january()])
+    monkeypatch.setattr(sellout_service.ingestion_service, "start_run", MagicMock(return_value=42))
+    monkeypatch.setattr(sellout_service.ingestion_service, "record_versions", record)
+    monkeypatch.setattr(sellout_service.ingestion_service, "complete_run", MagicMock())
+
+    sellout_service.load_clean_rows(_rest_of_january(), source_blob="uploads/6-31_jan.xlsx", engine=engine)
+
+    assert record.call_args.kwargs["superseded"] == [_stored_whole_january()]
+    sql_calls = [str(call.args[0]) for call in connection.execute.call_args_list]
+    assert sum("DELETE FROM sellout" in sql for sql in sql_calls) == 1
+
+
+def test_the_overlap_query_binds_each_month_rows_days_and_locks_what_it_finds():
+    engine, connection = _fake_database()
+
+    sellout_service.load_clean_rows(_rest_of_january(), engine=engine)
+
+    overlap_call = next(
+        call for call in connection.execute.call_args_list if "incoming_spans" in str(call.args[0])
+    )
+    sql = str(overlap_call.args[0])
+    assert "period_type = 'month'" in sql
+    assert "current.period_start <> incoming.period_start" in sql
+    assert "FOR UPDATE" in sql
+    assert overlap_call.args[1] == {
+        "retailer_ids": [7],
+        "store_codes": ["420"],
+        "skus": ["13255043"],
+        "period_starts": ["2026-01-06"],
+        "period_ends": ["2026-01-31"],
+    }
+
+
+def test_weekly_rows_never_look_for_overlapping_month_rows():
+    engine, connection = _fake_database()
+    weekly = _dataframe().assign(period_type="week", period_start="2026-01-01", period_end="2026-01-07").iloc[[0]]
+
+    sellout_service.load_clean_rows(weekly, engine=engine)
+
+    sql_calls = [str(call.args[0]) for call in connection.execute.call_args_list]
+    assert not any("incoming_spans" in sql for sql in sql_calls)
+    assert not any("DELETE FROM sellout" in sql for sql in sql_calls)
 
 
 def test_replace_source_without_a_unique_blob_is_rejected():

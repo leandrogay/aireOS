@@ -459,6 +459,31 @@ def _derive_period_fields(result: pd.DataFrame) -> pd.DataFrame:
     return result
 
 
+def _within_stated_period(result: pd.DataFrame, layout: dict | None) -> pd.DataFrame:
+    """
+    A monthly row covers only the days of its month that the file states it
+    covers. Sheng Siong splits a month across statements (1-5 Oct, then
+    6-31 Oct): dated as two whole Octobers they would share one stored row,
+    and loading the second would overwrite the first. Dated 1 Oct and 6 Oct,
+    each keeps its own row and the month adds up. A month the stated period
+    does not reach is left whole, and a file that states no period is
+    unchanged.
+    """
+    stated = (layout or {}).get("stated_period")
+    if not stated or result.empty:
+        return result
+    first, last = pd.Timestamp(stated["start"]), pd.Timestamp(stated["end"])
+    reached = (
+        result["period_type"].eq("month")
+        & (result["period_start"] <= last)
+        & (result["period_end"] >= first)
+    )
+    result.loc[reached, "period_start"] = result.loc[reached, "period_start"].clip(lower=first)
+    result.loc[reached, "period_end"] = result.loc[reached, "period_end"].clip(upper=last)
+    result.loc[reached, "period_label"] = result.loc[reached, "period_start"].dt.strftime("%Y-%m-%d")
+    return result
+
+
 def _stated_month(layout: dict | None, source: str = "stated_period", source_file: str | None = None) -> pd.Timestamp:
     """
     The calendar month the file states it covers, for a contract that reads
@@ -630,5 +655,5 @@ def apply_contract(
         readable = output[~unreadable].copy()
         totals = _aggregate(readable, contract["aggregate"]) if not readable.empty else readable
         output = pd.concat([totals, output[unreadable]], ignore_index=True) if unreadable.any() else totals
-    output = _derive_period_fields(output)
+    output = _within_stated_period(_derive_period_fields(output), layout)
     return output.reindex(columns=BUSINESS_COLUMNS).reset_index(drop=True)

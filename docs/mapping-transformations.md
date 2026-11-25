@@ -57,6 +57,13 @@ unsupported   what the proposal said the file needs that no instruction can do
 
 `from_layout` fills `period_start` only and needs `period_type` to be the constant `month`.
 
+A monthly row covers only the days of its month the file states it covers (`stated_period`, the
+title's range), whatever fills its period: Sheng Siong's "1/10/2026 TO 5/10/2026" statement gives
+rows dated 1-5 Oct, its "6/10/2026 TO 31/10/2026" one rows dated 6-31 Oct, so the two halves are
+stored side by side and add up to October. Loading a file replaces a stored month row whose days it
+covers (`sellout_service._rows_overlapped_by`, undone by a rollback), so a later whole-month
+restatement replaces both halves. A file that states no period keeps whole-month rows.
+
 ### Row filters
 
 ```json

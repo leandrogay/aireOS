@@ -186,6 +186,12 @@ Invariants that cross domains:
   retailer than its stored sales (`StoreChannelError`, the load dry run says so first). A reload with a corrected
   rule moves its own stores: its earlier rows are deleted before the check. Rows with no store code are
   customer-level totals and are exempt.
+- A monthly sell-out row covers only the days its file states (`apply_contract._within_stated_period`): a month split
+  across statements (Sheng Siong's 1-5 Oct and 6-31 Oct) is stored as two `month` rows dated from their first day,
+  read back by calendar month (`date_trunc`, `_dashboard_rows`). A load replaces a stored month row whose days it
+  covers (`sellout_service._rows_overlapped_by`, tombstoned as `superseded` in `ingestion_service.record_versions` so a
+  rollback restores it); never add month rows' values on conflict -- two claim statements for the same days (April's)
+  carry the same units.
 - There is one contract format. The transformation (`sellout_ingestion` → `apply_contract`) executes its layout,
   field, melt, transform and aggregate instructions. "Version" means only a mapping's approval count: each approval
   stores the envelope with `version` + 1 and archives the one it replaces under `mappings/history/<fp>/v<n>.json`;

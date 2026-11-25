@@ -156,6 +156,47 @@ def test_reload_matches_the_previous_run_by_source_blob_not_filename():
     assert tombstones == [_baseline()]
 
 
+def test_a_row_another_upload_owned_that_this_one_supersedes_is_tombstoned_by_this_run():
+    connection = FakeConnection(None)
+    whole_august = _baseline()
+    rest_of_august = {**_baseline(), "period_start": datetime.date(2026, 8, 6)}
+
+    tombstones = ingestion_service.record_versions(
+        connection,
+        10,
+        [rest_of_august],
+        replace_source=False,
+        superseded=[whole_august],
+    )
+
+    assert tombstones == [whole_august]
+    baseline_sql, baseline_parameters = connection.calls[0]
+    assert "LEFT JOIN sellout AS current" in baseline_sql
+    assert {row["period_start"] for row in baseline_parameters} == {
+        datetime.date(2026, 8, 1), datetime.date(2026, 8, 6),
+    }
+    deleted = [
+        parameters for sql, parameters in connection.calls
+        if "INSERT INTO sellout_versions" in sql and parameters[0].get("is_deleted")
+    ]
+    assert [row["period_start"] for row in deleted[0]] == [datetime.date(2026, 8, 1)]
+
+
+def test_a_row_both_reloaded_and_superseded_is_tombstoned_once():
+    connection = FakeConnection(None, replaced_rows=[_baseline()])
+    rest_of_august = {**_baseline(), "period_start": datetime.date(2026, 8, 6)}
+
+    tombstones = ingestion_service.record_versions(
+        connection,
+        10,
+        [rest_of_august],
+        replace_source=True,
+        superseded=[_baseline()],
+    )
+
+    assert tombstones == [_baseline()]
+
+
 def test_first_load_has_no_replacement_even_when_reload_flag_is_true():
     connection = FakeConnection(None)
 
